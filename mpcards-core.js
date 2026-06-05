@@ -20,10 +20,19 @@ const MPCARDS_CORE_SOURCE = `
     ["greedy", "C - Minimizza caratteristiche condivise", "C"],
     ["adjacent", "D - Minimizza adiacenze", "D"],
     ["draw-random-finish-random", "E - Pesca una, finale casuale", "E"],
+    ["planner", "P - Pianifica fino a 4 pose", "P"],
+    ["hand-planner", "H - Mano ampia: pianifica, altrimenti M", "H"],
+    ["prudent", "U - Pianifica ma chiude se la sequenza si blocca", "U"],
+    ["chain-max", "F - Massimizza carte giocate nel turno", "F"],
     ["random", "R - Casuale legale", "R"],
     ["auto", "Auto a partita", "Auto"]
   ];
-  const STRATEGY_KEYS = ["random", "greedy", "adjacent", "draw-random-finish-random", "low-value", "high-value", "compatibility"];
+  const STRATEGY_KEYS = [
+    "random", "greedy", "adjacent", "draw-random-finish-random", "low-value", "high-value", "compatibility",
+    "planner", "hand-planner", "prudent", "chain-max"
+  ];
+  const PLANNER_BRANCH_LIMIT = 10;
+  const PLANNER_MAX_NODES = 280;
   const POSITIONAL_COUNTS = [1, 3, 5, 7, 9, 11, 13, 15];
 
   function hashSeed(text) {
@@ -158,6 +167,11 @@ const MPCARDS_CORE_SOURCE = `
     return Array.from({ length: players }, (_, index) => index);
   }
 
+  function randomInitialTurnOrder(players, random) {
+    const start = Math.floor(random() * players);
+    return Array.from({ length: players }, (_, step) => (start + step) % players);
+  }
+
   function invertedTurnOrder(players, closerId) {
     const order = [];
     for (let step = 0; step < players; step++) {
@@ -166,9 +180,13 @@ const MPCARDS_CORE_SOURCE = `
     return order;
   }
 
+  function shouldInvertTurnOrderOnClose(state) {
+    return state.invertTurnOrderOnClose !== false;
+  }
+
   function ensureTurnOrder(state) {
     if (!state.turnOrder || state.turnOrder.length !== state.players) {
-      if (state.duraMaterClosed && state.closedByPlayer != null) {
+      if (state.duraMaterClosed && state.closedByPlayer != null && shouldInvertTurnOrderOnClose(state)) {
         state.turnOrder = invertedTurnOrder(state.players, state.closedByPlayer);
       } else {
         state.turnOrder = defaultTurnOrder(state.players);
@@ -188,7 +206,9 @@ const MPCARDS_CORE_SOURCE = `
     if (!state || state.duraMaterClosed || !isDuraMaterDelimited(state)) return false;
     state.duraMaterClosed = true;
     state.closedByPlayer = closerId;
-    state.turnOrder = invertedTurnOrder(state.players, closerId);
+    if (shouldInvertTurnOrderOnClose(state)) {
+      state.turnOrder = invertedTurnOrder(state.players, closerId);
+    }
     return true;
   }
 
@@ -259,9 +279,128 @@ const MPCARDS_CORE_SOURCE = `
     return moves;
   }
 
+  function cloneCardSnapshot(card) {
+    return {
+      uid: card.uid,
+      code: card.code,
+      value: card.value,
+      shape: card.shape,
+      color: card.color
+    };
+  }
+
+  function cloneSimState(source, playerId) {
+    const hand = source.hands[playerId] || [];
+    const hands = [];
+    hands[playerId] = hand.map(cloneCardSnapshot);
+    return {
+      size: source.size,
+      board: source.board.map(entry => ({
+        x: entry.x,
+        y: entry.y,
+        playerId: entry.playerId,
+        card: cloneCardSnapshot(entry.card)
+      })),
+      hands,
+      turnPlayed: source.turnPlayed
+    };
+  }
+
+  function applyPlacementSim(sim, playerId, move) {
+    const hand = sim.hands[playerId];
+    if (!hand) return false;
+    const cardIndex = hand.findIndex(card => card.uid === move.cardUid);
+    if (cardIndex < 0) return false;
+    const card = hand.splice(cardIndex, 1)[0];
+    sim.board.push({ x: move.x, y: move.y, card, playerId });
+    sim.turnPlayed++;
+    return true;
+  }
+
+  function maxChainPlays(sim, playerId, branchLimit, random, budget) {
+    if (budget.count >= budget.max) return sim.turnPlayed;
+    budget.count++;
+    const requirement = sim.turnPlayed + 1;
+    if (requirement > 4) return sim.turnPlayed;
+    const moves = legalPlacements(sim, playerId, requirement);
+    if (!moves.length) return sim.turnPlayed;
+    let best = sim.turnPlayed;
+    const sample = moves.length > branchLimit ? shuffle(moves, random).slice(0, branchLimit) : moves;
+    for (const move of sample) {
+      if (budget.count >= budget.max) break;
+      const next = cloneSimState(sim, playerId);
+      if (!applyPlacementSim(next, playerId, move)) continue;
+      const depth = maxChainPlays(next, playerId, branchLimit, random, budget);
+      if (depth > best) best = depth;
+      if (best >= 4) return 4;
+    }
+    return best;
+  }
+
+  function quickFollowUpScore(sim, playerId) {
+    const requirement = sim.turnPlayed + 1;
+    if (requirement > 4) return 0;
+    return legalPlacements(sim, playerId, requirement).length;
+  }
+
+  function canExtendChain(state, playerId, random) {
+    const requirement = state.turnPlayed + 1;
+    const moves = legalPlacements(state, playerId, requirement);
+    if (!moves.length) return false;
+    const sample = moves.length > 10 ? shuffle(moves, random).slice(0, 10) : moves;
+    for (const move of sample) {
+      const sim = cloneSimState(state, playerId);
+      applyPlacementSim(sim, playerId, move);
+      if (maxChainPlays(sim, playerId, 8, random, { count: 0, max: 40 }) > sim.turnPlayed) return true;
+    }
+    return false;
+  }
+
+  function placementStrategyForTurn(state, playerId, strategy) {
+    const handSize = (state.hands[playerId] || []).length;
+    if (strategy === "planner" || strategy === "chain-max") return strategy;
+    if (strategy === "hand-planner") {
+      return handSize + state.turnPlayed >= 4 ? "planner" : "compatibility";
+    }
+    if (strategy === "prudent") {
+      return handSize + state.turnPlayed >= 3 ? "planner" : "compatibility";
+    }
+    return strategy;
+  }
+
+  function choosePlacementPlanner(state, playerId, requirement, random, branchLimit) {
+    const moves = legalPlacements(state, playerId, requirement);
+    if (!moves.length) return null;
+    const budget = { count: 0, max: PLANNER_MAX_NODES };
+    const lightSearch = state.turnPlayed >= 2;
+    let bestDepth = -1;
+    let bestMoves = [];
+    const sample = moves.length > branchLimit ? shuffle(moves, random).slice(0, branchLimit) : moves;
+    for (const move of sample) {
+      const sim = cloneSimState(state, playerId);
+      if (!applyPlacementSim(sim, playerId, move)) continue;
+      const depth = lightSearch
+        ? sim.turnPlayed + Math.min(1, quickFollowUpScore(sim, playerId) / 8)
+        : maxChainPlays(sim, playerId, branchLimit, random, budget);
+      if (depth > bestDepth) {
+        bestDepth = depth;
+        bestMoves = [move];
+      } else if (depth === bestDepth) {
+        bestMoves.push(move);
+      }
+    }
+    if (!bestMoves.length) return moves[Math.floor(random() * moves.length)];
+    return bestMoves[Math.floor(random() * bestMoves.length)];
+  }
+
   function choosePlacement(state, playerId, requirement, strategy, random) {
     const moves = legalPlacements(state, playerId, requirement);
     if (moves.length === 0) return null;
+    const placementStrategy = placementStrategyForTurn(state, playerId, strategy);
+    if (placementStrategy === "planner" || placementStrategy === "chain-max") {
+      const limit = placementStrategy === "chain-max" ? PLANNER_BRANCH_LIMIT + 4 : PLANNER_BRANCH_LIMIT;
+      return choosePlacementPlanner(state, playerId, requirement, random, limit);
+    }
     if (strategy === "random") return moves[Math.floor(random() * moves.length)];
     if (strategy === "low-value" || strategy === "high-value") {
       const values = moves.map(move => Number(move.card.value) || 0);
@@ -276,7 +415,7 @@ const MPCARDS_CORE_SOURCE = `
       return tied[Math.floor(random() * tied.length)];
     }
     const scored = moves.map(move => {
-      const base = strategy === "adjacent"
+      const base = placementStrategy === "adjacent"
         ? -move.neighbors * 100 - move.matches * 8
         : -move.matches * 100 - move.neighbors * 12;
       const valueWeight = Number(move.card.value) || 0;
@@ -290,6 +429,9 @@ const MPCARDS_CORE_SOURCE = `
     const requirement = state.turnPlayed + 1;
     if (requirement > 4) return { type: "stop" };
     if (strategy === "draw-random-finish-random" && state.turnPlayed > 0 && state.drawPile.length > 0) {
+      return { type: "stop" };
+    }
+    if (strategy === "prudent" && state.turnPlayed > 0 && state.drawPile.length > 0 && !canExtendChain(state, playerId, random)) {
       return { type: "stop" };
     }
     const effectiveStrategy = strategy === "draw-random-finish-random" ? "random" : strategy;
@@ -312,6 +454,30 @@ const MPCARDS_CORE_SOURCE = `
     return legalMove;
   }
 
+  function isDurissimaMater(state) {
+    return state.durissimaMater === true;
+  }
+
+  function isBoardComplete(state) {
+    return state.board.length >= state.size * state.size;
+  }
+
+  function maybeCompleteDurissima(state) {
+    if (!isDurissimaMater(state) || state.status !== "playing" || !isBoardComplete(state)) return false;
+    state.status = "success";
+    state.winner = state.players === 1 ? 0 : null;
+    return true;
+  }
+
+  function maybeDrawDurissimaEmptyHand(state) {
+    if (!isDurissimaMater(state) || state.status !== "playing") return false;
+    const playerId = state.currentPlayer;
+    if ((state.hands[playerId] || []).length > 0) return false;
+    if (state.drawPile.length === 0) return false;
+    if (drawsAtTurnStart(state)) return maybeDrawAtTurnStart(state);
+    return drawForPlayer(state, playerId);
+  }
+
   function applyPlacement(state, playerId, move) {
     const legalMove = validatePlacement(state, playerId, move);
     const hand = state.hands[playerId];
@@ -324,16 +490,39 @@ const MPCARDS_CORE_SOURCE = `
     state.turnPlayed++;
     state.lastMove = { playerId, card, x: legalMove.x, y: legalMove.y, matches: legalMove.matches, requirement: state.turnPlayed };
     if (!wasClosed) maybeCloseDuraMater(state, playerId);
-    if (hand.length === 0) {
+    if (isDurissimaMater(state)) {
+      maybeCompleteDurissima(state);
+    } else if (hand.length === 0) {
       state.status = "success";
       state.winner = playerId;
     }
   }
 
+  function drawsAtTurnStart(state) {
+    return state.drawAtTurnStart === true;
+  }
+
+  function maybeDrawAtTurnStart(state) {
+    if (!drawsAtTurnStart(state) || state.status !== "playing") return false;
+    if (state.turnPlayed !== 0 || state.turnStartDrawDone) return false;
+    state.turnStartDrawDone = true;
+    state.turnStartDrew = drawForPlayer(state, state.currentPlayer);
+    return state.turnStartDrew;
+  }
+
   function passTurn(state) {
-    const drew = drawForPlayer(state, state.currentPlayer);
+    let drew;
+    if (!drawsAtTurnStart(state)) {
+      drew = drawForPlayer(state, state.currentPlayer);
+    } else {
+      if (!state.turnStartDrawDone) maybeDrawAtTurnStart(state);
+      drew = Boolean(state.turnStartDrew);
+    }
     state.consecutivePasses++;
-    if (state.consecutivePasses >= state.players && !drew && state.drawPile.length === 0) state.status = "stalled";
+    const canStall = !isDurissimaMater(state) || !isBoardComplete(state);
+    if (canStall && state.consecutivePasses >= state.players && !drew && state.drawPile.length === 0) {
+      state.status = "stalled";
+    }
     endTurn(state);
   }
 
@@ -344,12 +533,21 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   function endTurn(state) {
-    if (state.status === "playing" && state.turnPlayed > 0) {
-      drawForPlayer(state, state.currentPlayer);
+    const playerId = state.currentPlayer;
+    const handEmpty = (state.hands[playerId] || []).length === 0;
+    if (
+      state.status === "playing" &&
+      state.turnPlayed > 0 &&
+      !drawsAtTurnStart(state) &&
+      !(isDurissimaMater(state) && handEmpty)
+    ) {
+      drawForPlayer(state, playerId);
     }
     state.turns++;
     state.currentPlayer = nextPlayerId(state);
     state.turnPlayed = 0;
+    state.turnStartDrawDone = false;
+    state.turnStartDrew = false;
   }
 
   function setupGame(deck, options) {
@@ -361,15 +559,20 @@ const MPCARDS_CORE_SOURCE = `
     if (gameDeck.length !== size * size) {
       throw new Error("Sottomazzo non valido per lato " + size + ": " + gameDeck.length + " carte.");
     }
-    const shuffled = shuffle(gameDeck, options.random);
+    const random = options.random;
+    const shuffled = shuffle(gameDeck, random);
     const hands = Array.from({ length: players }, () => shuffled.splice(0, size));
+    const randomizeTurnOrder = options.randomizeTurnOrder !== false;
+    const turnOrder = randomizeTurnOrder
+      ? randomInitialTurnOrder(players, random)
+      : defaultTurnOrder(players);
     return {
       size,
       players,
       hands,
       drawPile: shuffled,
       board: [],
-      currentPlayer: 0,
+      currentPlayer: turnOrder[0],
       consecutivePasses: 0,
       turns: 0,
       turnPlayed: 0,
@@ -378,7 +581,13 @@ const MPCARDS_CORE_SOURCE = `
       lastMove: null,
       duraMaterClosed: false,
       closedByPlayer: null,
-      turnOrder: defaultTurnOrder(players)
+      invertTurnOrderOnClose: options.invertTurnOrderOnClose !== false,
+      drawAtTurnStart: options.drawAtTurnStart === true,
+      durissimaMater: options.durissimaMater === true,
+      randomizeTurnOrder,
+      turnStartDrawDone: false,
+      turnStartDrew: false,
+      turnOrder
     };
   }
 
@@ -392,6 +601,8 @@ const MPCARDS_CORE_SOURCE = `
 
   function botStep(state, strategies, random) {
     if (state.status !== "playing") return { played: false, passed: false };
+    maybeDrawAtTurnStart(state);
+    maybeDrawDurissimaEmptyHand(state);
     const playerId = state.currentPlayer;
     const playerStrategy = Array.isArray(strategies) ? strategies[playerId] : strategies;
     const action = chooseAction(state, playerId, playerStrategy, random);
@@ -412,9 +623,13 @@ const MPCARDS_CORE_SOURCE = `
 
   function simulateGame(deck, options) {
     const random = options.random;
-    const strategies = resolveStrategies(options.strategies, options.players, random);
+    let strategies = resolveStrategies(options.strategies, options.players, random);
+    if (options.shuffleStrategiesAmongSeats) {
+      strategies = shuffle(strategies.slice(), random);
+    }
     const state = setupGame(deck, options);
-    const maxSteps = options.size * options.size * options.players * 16;
+    const stepFactor = options.durissimaMater === true ? 48 : 16;
+    const maxSteps = options.size * options.size * options.players * stepFactor;
     let steps = 0;
     while (state.status === "playing" && steps < maxSteps) {
       botStep(state, strategies, random);
@@ -427,7 +642,9 @@ const MPCARDS_CORE_SOURCE = `
       turns: state.turns,
       strategies,
       duraMaterClosed: state.duraMaterClosed,
-      closedByPlayer: state.closedByPlayer
+      closedByPlayer: state.closedByPlayer,
+      durissimaMater: state.durissimaMater === true,
+      boardComplete: isBoardComplete(state)
     };
   }
 
@@ -458,6 +675,7 @@ const MPCARDS_CORE_SOURCE = `
     boardFootprint,
     isDuraMaterDelimited,
     defaultTurnOrder,
+    randomInitialTurnOrder,
     invertedTurnOrder,
     ensureTurnOrder,
     nextPlayerId,
@@ -469,6 +687,12 @@ const MPCARDS_CORE_SOURCE = `
     chooseAction,
     validatePlacement,
     applyPlacement,
+    isDurissimaMater,
+    isBoardComplete,
+    maybeCompleteDurissima,
+    maybeDrawDurissimaEmptyHand,
+    drawsAtTurnStart,
+    maybeDrawAtTurnStart,
     passTurn,
     drawForPlayer,
     endTurn,

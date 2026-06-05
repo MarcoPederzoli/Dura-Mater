@@ -1,5 +1,5 @@
 window.MPCARDS_VERSION = {
-  version: "0.1.2",
+  version: "0.1.4",
   commit: "local",
   deployedAt: "local"
 };

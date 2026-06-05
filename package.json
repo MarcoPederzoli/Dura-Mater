@@ -1,5 +1,5 @@
 {
-  "version": "0.1.2",
+  "version": "0.1.4",
   "scripts": {
     "test": "node tests/core-regression.test.js",
     "prepare:partykit": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-partykit-static.ps1",

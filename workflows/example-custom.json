@@ -1,0 +1,33 @@
+{
+  "id": "custom-example",
+  "label": "Esempio workflow personalizzato",
+  "description": "Due step: posto vs strategia su 4×4 e 5×5. Importa con «Importa JSON».",
+  "shared": {
+    "invertTurnOrderOnClose": true,
+    "drawAtTurnStart": false,
+    "durissimaMater": false,
+    "fixedTurnOrder": false
+  },
+  "steps": [
+    {
+      "id": "a-44",
+      "label": "4×4 mix",
+      "count": 500,
+      "lMin": 4,
+      "lMax": 4,
+      "gMin": 4,
+      "gMax": 4,
+      "strategies": ["planner", "random", "compatibility", "high-value"]
+    },
+    {
+      "id": "b-55",
+      "label": "5×5 mix",
+      "count": 500,
+      "lMin": 5,
+      "lMax": 5,
+      "gMin": 4,
+      "gMax": 4,
+      "strategies": ["planner", "hand-planner", "compatibility", "random"]
+    }
+  ]
+}

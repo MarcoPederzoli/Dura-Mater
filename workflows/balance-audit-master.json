@@ -1,0 +1,30 @@
+{
+  "id": "balance-audit-master",
+  "label": "Audit bilanciamento MASTER (import)",
+  "description": "Stessa definizione di simulator-workflows-audit.js. Usa Importa JSON se il menu non elenca il workflow.",
+  "shared": {
+    "invertTurnOrderOnClose": true,
+    "drawAtTurnStart": false,
+    "durissimaMater": false,
+    "fixedTurnOrder": false
+  },
+  "auditGuide": {
+    "solvability": "step solo-1p: successPct per 3×1…8×1 (anche 5% va bene).",
+    "difficultyScale": "matrix-*: successPct/stallPct per riga L in rowTotals — scalabilità difficoltà.",
+    "seatFairness": "matrix-planner: spread posizione per cella.",
+    "strategyPower": "mix-* fisso; rotate-* con shuffleStrategiesAmongSeats.",
+    "ignore": "Stalli alti = puzzle difficile, non errore simulatore."
+  },
+  "steps": [
+    { "id": "solo-1p", "label": "Solitario · G=1 · L 3–8", "count": 2500, "lMin": 3, "lMax": 8, "gMin": 1, "gMax": 1, "strategy": "planner" },
+    { "id": "matrix-planner", "label": "Matrice L×G · P", "count": 2000, "lMin": 3, "lMax": 8, "gMin": 1, "gMax": 8, "strategy": "planner" },
+    { "id": "matrix-random", "label": "Matrice L×G · R", "count": 1200, "lMin": 3, "lMax": 8, "gMin": 1, "gMax": 8, "strategy": "random" },
+    { "id": "matrix-hand-planner", "label": "Matrice L×G · H", "count": 800, "lMin": 3, "lMax": 8, "gMin": 1, "gMax": 8, "strategy": "hand-planner" },
+    { "id": "mix-44", "label": "4×4 mix fisso", "count": 4000, "lMin": 4, "lMax": 4, "gMin": 4, "gMax": 4, "strategies": ["planner", "random", "compatibility", "high-value"] },
+    { "id": "mix-55", "label": "5×5 mix fisso", "count": 4000, "lMin": 5, "lMax": 5, "gMin": 4, "gMax": 4, "strategies": ["planner", "hand-planner", "compatibility", "high-value"] },
+    { "id": "mix-66", "label": "6×6 mix fisso", "count": 4000, "lMin": 6, "lMax": 6, "gMin": 4, "gMax": 4, "strategies": ["planner", "hand-planner", "compatibility", "random"] },
+    { "id": "rotate-44", "label": "4×4 rotate", "count": 12000, "lMin": 4, "lMax": 4, "gMin": 4, "gMax": 4, "strategies": ["planner", "random", "compatibility", "high-value"], "shuffleStrategiesAmongSeats": true },
+    { "id": "rotate-55", "label": "5×5 rotate", "count": 10000, "lMin": 5, "lMax": 5, "gMin": 4, "gMax": 4, "strategies": ["planner", "hand-planner", "compatibility", "high-value"], "shuffleStrategiesAmongSeats": true },
+    { "id": "rotate-66", "label": "6×6 rotate", "count": 10000, "lMin": 6, "lMax": 6, "gMin": 4, "gMax": 4, "strategies": ["planner", "hand-planner", "compatibility", "random"], "shuffleStrategiesAmongSeats": true }
+  ]
+}
