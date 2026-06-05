@@ -10,8 +10,8 @@ Progetto SPA statica per **Dura Mater** (codice legacy: MPCards).
 ## Git
 
 - Repository: `https://github.com/MarcoPederzoli/Dura-Mater.git` (branch `master`).
-- Dopo modifiche concluse: commit e push senza chiedere all’utente di usare VS Code o il terminale.
-- Messaggi di commit in italiano, brevi e specifici.
+- Dopo modifiche: proporre messaggio di commit all’utente; commit + push **solo dopo approvazione**.
+- Messaggi in italiano, brevi e specifici. Convenzione rivedibile su richiesta utente.
 
 ## Deploy
 

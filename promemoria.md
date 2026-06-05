@@ -8,12 +8,13 @@ Carica questo file all’inizio di una nuova chat (es. «Leggi `promemoria.md` e
 - **Non** cercare su tutto il disco; **non** usare `DaClaude` (rimossa, tutto è nella cartella sopra).
 - SPA statica: **nessuna build obbligatoria**. Aprire `index.html` nel browser.
 
-## Git / GitHub (gestione a carico dell’IA)
+## Git / GitHub
 
 - **Remote:** [https://github.com/MarcoPederzoli/Dura-Mater](https://github.com/MarcoPederzoli/Dura-Mater) — branch `master`.
-- L’utente **non** gestisce commit/push manualmente; a fine sessione o dopo modifiche rilevanti l’agente esegue `git add`, `git commit` (messaggio in italiano, descrittivo), `git push`.
-- VS Code installato solo per setup iniziale; **non** è richiesto all’utente per Git.
-- Se `git push` fallisce per autenticazione scaduta, segnalarlo all’utente (una sola ri-autenticazione GitHub Credential Manager).
+- L’agente prepara commit e push; l’utente **non** usa VS Code per Git.
+- **Prima di ogni push:** l’agente propone titolo (e, se serve, descrizione) del commit; l’utente approva o corregge. Push solo dopo ok.
+- Convenzione attuale **rivedibile** (es. in futuro più libertà all’agente sui messaggi).
+- Se `git push` fallisce per autenticazione scaduta, segnalarlo all’utente (ri-login GitHub Credential Manager).
 
 ## Cos’è il progetto
 
