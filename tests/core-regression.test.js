@@ -161,4 +161,19 @@ testGameTimelineUndoRedoAndBranching();
 testGameSessionExportImport();
 testDuraMaterClosedInvertsTurnOrder();
 
+function testSimulateGameReportsClosure() {
+  const random = core.mulberry32(core.hashSeed("sim-close"));
+  const deck = core.simulationDeck();
+  const result = core.simulateGame(deck, {
+    size: 3,
+    players: 2,
+    strategies: ["random", "random"],
+    random
+  });
+  assert.equal(typeof result.duraMaterClosed, "boolean");
+  assert.ok(result.closedByPlayer === null || Number.isInteger(result.closedByPlayer));
+}
+
+testSimulateGameReportsClosure();
+
 console.log("core regression tests passed");

@@ -92,7 +92,7 @@ npm test
 ## Task tipici ancora aperti (opzionali)
 
 - Retro `Back.jpg` in pesca / carte coperte.
-- Allineare simulatore UI al mazzo fisso (senza gestione mazzo ridondante).
+- ~~Allineare simulatore UI al mazzo fisso~~ — fatto: mazzo ufficiale, variante opzionale, tabella Dura Mater chiusa.
 - Affinare regole matrice in `RULES.md` vs implementazione (fissazione assi, confini).
 - Multiplayer PartyKit (bozza in `party/server.js`).
 

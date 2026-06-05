@@ -421,7 +421,14 @@ const MPCARDS_CORE_SOURCE = `
       steps++;
     }
     if (state.status === "playing") state.status = "stalled";
-    return { status: state.status, winner: state.winner, turns: state.turns, strategies };
+    return {
+      status: state.status,
+      winner: state.winner,
+      turns: state.turns,
+      strategies,
+      duraMaterClosed: state.duraMaterClosed,
+      closedByPlayer: state.closedByPlayer
+    };
   }
 
   function strategyLabel(value) {

@@ -187,8 +187,29 @@
       align-items: stretch;
     }
 
-    .deck-field {
+    .deck-info-row {
       flex: 1 1 100%;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      padding: 0 2px;
+    }
+
+    .deck-info-row p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    #deck-edit-panel {
+      flex: 1 1 100%;
+      display: grid;
+      gap: 8px;
+    }
+
+    #deck-edit-panel[hidden] {
+      display: none;
     }
 
     .strategy-help {
@@ -422,7 +443,7 @@
     <header>
       <div>
         <h1>Dura Mater — Simulatore</h1>
-        <p>Batch di partite automatiche sul mazzo finale; aggiorna le matrici L × G durante l'elaborazione.</p>
+        <p>Batch di partite automatiche sul mazzo ufficiale (stesse regole del gioco, inclusa Dura Mater chiusa). Matrici L × G aggiornate in tempo reale.</p>
       </div>
       <nav>
         <a href="index.html">Gioco</a>
@@ -464,10 +485,17 @@
           Seed
           <input id="seed" type="text" placeholder="casuale">
         </label>
-        <label class="deck-field">
-          Mazzo
-          <textarea id="deck-codes" spellcheck="false" aria-label="Codici carte separati da virgola"></textarea>
-        </label>
+        <div class="deck-info-row">
+          <p id="deck-info">Mazzo: ufficiale stampato (64 codici da mpcards-core.js).</p>
+          <button id="toggle-deck-edit" class="secondary" type="button">Variante mazzo (sperimentale)</button>
+        </div>
+        <div id="deck-edit-panel" hidden>
+          <label>
+            64 codici (virgola o a capo) — solo per test di bilanciamento mazzo
+            <textarea id="deck-codes" spellcheck="false" aria-label="Codici carte separati da virgola"></textarea>
+          </label>
+          <button id="deck-reset" class="secondary" type="button">Ripristina mazzo ufficiale</button>
+        </div>
         <button id="run">Esegui</button>
         <button id="stop" class="secondary" disabled>Ferma</button>
       </div>
@@ -525,13 +553,25 @@
           <table id="turn-table"></table>
         </div>
       </section>
+
+      <section>
+        <div class="panel-head">
+          <h2>Dura Mater chiusa</h2>
+        </div>
+        <div class="strategy-help">
+          <div><span>Chiusura</span> partite con ingombro N×N raggiunto</div>
+          <div><span>Vince chi chiude</span> vittorie del giocatore che ha chiuso (su partite chiuse)</div>
+        </div>
+        <div class="table-wrap">
+          <table id="closure-table"></table>
+        </div>
+      </section>
     </div>
-    <div id="app-version" class="app-version">v0.1.0 local</div>
+    <div id="app-version" class="app-version">v0.1.2 · simulatore allineato</div>
   </main>
 
   <script src="version.js"></script>
   <script src="mpcards-core.js"></script>
-  <script src="deck-manager.js"></script>
   <script src="simulator.js"></script>
 </body>
 </html>

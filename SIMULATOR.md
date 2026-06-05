@@ -3,63 +3,55 @@
 Il simulatore batch vive in `simulator.html` e usa `simulator.js`.
 Le regole di gioco e le strategie sono definite in `mpcards-core.js`, condiviso con `index.html`.
 
-`simulator.html` e' solo l'interfaccia statica: definisce controlli, tabelle e textarea del mazzo. Carica, in ordine, `version.js`, `mpcards-core.js`, `deck-manager.js` e `simulator.js`.
+`simulator.html` carica `version.js`, `mpcards-core.js` e `simulator.js` (senza `deck-manager.js`: il mazzo predefinito è quello ufficiale del core).
 
-`simulator.js` legge i controlli della pagina, normalizza il mazzo tramite `MPCardsCore.parseDeckCodes`, inizializza `MPCardsDeckManager` sulla textarea dei codici e costruisce job indipendenti per ogni coppia valida `(L, G)`. La simulazione di una singola partita non vive nella UI: viene delegata a `MPCardsCore.simulateGame`, cosi' il comportamento resta allineato a `index.html`.
+Ogni partita è delegata a `MPCardsCore.simulateGame`, così il comportamento resta allineato al gioco locale (inclusa **Dura Mater chiusa** e inversione turni dopo chiusura).
 
 ## Input
 
 - `C`: numero di simulazioni per ogni caso, default `100`.
-- `Lmin`: lato matrice minimo, default `3`.
-- `Lmax`: lato matrice massimo, default `8`.
-- `Gmin`: numero minimo di giocatori, default `1`.
-- `Gmax`: numero massimo di giocatori, default `8`.
-- `S`: strategia per ogni giocatore, default `auto`.
+- `Lmin` / `Lmax`: lato matrice (3–8).
+- `Gmin` / `Gmax`: numero giocatori (1–8).
+- `S`: strategia per ogni **Giocatore 1…N** (N = Gmax configurato), default `auto`.
+- `Seed`: riproducibilità (derivato per ogni coppia L×G).
+- `Worker`: parallelismo (Web Worker).
 
 I casi validi sono solo quelli con `L >= G`. Per ogni coppia valida `(L, G)` vengono eseguite `C` partite.
 
 ## Mazzo
 
-Il simulatore usa il mazzo finale incorporato in `mpcards-core.js` come array numerico `SIM_DECK_CODES`.
+- **Predefinito:** array `SIM_DECK_CODES` in `mpcards-core.js` (64 codici, mazzo stampato «finale»).
+- **Variante (opzionale):** pulsante «Variante mazzo (sperimentale)» per incollare 64 codici alternativi e testare bilanciamento del mazzo; «Ripristina mazzo ufficiale» torna al default.
 
-Per ogni partita con lato `L`, il sottomazzo e' composto dalle carte con prima cifra `<= L`; per il vincolo del mazzo questo produce `L * L` carte.
-
-La pesca avviene a fine turno: prima di passare al giocatore successivo si pesca una carta dal mazzo di pesca, se disponibile, sia dopo aver giocato sia dopo aver passato. Se pero' una posa svuota la mano del giocatore, la partita termina subito e la pesca di fine turno non avviene.
+Per ogni partita con lato `L`, il sottomazzo usa le carte con **valore (1ª cifra) ≤ L** → `L × L` carte in partita.
 
 ## Strategie
 
-Le strategie effettive disponibili sono:
+Stesse del gioco (`STRATEGIES` in `mpcards-core.js`):
 
-- `A` / `high-value`: tra le mosse legali sceglie una carta con `VALORE` massimo, casuale a parita' di valore.
-- `B` / `low-value`: tra le mosse legali sceglie una carta con `VALORE` minimo, casuale a parita' di valore.
-- `M` / `compatibility`: tra le mosse legali sceglie una carta con punteggio di compatibilita' minimo. Il punteggio del codice `ABC` e' `comp[A] + comp[B] + comp[C]`, con `comp = [1, 3, 5, 7, 9, 11, 13, 15]`.
-- `C` / `greedy`: preferisce mosse con meno caratteristiche condivise totali.
-- `D` / `adjacent`: preferisce mosse con meno adiacenze.
-- `E` / `draw-random-finish-random`: finche' il mazzo di pesca contiene carte gioca una sola carta casuale legale; quando il mazzo di pesca e' esaurito prova a giocare piu' carte possibile con criterio casuale.
-- `R` / `random`: sceglie una mossa legale casuale.
+- `high-value` (A), `low-value` (B), `compatibility` (M), `greedy` (C), `adjacent` (D), `draw-random-finish-random` (E), `random` (R).
+- `auto`: a ogni partita assegna casualmente una strategia effettiva al giocatore.
 
-L'interfaccia include anche `auto`, che non e' una strategia di gioco: a ogni partita assegna casualmente al giocatore una delle strategie effettive.
+## Output (matrici L × G)
 
-## Output
+Quattro tabelle con totali di riga, colonna e complessivo:
 
-Il simulatore produce tre matrici `L x G`:
+1. **Rendimento per giocatore** — punti vittoria / partite giocate (100% = atteso con G giocatori).
+2. **Rendimento per strategia** — come sopra per strategia effettiva del vincitore.
+3. **Turni** — min, media, max.
+4. **Dura Mater chiusa** — % partite con chiusura (ingombro L×L); % vittorie di chi ha chiuso (sulle partite chiuse); % stalli.
 
-- rendimento per giocatore: percentuale rispetto all'aspettativa di vittoria e, se presente, percentuale di stallo;
-- vittorie per strategia: percentuale di vittorie della strategia effettivamente usata dal vincitore e, se presente, percentuale di stallo;
-- turni: numero minimo, medio e massimo di turni osservati per terminare con vittoria o stallo.
-
-Ogni matrice include anche totali di riga, totali di colonna e totale complessivo. Questi totali non sommano le percentuali visibili nelle celle: aggregano i conteggi grezzi delle partite incluse e poi ricalcolano le stesse metriche della singola cella.
-
-Nella matrice del rendimento per giocatore, una vittoria vale tanti punti quanti sono i giocatori della partita. Il valore mostrato e' `punti / partite giocate`. Quindi `100%` significa che il giocatore ha vinto in linea con l'aspettativa media, `>100%` significa che ha vinto piu' dell'aspettativa, `<100%` significa che ha vinto meno dell'aspettativa.
-
-Per una singola cella con `G` fisso, questa metrica equivale a confrontare le vittorie reali con l'aspettativa `partite giocate / G`. Nei totali aggregati e' piu' robusta perche' ogni vittoria viene pesata con il numero di giocatori effettivamente presenti in quella partita.
-
-Le statistiche vengono aggiornate progressivamente mentre i worker completano gruppi di simulazioni.
+Le celle si aggiornano durante l’elaborazione (Web Worker + `MPCARDS_CORE_SOURCE`).
 
 ## Parallelismo
 
-`simulator.js` usa Web Worker creati da Blob a runtime. Questo evita dipendenze da build e riduce i problemi quando la pagina viene aperta direttamente dal filesystem.
+Worker creati da Blob; adatto ad apertura `file://` locale. Stop interrompe i job in coda.
 
-Il numero di worker e' configurabile. Il default usa `navigator.hardwareConcurrency`, limitato a un valore ragionevole per non saturare il browser.
+## Bilanciamento — come usare il simulatore
 
-Ogni worker riceve il sorgente condiviso `MPCARDS_CORE_SOURCE` esposto da `mpcards-core.js`, ricostruisce il core nel proprio contesto e restituisce conteggi aggregati. La pagina principale si limita a fondere i risultati, aggiornare progresso e tabelle, e interrompere i job ancora pendenti quando l'utente preme `Stop`.
+1. Lasciare il **mazzo ufficiale** (salvo test espliciti su varianti).
+2. Impostare intervalli L e G da esplorare (es. L 3–6, G 2–5).
+3. Assegnare strategie per giocatore (o `auto` per mix).
+4. Aumentare `C` (es. 500–5000) quando la griglia è grande.
+5. Confrontare disparità nelle matrici (evidenziatura colorata) e la tabella **Dura Mater chiusa**.
+6. Stesso `Seed` per ripetere un’esperienza.

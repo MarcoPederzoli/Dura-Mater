@@ -19,11 +19,15 @@ const els = {
   playerStrategies: document.querySelector("#player-strategies"),
   playerTable: document.querySelector("#player-table"),
   strategyTable: document.querySelector("#strategy-table"),
-  turnTable: document.querySelector("#turn-table")
+  turnTable: document.querySelector("#turn-table"),
+  closureTable: document.querySelector("#closure-table"),
+  deckEditPanel: document.querySelector("#deck-edit-panel"),
+  toggleDeckEdit: document.querySelector("#toggle-deck-edit"),
+  deckReset: document.querySelector("#deck-reset"),
+  deckInfo: document.querySelector("#deck-info")
 };
 
 let activeRun = null;
-let deckManager = null;
 
 function emptyStrategyWins() {
   return Object.fromEntries(STRATEGY_KEYS.map(key => [key, 0]));
@@ -53,13 +57,13 @@ function readConfig() {
     gMax: Math.max(gMin, gMax),
     workers: clampNumber(els.workers.value, 1, 32, defaultWorkerCount()),
     seed: els.seed.value.trim() || String(Date.now()),
-    deckCodes: els.deckCodes.value.trim(),
+    deckCodes: readDeckCodesText(),
     strategies: readStrategies()
   };
-  const deck = MPCardsCore.parseDeckCodes(config.deckCodes);
-  config.deckCodes = MPCardsCore.deckCodesText(deck.map(card => card.code));
-  els.deckCodes.value = config.deckCodes;
-  if (deckManager) deckManager.setText(config.deckCodes);
+  MPCardsCore.parseDeckCodes(config.deckCodes);
+  if (els.deckCodes && els.deckEditPanel && !els.deckEditPanel.hidden) {
+    els.deckCodes.value = config.deckCodes;
+  }
   els.lMin.value = config.lMin;
   els.lMax.value = config.lMax;
   els.gMin.value = config.gMin;
@@ -73,13 +77,28 @@ function defaultWorkerCount() {
   return Math.max(1, Math.min(8, navigator.hardwareConcurrency || 4));
 }
 
+function activePlayerCount() {
+  const gMin = clampNumber(els.gMin.value, 1, 8, 1);
+  const gMax = clampNumber(els.gMax.value, 1, 8, 8);
+  return Math.max(gMin, gMax);
+}
+
+function readDeckCodesText() {
+  const usingOverride = els.deckEditPanel && !els.deckEditPanel.hidden && els.deckCodes;
+  const text = usingOverride ? els.deckCodes.value.trim() : MPCardsCore.deckCodesText();
+  const deck = MPCardsCore.parseDeckCodes(text);
+  return MPCardsCore.deckCodesText(deck.map(card => card.code));
+}
+
 function renderStrategyInputs() {
   const previous = readStrategies();
+  const players = activePlayerCount();
   els.playerStrategies.innerHTML = "";
-  for (let player = 0; player < 8; player++) {
+  for (let player = 0; player < players; player++) {
     const label = document.createElement("label");
     const select = document.createElement("select");
     select.className = "player-strategy";
+    select.dataset.player = String(player);
     for (const [value, text] of STRATEGIES) {
       const option = document.createElement("option");
       option.value = value;
@@ -87,7 +106,7 @@ function renderStrategyInputs() {
       select.appendChild(option);
     }
     select.value = previous[player] || "auto";
-    label.append(`Strategia G${player + 1}`, select);
+    label.append(`Giocatore ${player + 1}`, select);
     els.playerStrategies.appendChild(label);
   }
 }
@@ -128,6 +147,8 @@ function emptyStats(players) {
     playedByStrategy: emptyStrategyWins(),
     pointsByStrategy: emptyStrategyWins(),
     stalls: 0,
+    closures: 0,
+    closureWins: 0,
     turnMin: null,
     turnMax: null,
     turnSum: 0
@@ -141,6 +162,8 @@ function emptyAggregateStats() {
 function mergeStats(target, patch) {
   target.done += patch.done;
   target.stalls += patch.stalls;
+  target.closures += patch.closures || 0;
+  target.closureWins += patch.closureWins || 0;
   target.turnSum += patch.turnSum;
   target.turnMin = target.turnMin === null ? patch.turnMin : Math.min(target.turnMin, patch.turnMin);
   target.turnMax = target.turnMax === null ? patch.turnMax : Math.max(target.turnMax, patch.turnMax);
@@ -183,6 +206,7 @@ function resetTables(config, jobs, state) {
   renderTableSkeleton(els.playerTable, rows, columns, "player", state);
   renderTableSkeleton(els.strategyTable, rows, columns, "strategy", state);
   renderTableSkeleton(els.turnTable, rows, columns, "turn", state);
+  renderTableSkeleton(els.closureTable, rows, columns, "closure", state);
   for (const job of jobs) {
     updateCell(job.size, job.players, state);
   }
@@ -254,7 +278,7 @@ function totalCell(type, totalKind, totalKey) {
 function updateCell(size, players, state) {
   const stats = state.cells.get(`${size}x${players}`);
   if (!stats) return;
-  for (const type of ["player", "strategy", "turn"]) {
+  for (const type of ["player", "strategy", "turn", "closure"]) {
     const cell = document.querySelector(`td[data-type="${type}"][data-size="${size}"][data-players="${players}"]`);
     if (!cell) continue;
     cell.className = "";
@@ -269,7 +293,7 @@ function updateAggregateCells(size, players, state) {
     ["grand", "all", state.grandTotal]
   ];
   for (const [totalKind, key, stats] of aggregateKeys) {
-    for (const type of ["player", "strategy", "turn"]) {
+    for (const type of ["player", "strategy", "turn", "closure"]) {
       const cell = document.querySelector(`td[data-type="${type}"][data-total="${totalKind}"][data-key="${key}"]`);
       if (!cell) continue;
       cell.className = "";
@@ -310,6 +334,15 @@ function renderCellContent(type, stats) {
         const ratio = points / played;
         box.appendChild(line(`${strategyShortLabel(key)}: ${pct(points, played)}`, disparityClass(ratio)));
       }
+    }
+    if (stats.stalls > 0) box.appendChild(line(`Stallo: ${pct(stats.stalls, stats.done)}`));
+    return box;
+  }
+
+  if (type === "closure") {
+    box.appendChild(line(`Chiusura: ${pct(stats.closures, stats.done)}`));
+    if (stats.closures > 0) {
+      box.appendChild(line(`Vince chi chiude: ${pct(stats.closureWins, stats.closures)}`));
     }
     if (stats.stalls > 0) box.appendChild(line(`Stallo: ${pct(stats.stalls, stats.done)}`));
     return box;
@@ -360,6 +393,8 @@ function workerSource() {
         playedByStrategy: emptyStrategyWins(),
         pointsByStrategy: emptyStrategyWins(),
         stalls: 0,
+        closures: 0,
+        closureWins: 0,
         turnMin: null,
         turnMax: null,
         turnSum: 0
@@ -388,6 +423,12 @@ function workerSource() {
         patch.turnSum += result.turns;
         patch.turnMin = patch.turnMin === null ? result.turns : Math.min(patch.turnMin, result.turns);
         patch.turnMax = patch.turnMax === null ? result.turns : Math.max(patch.turnMax, result.turns);
+        if (result.duraMaterClosed) {
+          patch.closures++;
+          if (result.status === "success" && result.winner === result.closedByPlayer) {
+            patch.closureWins++;
+          }
+        }
         if (result.status === "success") {
           patch.winsByPlayer[result.winner]++;
           patch.pointsByPlayer[result.winner] += job.players;
@@ -514,12 +555,42 @@ function stopSimulations() {
   activeRun = null;
 }
 
+function syncDeckInfo() {
+  if (!els.deckInfo) return;
+  const variant = els.deckEditPanel && !els.deckEditPanel.hidden;
+  els.deckInfo.textContent = variant
+    ? "Mazzo: variante personalizzata (64 codici)."
+    : "Mazzo: ufficiale stampato (64 codici da mpcards-core.js).";
+}
+
+function setDeckEditVisible(visible) {
+  if (!els.deckEditPanel) return;
+  els.deckEditPanel.hidden = !visible;
+  if (els.toggleDeckEdit) {
+    els.toggleDeckEdit.textContent = visible ? "Usa mazzo ufficiale" : "Variante mazzo (sperimentale)";
+  }
+  if (visible && els.deckCodes) {
+    els.deckCodes.value = MPCardsCore.deckCodesText();
+  }
+  syncDeckInfo();
+}
+
 els.workers.value = defaultWorkerCount();
-els.deckCodes.value = MPCardsCore.deckCodesText();
-deckManager = MPCardsDeckManager.init({
-  textarea: els.deckCodes,
-  initialText: els.deckCodes.value
-});
+if (els.deckCodes) els.deckCodes.value = MPCardsCore.deckCodesText();
+setDeckEditVisible(false);
 renderStrategyInputs();
+els.gMin.addEventListener("input", renderStrategyInputs);
+els.gMax.addEventListener("input", renderStrategyInputs);
+if (els.toggleDeckEdit) {
+  els.toggleDeckEdit.addEventListener("click", () => {
+    setDeckEditVisible(els.deckEditPanel.hidden);
+  });
+}
+if (els.deckReset) {
+  els.deckReset.addEventListener("click", () => {
+    if (els.deckCodes) els.deckCodes.value = MPCardsCore.deckCodesText();
+    syncDeckInfo();
+  });
+}
 els.run.addEventListener("click", runSimulations);
 els.stop.addEventListener("click", stopSimulations);
