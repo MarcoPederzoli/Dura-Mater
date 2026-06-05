@@ -1,5 +1,8 @@
 "use strict";
 
+/** Etichetta build UI — se non la vedi in fondo alla pagina, non stai aprendo questo file. */
+const DM_UI_BUILD = "UI mano 2026-06-05";
+
 const core = MPCardsCore;
 const gameState = MPCardsGameState;
 const COLOR_HEX = {
@@ -71,7 +74,8 @@ const els = {
   strategyHintsPanel: document.querySelector("#strategy-hints-panel"),
   strategyHints: document.querySelector("#strategy-hints"),
   summary: document.querySelector("#summary"),
-  log: document.querySelector("#log")
+  log: document.querySelector("#log"),
+  playFeedback: document.querySelector("#play-feedback")
 };
 
 let game = null;
@@ -91,6 +95,7 @@ function resetTransientUi() {
   selectedCardUid = null;
   highlightedMoves = [];
   previewCardUid = null;
+  setPlayFeedback("");
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -102,6 +107,30 @@ function clampNumber(value, min, max, fallback) {
 function setStatus(text, className = "") {
   els.status.textContent = text;
   els.status.className = `status ${className}`.trim();
+}
+
+function setPlayFeedback(text) {
+  if (!els.playFeedback) return;
+  els.playFeedback.textContent = text || "";
+}
+
+function updateHandSelectionStatus(handLength, player, modeLabel) {
+  if (!els.handDockStatus) return;
+  if (selectedCardUid && game) {
+    const hand = game.state.hands[player] || [];
+    const card = hand.find(entry => entry.uid === selectedCardUid);
+    const name = card && globalThis.MPCardsNames
+      ? MPCardsNames.formatCardName(card)
+      : card?.code || "carta";
+    els.handDockStatus.textContent = `${handLength} carte · Selezionata: ${name}`;
+    els.handDockStatus.className = "status bad";
+    if (els.turnStatus) {
+      els.turnStatus.textContent = `Posa «${name}»: clicca una casella evidenziata sul tabellone`;
+    }
+    return;
+  }
+  els.handDockStatus.className = "status";
+  els.handDockStatus.textContent = `${handLength} carte · ${modeLabel}`;
 }
 
 function syncSpeedControls(source) {
@@ -454,11 +483,34 @@ function playManualMove(move) {
 }
 
 function selectCard(cardUid) {
-  if (!game || isBotTurn()) return;
+  if (!game) return;
+  if (isBotTurn()) {
+    setPlayFeedback("È il turno del computer: attendi, oppure imposta Giocatore 1 su Manuale.");
+    return;
+  }
+  const hand = game.state.hands[game.state.currentPlayer] || [];
+  const card = hand.find(entry => entry.uid === cardUid);
+  const moves = currentMoves().filter(move => move.cardUid === cardUid);
+  if (!card || moves.length === 0) {
+    setPlayFeedback("Questa carta non si può posare ora.");
+    return;
+  }
   selectedCardUid = cardUid;
   previewCardUid = null;
-  highlightedMoves = currentMoves().filter(move => move.cardUid === cardUid);
-  render();
+  highlightedMoves = moves;
+  const name = globalThis.MPCardsNames ? MPCardsNames.formatCardName(card) : card.code;
+  setPlayFeedback(`Carta selezionata: ${name} — ora clicca sul tabellone.`);
+  renderBoard();
+  renderHand();
+  renderActions();
+}
+
+function activateHandCard(cardUid, event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  selectCard(cardUid);
 }
 
 function hoverCard(cardUid) {
@@ -467,7 +519,6 @@ function hoverCard(cardUid) {
   previewCardUid = null;
   highlightedMoves = currentMoves().filter(move => move.cardUid === cardUid);
   renderBoard();
-  renderHand();
 }
 
 function clearHover() {
@@ -476,7 +527,6 @@ function clearHover() {
     ? currentMoves().filter(move => move.cardUid === selectedCardUid)
     : [];
   renderBoard();
-  renderHand();
 }
 
 function hoverSuggestion(move) {
@@ -510,6 +560,7 @@ function cardTile(card) {
     const img = document.createElement("img");
     img.src = artSrc;
     img.alt = `Carta ${card.code}`;
+    img.draggable = false;
     img.loading = "lazy";
     img.decoding = "async";
     tile.appendChild(img);
@@ -535,6 +586,14 @@ function render() {
   renderActions();
   updatePlayerHandCounts();
   renderLog();
+  if (selectedCardUid && game && game.state.status === "playing") {
+    const player = game.state.currentPlayer;
+    const hand = game.state.hands[player] || [];
+    const modeLabel = game.modes[player] === "bot"
+      ? core.strategyShortLabel(game.strategies[player])
+      : "Manuale";
+    updateHandSelectionStatus(hand.length, player, modeLabel);
+  }
 }
 
 function renderBoard() {
@@ -571,7 +630,17 @@ function renderBoard() {
         score.className = "target-score";
         score.textContent = target.compatibleNeighbors;
         cell.appendChild(score);
-        cell.addEventListener("click", () => playManualMove(target));
+        cell.addEventListener("click", () => {
+          if (!selectedCardUid) {
+            setPlayFeedback("Seleziona prima una carta in mano (click sulla carta → bordo rosso).");
+            return;
+          }
+          if (target.cardUid !== selectedCardUid) {
+            setPlayFeedback("Questa casella non corrisponde alla carta selezionata.");
+            return;
+          }
+          playManualMove(target);
+        });
       }
       els.board.appendChild(cell);
     }
@@ -633,19 +702,33 @@ function renderHandInto(container) {
   const useDockLayout = container === els.handDock;
   for (const card of hand) {
     const item = document.createElement("div");
+    const isSelected = selectedCardUid === card.uid;
+    const canPlay = playable.has(card.uid) && interactive;
     item.className = "hand-card";
-    if (playable.has(card.uid) && interactive) item.classList.add("playable");
-    if (selectedCardUid === card.uid) item.classList.add("selected");
+    item.dataset.cardUid = card.uid;
+    if (canPlay && !isSelected) item.classList.add("playable");
+    if (isSelected) item.classList.add("selected");
     if (previewCardUid === card.uid) item.classList.add("preview");
     item.appendChild(cardTile(card));
-    if (playable.has(card.uid) && interactive) {
+    if (isSelected) {
+      const badge = document.createElement("span");
+      badge.className = "hand-card-selected-badge";
+      badge.textContent = "Scelta";
+      item.appendChild(badge);
+    }
+    if (canPlay) {
       item.addEventListener("mouseenter", () => hoverCard(card.uid));
       item.addEventListener("mouseleave", clearHover);
-      item.addEventListener("click", () => selectCard(card.uid));
+      if (!useDockLayout) {
+        item.addEventListener("click", event => activateHandCard(card.uid, event));
+      }
     }
     if (useDockLayout) {
       const entry = document.createElement("div");
       entry.className = "hand-dock-entry";
+      if (canPlay) {
+        entry.addEventListener("click", event => activateHandCard(card.uid, event));
+      }
       entry.appendChild(item);
       const name = document.createElement("p");
       name.className = "card-name";
@@ -673,12 +756,10 @@ function renderHand() {
   if (els.handDockTitle) {
     els.handDockTitle.textContent = `Mano — ${playerLabel(player)}`;
   }
-  if (els.handDockStatus) {
-    const modeLabel = game.modes[player] === "bot"
-      ? core.strategyShortLabel(game.strategies[player])
-      : "Manuale";
-    els.handDockStatus.textContent = `${hand.length} carte · ${modeLabel}`;
-  }
+  const modeLabel = game.modes[player] === "bot"
+    ? core.strategyShortLabel(game.strategies[player])
+    : "Manuale";
+  updateHandSelectionStatus(hand.length, player, modeLabel);
   renderHandInto(els.hand);
   renderHandInto(els.handDock);
 }
@@ -735,11 +816,13 @@ function renderSummary() {
   if (!game) return;
   const state = game.state;
   const player = state.currentPlayer;
-  els.turnStatus.textContent = state.status === "playing"
-    ? `${playerLabel(player)}, requisito ${Math.min(currentRequirement(), 4)}`
-    : state.status === "success"
-      ? `Vince ${playerLabel(state.winner)}`
-      : "Stallo";
+  if (!selectedCardUid) {
+    els.turnStatus.textContent = state.status === "playing"
+      ? `${playerLabel(player)}, requisito ${Math.min(currentRequirement(), 4)}`
+      : state.status === "success"
+        ? `Vince ${playerLabel(state.winner)}`
+        : "Stallo";
+  }
   els.activePlayer.textContent = state.status === "playing"
     ? `${playerLabel(player)} ${game.modes[player] === "bot" ? core.strategyShortLabel(game.strategies[player]) : "Manuale"}`
     : state.status === "success"
@@ -764,10 +847,12 @@ function renderSummary() {
     row.children[1].textContent = value;
     els.summary.appendChild(row);
   }
-  setStatus(
-    state.status === "playing" ? "Partita in corso." : state.status === "success" ? `Vince ${playerLabel(state.winner)}.` : "Partita in stallo.",
-    state.status === "success" ? "good" : state.status === "stalled" ? "bad" : ""
-  );
+  if (!selectedCardUid) {
+    setStatus(
+      state.status === "playing" ? "Partita in corso." : state.status === "success" ? `Vince ${playerLabel(state.winner)}.` : "Partita in stallo.",
+      state.status === "success" ? "good" : state.status === "stalled" ? "bad" : ""
+    );
+  }
 }
 
 function updatePlayerHandCounts() {

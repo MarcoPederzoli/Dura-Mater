@@ -220,6 +220,23 @@
       min-width: 190px;
     }
 
+    .play-feedback {
+      flex: 1 1 100%;
+      margin: 0;
+      padding: 6px 10px;
+      border-radius: 7px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: var(--bad);
+      font-size: 14px;
+      font-weight: 600;
+      min-height: 2rem;
+    }
+
+    .play-feedback:empty {
+      display: none;
+    }
+
     .play-area {
       display: grid;
       gap: 18px;
@@ -394,6 +411,7 @@
       padding: 4px;
       background: #f4efe7;
       cursor: default;
+      position: relative;
     }
 
     .hand-card.playable {
@@ -401,18 +419,42 @@
       cursor: pointer;
     }
 
-    /* Click singolo: carta scelta per la posa (distinta dalle altre posabili) */
-    .hand-card.selected,
-    .hand-card.playable.selected {
-      border-color: var(--bad);
-      border-width: 3px;
-      background: #fef2f2;
+    /* Click: solo la carta scelta (le altre restano verdi/teal) */
+    .hand-card.selected {
+      border: 4px solid var(--bad) !important;
+      background: #fef2f2 !important;
       outline: 3px solid var(--bad);
       outline-offset: 2px;
-      box-shadow: 0 0 0 4px rgba(185, 28, 28, 0.35);
+      box-shadow: 0 0 0 5px rgba(185, 28, 28, 0.4);
       cursor: pointer;
-      position: relative;
-      z-index: 1;
+      z-index: 2;
+    }
+
+    .hand-card.selected .card-tile {
+      box-shadow: inset 0 0 0 3px var(--bad), 0 0 0 2px var(--bad);
+    }
+
+    .hand-card .card-tile img {
+      -webkit-user-drag: none;
+      user-drag: none;
+      pointer-events: none;
+    }
+
+    .hand-card-selected-badge {
+      position: absolute;
+      top: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 3;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: var(--bad);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      pointer-events: none;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
     }
 
     .side {
@@ -776,6 +818,7 @@
 
     <div id="game-shell" class="game-shell" hidden>
       <div class="gamebar">
+        <p id="play-feedback" class="play-feedback" aria-live="polite"></p>
         <div class="pill"><span id="active-player">-</span><strong id="draw-count">Pesca: 0</strong></div>
         <label class="speed-control" aria-label="Velocita' computer">
           <select id="speed-live">
@@ -854,7 +897,7 @@
         </div>
       </div>
     </div>
-    <div id="app-version" class="app-version">v0.1.0 local</div>
+    <div id="app-version" class="app-version">v0.1.2 · UI mano 2026-06-05</div>
   </main>
 
   <input id="load-game-file" type="file" accept="application/json,.json" hidden>
