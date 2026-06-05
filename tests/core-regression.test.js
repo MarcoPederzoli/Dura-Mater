@@ -132,9 +132,9 @@ function testGameSessionExportImport() {
   assert.equal(imported.config.strategies[0], "random");
 }
 
-function testDuraMaterClosedInvertsTurnOrder() {
-  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
-  const state = core.setupGame(deck, { size: 3, players: 4, random: () => 0, invertTurnOrderOnClose: true });
+function testDuraMaterClosedInvertsTurnDirection() {
+  const deck = core.simulationDeck().filter(c => Number(c.value) <= 3);
+  const state = core.setupGame(deck, { size: 3, players: 4, random: () => 0 });
   state.board = [
     { x: 0, y: 0, card: card("118"), playerId: 0 },
     { x: 2, y: 0, card: card("227"), playerId: 0 },
@@ -143,11 +143,10 @@ function testDuraMaterClosedInvertsTurnOrder() {
     { x: 2, y: 2, card: card("328"), playerId: 0 }
   ];
   assert.equal(core.isDuraMaterDelimited(state), true);
-  assert.equal(state.duraMaterClosed, false);
   core.maybeCloseDuraMater(state, 2);
   assert.equal(state.duraMaterClosed, true);
-  assert.equal(state.closedByPlayer, 2);
-  assert.deepEqual(state.turnOrder, [2, 1, 0, 3]);
+  assert.equal(state.turnDirection, -1);
+  assert.deepEqual(state.turnOrder, [0, 1, 2, 3]);
   state.currentPlayer = 2;
   core.endTurn(state);
   assert.equal(state.currentPlayer, 1);
@@ -155,49 +154,59 @@ function testDuraMaterClosedInvertsTurnOrder() {
   assert.equal(state.currentPlayer, 0);
 }
 
-function testDuraMaterClosedKeepsDefaultTurnOrderWhenDisabled() {
-  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
-  const state = core.setupGame(deck, { size: 3, players: 4, random: () => 0, invertTurnOrderOnClose: false });
+function testAxisCloseTogglesOnFirstAxisThenDm() {
+  const deck = core.simulationDeck().filter(c => Number(c.value) <= 3);
+  const state = core.setupGame(deck, { size: 3, players: 3, random: () => 0 });
   state.board = [
     { x: 0, y: 0, card: card("118"), playerId: 0 },
-    { x: 2, y: 0, card: card("227"), playerId: 0 },
-    { x: 1, y: 1, card: card("238"), playerId: 0 },
-    { x: 0, y: 2, card: card("247"), playerId: 0 },
-    { x: 2, y: 2, card: card("328"), playerId: 0 }
+    { x: 1, y: 0, card: card("227"), playerId: 1 }
   ];
-  core.maybeCloseDuraMater(state, 2);
-  assert.deepEqual(state.turnOrder, [0, 1, 2, 3]);
-  state.currentPlayer = 2;
+  const before = { widthAxisFixed: false, heightAxisFixed: false };
+  core.handleTurnOrderAfterPlacement(state, 1, before);
+  assert.equal(state.widthAxisFixed, false);
+  assert.equal(state.turnDirection, 1);
+
+  state.board.push({ x: 2, y: 0, card: card("238"), playerId: 2 });
+  const beforeLine = { widthAxisFixed: false, heightAxisFixed: false };
+  core.handleTurnOrderAfterPlacement(state, 2, beforeLine);
+  assert.equal(state.widthAxisFixed, true);
+  assert.equal(state.firstAxisInversionDone, true);
+  assert.equal(state.turnDirection, -1);
+  assert.equal(state.duraMaterClosed, false);
+}
+
+function testAxisCloseSameTurnDoubleToggleCancels() {
+  const deck = core.simulationDeck().filter(c => Number(c.value) <= 3);
+  const state = core.setupGame(deck, { size: 3, players: 3, random: () => 0 });
+  state.board = [
+    { x: 0, y: 0, card: card("118"), playerId: 0 },
+    { x: 1, y: 0, card: card("227"), playerId: 0 },
+    { x: 2, y: 0, card: card("238"), playerId: 0 },
+    { x: 0, y: 1, card: card("247"), playerId: 0 },
+    { x: 1, y: 1, card: card("328"), playerId: 0 },
+    { x: 2, y: 1, card: card("336"), playerId: 0 }
+  ];
+  state.board.push({ x: 0, y: 2, card: card("348"), playerId: 0 });
+  const before = { widthAxisFixed: false, heightAxisFixed: false };
+  core.handleTurnOrderAfterPlacement(state, 0, before);
+  assert.equal(state.duraMaterClosed, true);
+  assert.equal(state.turnDirection, 1);
+  state.currentPlayer = 0;
   core.endTurn(state);
-  assert.equal(state.currentPlayer, 3);
+  assert.equal(state.currentPlayer, 1);
 }
 
 testRejectsScreenshotIllegalMove();
 testAcceptsLegalMoveAndRecomputesScore();
 testGameTimelineUndoRedoAndBranching();
 testGameSessionExportImport();
-testDuraMaterClosedInvertsTurnOrder();
-testDuraMaterClosedKeepsDefaultTurnOrderWhenDisabled();
+testDuraMaterClosedInvertsTurnDirection();
+testAxisCloseTogglesOnFirstAxisThenDm();
+testAxisCloseSameTurnDoubleToggleCancels();
 
-function testDrawAtTurnStartBeforePlaying() {
-  const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
-  const state = core.setupGame(deck, { size: 5, players: 3, random: () => 0, drawAtTurnStart: true });
-  assert.equal(state.hands[0].length, 5);
-  assert.equal(state.drawPile.length, 10);
-  assert.equal(core.maybeDrawAtTurnStart(state), true);
-  assert.equal(state.hands[0].length, 6);
-  assert.equal(state.drawPile.length, 9);
-  state.turnPlayed = 1;
-  core.endTurn(state);
-  assert.equal(state.currentPlayer, 1);
-  assert.equal(state.hands[0].length, 6);
-  assert.equal(core.maybeDrawAtTurnStart(state), true);
-  assert.equal(state.hands[1].length, 6);
-}
-
-function testDrawAtTurnEndStillDrawsAfterPlayingWhenDisabled() {
+function testDrawAtTurnEndAfterPlaying() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
-  const state = core.setupGame(deck, { size: 3, players: 2, random: () => 0, drawAtTurnStart: false });
+  const state = core.setupGame(deck, { size: 3, players: 2, random: () => 0 });
   assert.equal(state.hands[0].length, 3);
   state.turnPlayed = 1;
   core.endTurn(state);
@@ -205,8 +214,7 @@ function testDrawAtTurnEndStillDrawsAfterPlayingWhenDisabled() {
   assert.equal(state.hands[1].length, 3);
 }
 
-testDrawAtTurnStartBeforePlaying();
-testDrawAtTurnEndStillDrawsAfterPlayingWhenDisabled();
+testDrawAtTurnEndAfterPlaying();
 
 function testDurissimaEmptyHandDoesNotEndGameEarly() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
@@ -297,6 +305,48 @@ function testSimulateGameReportsClosure() {
 
 testSimulateGameReportsClosure();
 
+function testAccumulateTurnRoleStats() {
+  const patch = { done: 0 };
+  const result = {
+    status: "success",
+    winner: 2,
+    initialTurnOrder: [1, 2, 0],
+    duraMaterClosed: true,
+    closedByPlayer: 1
+  };
+  core.accumulateTurnRoleStats(patch, result, 3);
+  assert.equal(patch.winsByInitialTurnSlot[1], 1);
+  assert.equal(patch.pointsByInitialTurnSlot[1], 3);
+  assert.equal(patch.playedByInitialTurnSlot[0], 1);
+  assert.equal(patch.playedByInitialTurnSlot[1], 1);
+  assert.equal(patch.playedByInitialTurnSlot[2], 1);
+  assert.equal(patch.dmClosedCount, 1);
+  assert.equal(patch.dmCloserByInitialTurnSlot[0], 1);
+  assert.equal(patch.dmCloserWins, 0);
+}
+
+testAccumulateTurnRoleStats();
+
+function testWinnerInitialTurnSlotVaries() {
+  const deck = core.simulationDeck();
+  const slots = new Set();
+  for (let i = 0; i < 80; i++) {
+    const result = core.simulateGame(deck, {
+      size: 4,
+      players: 4,
+      strategies: ["planner", "planner", "planner", "planner"],
+      random: core.mulberry32(12000 + i),
+      randomizeTurnOrder: true
+    });
+    if (result.status === "success" && result.winnerInitialTurnSlot !== null) {
+      slots.add(result.winnerInitialTurnSlot);
+    }
+  }
+  assert.ok(slots.size >= 2, "winner should appear in more than one initial turn slot");
+}
+
+testWinnerInitialTurnSlotVaries();
+
 function testShuffleStrategiesAmongSeats() {
   const deck = core.simulationDeck();
   const seen = new Set();
@@ -314,5 +364,43 @@ function testShuffleStrategiesAmongSeats() {
 }
 
 testShuffleStrategiesAmongSeats();
+
+function testMatrixSizesCompetitivePlayability() {
+  const fullDeck = core.simulationDeck();
+  const mix = [
+    "planner",
+    "random",
+    "compatibility",
+    "high-value",
+    "hand-planner",
+    "low-value",
+    "greedy",
+    "adjacent"
+  ];
+  for (let L = 3; L <= 8; L++) {
+    const strategies = mix.slice(0, L);
+    let successes = 0;
+    const trials = 24;
+    for (let i = 0; i < trials; i++) {
+      const result = core.simulateGame(fullDeck, {
+        size: L,
+        players: Math.min(2, L),
+        strategies,
+        random: core.mulberry32(12000 + L * 100 + i),
+
+        durissimaMater: false,
+        randomizeTurnOrder: true,
+        shuffleStrategiesAmongSeats: true
+      });
+      if (result.status === "success") successes++;
+    }
+    assert.ok(
+      successes >= 2,
+      `L=${L} competitive 2p: expected some winning games, got ${successes}/${trials}`
+    );
+  }
+}
+
+testMatrixSizesCompetitivePlayability();
 
 console.log("core regression tests passed");

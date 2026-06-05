@@ -2,6 +2,8 @@
   "version": "0.1.4",
   "scripts": {
     "test": "node tests/core-regression.test.js",
+    "test:matrix": "node scripts/matrix-workflow-check.js --quick",
+    "test:matrix:full": "node scripts/matrix-workflow-check.js",
     "prepare:partykit": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-partykit-static.ps1",
     "deploy:partykit": "npm run prepare:partykit && npx partykit deploy"
   },

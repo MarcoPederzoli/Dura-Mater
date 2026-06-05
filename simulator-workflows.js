@@ -14,8 +14,6 @@ window.SIMULATOR_WORKFLOWS = {
     description:
       "Esegue in sequenza: 4×4–6×6, 5×5–6×6, 4×4–8×8, solo 5×5, solo 6×6. Run lunga (~tutte le celle dei preset rapidi).",
     shared: {
-      invertTurnOrderOnClose: true,
-      drawAtTurnStart: false,
       durissimaMater: false,
       fixedTurnOrder: false
     },
@@ -32,8 +30,6 @@ window.SIMULATOR_WORKFLOWS = {
     label: "Sweep standard (4×4–6×6 + 5×5–6×6)",
     description: "Due sweep principali con P su tutti i posti. ~23 casi L×G, 500 partite/caso.",
     shared: {
-      invertTurnOrderOnClose: true,
-      drawAtTurnStart: false,
       durissimaMater: false,
       fixedTurnOrder: false
     },
@@ -48,8 +44,6 @@ window.SIMULATOR_WORKFLOWS = {
     description:
       "Ogni posto ha strategia diversa (P/R/M/A). Ordine iniziale casuale ogni partita: confronta tabella G1…Gn con tabella strategie nel JSON.",
     shared: {
-      invertTurnOrderOnClose: true,
-      drawAtTurnStart: false,
       durissimaMater: false,
       fixedTurnOrder: false
     },
@@ -71,8 +65,6 @@ window.SIMULATOR_WORKFLOWS = {
     label: "Posto vs strategia · 5×5 · 4 gioc.",
     description: "5×5 con P, H, M, R sui quattro posti. 5000 partite.",
     shared: {
-      invertTurnOrderOnClose: true,
-      drawAtTurnStart: false,
       durissimaMater: false,
       fixedTurnOrder: false
     },
@@ -95,8 +87,6 @@ window.SIMULATOR_WORKFLOWS = {
     description:
       "Due step: stesso schema posto/strategia su 5×5 e 6×6 per vedere se il vantaggio segue la strategia o la dimensione.",
     shared: {
-      invertTurnOrderOnClose: true,
-      drawAtTurnStart: false,
       durissimaMater: false,
       fixedTurnOrder: false
     },

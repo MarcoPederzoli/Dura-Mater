@@ -70,16 +70,54 @@ Ogni step può fissare `strategies: ["planner","random",…]` per **G1…Gn**. C
 
 ### Audit per dimensione matrice (`simulator-workflows-matrix.js`)
 
-Sei workflow **`Matrice 3×3` … `Matrice 8×8`** (`matrix-L3` … `matrix-L8`). Per ogni `L` fisso:
+Sei workflow **`Matrice 3×3` … `Matrice 8×8`** (`matrix-L3` … `matrix-L8`). Per ogni `L` fisso, due step:
 
-| Step | Modalità | Pesca |
-|------|----------|-------|
-| `L*-comp-end` | competitiva | fine turno (default) |
-| `L*-comp-start` | competitiva | inizio turno |
-| `L*-duri-end` | Durissima Mater | fine turno |
-| `L*-duri-start` | Durissima Mater | inizio turno |
+| Step | Modalità | Giocatori |
+|------|----------|-----------|
+| `L*-comp` | competitiva (vincitore) | **G = 1 … L** |
+| `L*-duri` | Durissima Mater (matrice piena) | **solo G = 1** |
 
-In tutti gli step: **DM chiusa + inversione turni**, `G` da **1 a L**, strategie distinte su G1…GL con **`shuffleStrategiesAmongSeats`** (ogni partita le strategie cambiano posto) e **ordine iniziale casuale**. Circa **58 800** partite totali se si eseguono tutti e sei (~6k–13k ciascuno). Nel JSON export compare `matrixGuide` per la lettura per dimensione.
+Pesca sempre **a fine turno** (l’opzione «pesca a inizio turno» è stata rimossa).
+
+**Durissima e simulazione:** al tavolo la Durissima è **collaborativa**; i bot multi‑giocatore non condividono le mani. In simulazione ha senso solo **1 giocatore** (equivalente a tenere tutte le carte insieme). I vecchi export con Durissima su G>1 non vanno interpretati come partita reale.
+
+Competitiva: **DM chiusa + inversione turni**, strategie su G1…GL con **`shuffleStrategiesAmongSeats`** e ordine iniziale casuale. Totale indicativo ~**29 400** partite su tutti e sei workflow (prima del refactor erano ~58 800 con anche pesca inizio e Durissima multi‑G).
+
+Workflow **`matrix-all-L3-L8`**: tutti i 12 step in sequenza (3→8).
+
+### Regola ordine di gioco
+
+In partita e nel motore vale sempre l'**inversione alla chiusura di ciascun limite della Dura Mater** (primo asse con fila/colonna di **N** carte, poi griglia **N×N**; due limiti nello stesso turno si annullano). Vedi `RULES.md`.
+
+### Ordine di gioco · stessa strategia (`simulator-workflows-turn-order.js`)
+
+Workflow **`Ordine di gioco · stessa strategia`**: planner, ordine casuale (~**5 940** partite, 180 per cella). JSON: `turnOrderGuide`, `analysis.initialTurn`.
+
+### Equità ruolo nel turno (`simulator-workflows-turn-role.js`)
+
+**Workflow audit:** **`Equità ruolo nel turno (audit)`** (`turn-role-audit`).
+
+Un solo step: planner, ordine iniziale casuale, inversione ai limiti DM. Matrici **3×3 … 8×8**, **G = 1 … L**. Circa **7 260** partite (220 per cella).
+
+**Cosa guardare nel JSON** (e nel pannello analisi):
+
+| Campo | Significato |
+|-------|-------------|
+| `analysis.initialTurn` | Vincitore per ruolo **1° / 2° / …** nel turno **prima** dell’inversione DM. Spread &lt;6 pt ≈ equo. |
+| `analysis.positions` | Posto al tavolo G1…Gn (con ordine casuale dovrebbe essere ~piatto se tutti usano planner). |
+| `analysis.dmCloser` | Chi **chiude** Dura Mater per ruolo nel turno; atteso ~100/G %. |
+| `initialTurnGuide` | Istruzioni di lettura nell’export. |
+
+### Verifica «il gioco funziona» (matrici 3×3–8×8)
+
+| Cosa guardare | Competitiva (`L*-comp`) | Durissima (`L*-duri`, solo G=1) |
+|---------------|-------------------------|----------------------------------|
+| **success%** | Partite con **vincitore** | **Matrice L×L piena** |
+| **stall%** | Nessun vincitore | Griglia non completata |
+| **G=2…L−1** | Deve restare giocabile (non ~100% stalli su L piccole) | — |
+| **G=L** | Spesso pochi stalli in realtà (vittoria rapida) | — |
+
+Da terminale: `npm run test:matrix` (campione ridotto). Export storici in `tests/matrix-L*.json` usano ancora 4 step/step vecchi; rieseguire i workflow dopo aggiornamento.
 
 ## Bilanciamento — come usare il simulatore
 

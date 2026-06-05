@@ -55,7 +55,7 @@ Nomi leggibili (es. «Cinque di Lampi Viola»): `card-names.js` — regole di de
 - Regole operative: `RULES.md` (in evoluzione — il codice serve a **testare e modificare** le regole).
 - Stato partita serializzabile; turni, mosse legali, bot, `simulateGame`.
 - **Dura Mater chiusa:** quando l’**ingombro** delle carte posate raggiunge **N×N** (stesso criterio del limite posa: `boardBounds` larghezza e altezza entrambe = `N`). **Non** è “colonna/riga piena di N carte”.
-- Alla chiusura: `duraMaterClosed = true`, `closedByPlayer` = chi ha chiuso, `turnOrder` **invertito** da quel giocatore (es. 8 giocatori, chiude G3 → ordine 3→2→1→8→7→6→5→4). Valido fino a fine partita.
+- Inversione turno alla chiusura di ciascun **limite** della Dura Mater (primo asse fissato con fila/colonna di N carte, poi griglia N×N). Direzione `turnDirection` ±1 sull'ordine ciclico iniziale; due limiti nello stesso turno → effetto netto nullo.
 - Funzioni utili: `boardFootprint`, `isDuraMaterDelimited`, `maybeCloseDuraMater`, `nextPlayerId`.
 
 ## UI gioco (`game.js` + `index.html`)

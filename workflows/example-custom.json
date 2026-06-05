@@ -3,8 +3,6 @@
   "label": "Esempio workflow personalizzato",
   "description": "Due step: posto vs strategia su 4×4 e 5×5. Importa con «Importa JSON».",
   "shared": {
-    "invertTurnOrderOnClose": true,
-    "drawAtTurnStart": false,
     "durissimaMater": false,
     "fixedTurnOrder": false
   },

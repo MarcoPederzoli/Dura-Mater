@@ -7,8 +7,6 @@
 (function registerAuditWorkflows() {
   const catalog = window.SIMULATOR_WORKFLOWS || {};
   const shared = {
-    invertTurnOrderOnClose: true,
-    drawAtTurnStart: false,
     durissimaMater: false,
     fixedTurnOrder: false
   };

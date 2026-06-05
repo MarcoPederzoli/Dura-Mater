@@ -32,7 +32,8 @@ function playerLabel(playerIndex) {
 
 function formatTurnOrder(state) {
   if (!state || !state.turnOrder) return "";
-  return state.turnOrder.map(playerLabel).join(" → ");
+  const arrow = state.turnDirection === -1 ? " ← " : " → ";
+  return state.turnOrder.map(playerLabel).join(arrow);
 }
 
 const els = {
@@ -833,7 +834,9 @@ function renderSummary() {
     ["Stato", state.status],
     ["Turni", state.turns],
     ["Dura Mater", state.duraMaterClosed ? `Chiusa (da ${playerLabel(state.closedByPlayer)})` : "Aperta"],
-    ...(state.duraMaterClosed ? [["Ordine turni", formatTurnOrder(state)]] : []),
+    ...(state.firstAxisInversionDone || state.duraMaterClosed
+      ? [["Ordine turni", `${formatTurnOrder(state)}${state.turnDirection === -1 ? " · invertito" : ""}`]]
+      : []),
     ["Giocatore", `${playerLabel(player)} (${game.modes[player]})`],
     ["Strategia", game.modes[player] === "bot" ? core.strategyLabel(game.strategies[player]) : "Manuale"],
     ["Mazzo pesca", state.drawPile.length],

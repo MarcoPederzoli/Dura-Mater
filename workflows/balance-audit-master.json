@@ -3,8 +3,6 @@
   "label": "Audit bilanciamento MASTER (import)",
   "description": "Stessa definizione di simulator-workflows-audit.js. Usa Importa JSON se il menu non elenca il workflow.",
   "shared": {
-    "invertTurnOrderOnClose": true,
-    "drawAtTurnStart": false,
     "durissimaMater": false,
     "fixedTurnOrder": false
   },

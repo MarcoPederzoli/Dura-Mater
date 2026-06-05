@@ -13,8 +13,6 @@ const DEFAULT_PREFS = {
   gMax: 8,
   workers: null,
   seed: "",
-  invertTurnOrderOnClose: true,
-  drawAtTurnStart: false,
   durissimaMater: false,
   fixedTurnOrder: false,
   deckEditOpen: false,
@@ -30,8 +28,6 @@ const els = {
   gMax: document.querySelector("#g-max"),
   workers: document.querySelector("#workers"),
   seed: document.querySelector("#seed"),
-  invertOrderOnClose: document.querySelector("#invert-order-on-close"),
-  drawAtTurnStart: document.querySelector("#draw-at-turn-start"),
   durissimaMater: document.querySelector("#durissima-mater"),
   fixedTurnOrder: document.querySelector("#fixed-turn-order"),
   deckCodes: document.querySelector("#deck-codes"),
@@ -75,8 +71,6 @@ const SIM_PRESETS = {
     lMax: 6,
     gMin: 2,
     gMax: 6,
-    invertTurnOrderOnClose: true,
-    drawAtTurnStart: false,
     durissimaMater: false,
     fixedTurnOrder: false,
     strategy: "planner"
@@ -88,8 +82,6 @@ const SIM_PRESETS = {
     lMax: 6,
     gMin: 2,
     gMax: 6,
-    invertTurnOrderOnClose: true,
-    drawAtTurnStart: false,
     durissimaMater: false,
     fixedTurnOrder: false,
     strategy: "planner"
@@ -101,8 +93,6 @@ const SIM_PRESETS = {
     lMax: 8,
     gMin: 2,
     gMax: 8,
-    invertTurnOrderOnClose: true,
-    drawAtTurnStart: false,
     durissimaMater: false,
     fixedTurnOrder: false,
     strategy: "planner"
@@ -114,8 +104,6 @@ const SIM_PRESETS = {
     lMax: 5,
     gMin: 4,
     gMax: 4,
-    invertTurnOrderOnClose: true,
-    drawAtTurnStart: false,
     durissimaMater: false,
     fixedTurnOrder: false,
     strategy: "planner"
@@ -127,8 +115,6 @@ const SIM_PRESETS = {
     lMax: 6,
     gMin: 4,
     gMax: 6,
-    invertTurnOrderOnClose: true,
-    drawAtTurnStart: false,
     durissimaMater: false,
     fixedTurnOrder: false,
     strategy: "planner"
@@ -167,12 +153,21 @@ function formatAreaLabel(size) {
   return `${size}×${size}`;
 }
 
+function clampConfigForDurissima(config) {
+  if (!config.durissimaMater || (config.gMin === 1 && config.gMax === 1)) return config;
+  config.gMin = 1;
+  config.gMax = 1;
+  if (els.gMin) els.gMin.value = 1;
+  if (els.gMax) els.gMax.value = 1;
+  return config;
+}
+
 function readConfig() {
   const lMin = clampNumber(els.lMin.value, 3, 8, 3);
   const lMax = clampNumber(els.lMax.value, 3, 8, 8);
   const gMin = clampNumber(els.gMin.value, 1, 8, 1);
   const gMax = clampNumber(els.gMax.value, 1, 8, 8);
-  const config = {
+  const config = clampConfigForDurissima({
     count: clampNumber(els.count.value, 1, 100000, 100),
     lMin: Math.min(lMin, lMax),
     lMax: Math.max(lMin, lMax),
@@ -180,13 +175,11 @@ function readConfig() {
     gMax: Math.max(gMin, gMax),
     workers: clampNumber(els.workers.value, 1, 32, defaultWorkerCount()),
     seed: els.seed.value.trim() || String(Date.now()),
-    invertTurnOrderOnClose: Boolean(els.invertOrderOnClose?.checked),
-    drawAtTurnStart: Boolean(els.drawAtTurnStart?.checked),
     durissimaMater: Boolean(els.durissimaMater?.checked),
     randomizeTurnOrder: !Boolean(els.fixedTurnOrder?.checked),
     deckCodes: readDeckCodesText(),
     strategies: readStrategies()
-  };
+  });
   MPCardsCore.parseDeckCodes(config.deckCodes);
   if (els.deckCodes && els.deckEditPanel && !els.deckEditPanel.hidden) {
     els.deckCodes.value = config.deckCodes;
@@ -233,8 +226,6 @@ function normalizePrefs(raw) {
     ? workersFallback
     : clampNumber(prefs.workers, 1, 32, workersFallback);
   prefs.seed = typeof prefs.seed === "string" ? prefs.seed : DEFAULT_PREFS.seed;
-  prefs.invertTurnOrderOnClose = prefs.invertTurnOrderOnClose !== false;
-  prefs.drawAtTurnStart = prefs.drawAtTurnStart === true;
   prefs.durissimaMater = prefs.durissimaMater === true;
   prefs.fixedTurnOrder = prefs.fixedTurnOrder === true || prefs.randomizeTurnOrder === false;
   prefs.deckEditOpen = Boolean(prefs.deckEditOpen);
@@ -265,8 +256,6 @@ function collectPrefs() {
     gMax: els.gMax.value,
     workers: els.workers.value,
     seed: els.seed.value,
-    invertTurnOrderOnClose: Boolean(els.invertOrderOnClose?.checked),
-    drawAtTurnStart: Boolean(els.drawAtTurnStart?.checked),
     durissimaMater: Boolean(els.durissimaMater?.checked),
     fixedTurnOrder: Boolean(els.fixedTurnOrder?.checked),
     deckEditOpen: Boolean(els.deckEditPanel && !els.deckEditPanel.hidden),
@@ -284,8 +273,6 @@ function applyPrefs(prefs) {
   els.gMax.value = normalized.gMax;
   els.workers.value = normalized.workers;
   els.seed.value = normalized.seed;
-  if (els.invertOrderOnClose) els.invertOrderOnClose.checked = normalized.invertTurnOrderOnClose;
-  if (els.drawAtTurnStart) els.drawAtTurnStart.checked = normalized.drawAtTurnStart;
   if (els.durissimaMater) els.durissimaMater.checked = normalized.durissimaMater;
   if (els.fixedTurnOrder) els.fixedTurnOrder.checked = normalized.fixedTurnOrder;
   if (els.deckCodes) {
@@ -334,7 +321,7 @@ function resetPrefsToDefaults() {
 function bindPrefsPersistence() {
   const fields = [
     els.count, els.lMin, els.lMax, els.gMin, els.gMax, els.workers, els.seed,
-    els.invertOrderOnClose, els.drawAtTurnStart, els.durissimaMater, els.fixedTurnOrder
+    els.durissimaMater, els.fixedTurnOrder
   ];
   for (const field of fields) {
     if (!field) continue;
@@ -399,8 +386,6 @@ function applySimulationPreset(key) {
   els.lMax.value = String(preset.lMax);
   els.gMin.value = preset.gMin;
   els.gMax.value = preset.gMax;
-  if (els.invertOrderOnClose) els.invertOrderOnClose.checked = preset.invertTurnOrderOnClose;
-  if (els.drawAtTurnStart) els.drawAtTurnStart.checked = preset.drawAtTurnStart;
   if (els.durissimaMater) els.durissimaMater.checked = preset.durissimaMater;
   if (els.fixedTurnOrder) els.fixedTurnOrder.checked = preset.fixedTurnOrder;
   setAllStrategies(preset.strategy);
@@ -428,8 +413,6 @@ function makeJobs(config, stepId = "") {
             : `${config.seed}:${size}:${players}`,
           deckCodes: config.deckCodes,
           strategies: config.strategies.slice(0, players),
-          invertTurnOrderOnClose: config.invertTurnOrderOnClose,
-          drawAtTurnStart: config.drawAtTurnStart,
           durissimaMater: config.durissimaMater,
           randomizeTurnOrder: config.randomizeTurnOrder !== false,
           shuffleStrategiesAmongSeats: config.shuffleStrategiesAmongSeats === true
@@ -459,7 +442,7 @@ function stepConfigFromWorkflowStep(step, shared, uiConfig) {
   if (step.strategy && !step.strategies) {
     for (let i = 0; i < 8; i++) strategies[i] = step.strategy;
   }
-  return {
+  const config = {
     count: clampNumber(step.count, 1, 100000, 100),
     lMin: Math.min(lMin, lMax),
     lMax: Math.max(lMin, lMax),
@@ -467,8 +450,6 @@ function stepConfigFromWorkflowStep(step, shared, uiConfig) {
     gMax: Math.max(gMin, gMax),
     workers: uiConfig.workers,
     seed: uiConfig.seed,
-    invertTurnOrderOnClose: step.invertTurnOrderOnClose ?? shared?.invertTurnOrderOnClose ?? true,
-    drawAtTurnStart: step.drawAtTurnStart ?? shared?.drawAtTurnStart ?? false,
     durissimaMater: step.durissimaMater ?? shared?.durissimaMater ?? false,
     randomizeTurnOrder: !(step.fixedTurnOrder ?? shared?.fixedTurnOrder ?? false),
     shuffleStrategiesAmongSeats: step.shuffleStrategiesAmongSeats === true
@@ -476,6 +457,7 @@ function stepConfigFromWorkflowStep(step, shared, uiConfig) {
     deckCodes: uiConfig.deckCodes,
     strategies
   };
+  return clampConfigForDurissima(config);
 }
 
 function initStepState(stepMeta, config) {
@@ -530,8 +512,6 @@ function applyWorkflowToUi(key) {
   els.lMax.value = String(stepConfig.lMax);
   els.gMin.value = stepConfig.gMin;
   els.gMax.value = stepConfig.gMax;
-  if (els.invertOrderOnClose) els.invertOrderOnClose.checked = stepConfig.invertTurnOrderOnClose;
-  if (els.drawAtTurnStart) els.drawAtTurnStart.checked = stepConfig.drawAtTurnStart;
   if (els.durissimaMater) els.durissimaMater.checked = stepConfig.durissimaMater;
   if (els.fixedTurnOrder) els.fixedTurnOrder.checked = !stepConfig.randomizeTurnOrder;
   renderStrategyInputs(stepConfig.strategies);
@@ -621,6 +601,18 @@ function switchActiveStepUi(state, stepId) {
   setStatus(`Workflow: step «${step.stepLabel}» (${state.workflow.label}).`, "");
 }
 
+function emptyInitialTurnStats() {
+  return {
+    winsByInitialTurnSlot: Array.from({ length: 8 }, () => 0),
+    playedByInitialTurnSlot: Array.from({ length: 8 }, () => 0),
+    pointsByInitialTurnSlot: Array.from({ length: 8 }, () => 0),
+    dmCloserByInitialTurnSlot: Array.from({ length: 8 }, () => 0),
+    starterWins: 0,
+    dmClosedCount: 0,
+    dmCloserWins: 0
+  };
+}
+
 function emptyStats(players) {
   return {
     done: 0,
@@ -632,6 +624,7 @@ function emptyStats(players) {
     playedByStrategy: emptyStrategyWins(),
     pointsByStrategy: emptyStrategyWins(),
     seatStrategy: emptySeatStrategyMaps(),
+    ...emptyInitialTurnStats(),
     stalls: 0,
     turnMin: null,
     turnMax: null,
@@ -685,6 +678,26 @@ function mergeStats(target, patch) {
     }
     for (const [key, count] of Object.entries(patch.seatStrategy.points || {})) {
       target.seatStrategy.points[key] = (target.seatStrategy.points[key] || 0) + count;
+    }
+  }
+  if (patch.winsByInitialTurnSlot) {
+    if (!target.winsByInitialTurnSlot) Object.assign(target, emptyInitialTurnStats());
+    patch.winsByInitialTurnSlot.forEach((count, index) => {
+      target.winsByInitialTurnSlot[index] += count;
+    });
+    patch.playedByInitialTurnSlot.forEach((count, index) => {
+      target.playedByInitialTurnSlot[index] += count;
+    });
+    patch.pointsByInitialTurnSlot.forEach((count, index) => {
+      target.pointsByInitialTurnSlot[index] += count;
+    });
+    target.starterWins += patch.starterWins || 0;
+    target.dmClosedCount += patch.dmClosedCount || 0;
+    target.dmCloserWins += patch.dmCloserWins || 0;
+    if (patch.dmCloserByInitialTurnSlot) {
+      patch.dmCloserByInitialTurnSlot.forEach((count, index) => {
+        target.dmCloserByInitialTurnSlot[index] += count;
+      });
     }
   }
 }
@@ -863,6 +876,13 @@ function cloneStats(stats) {
           points: { ...stats.seatStrategy.points }
         }
       : emptySeatStrategyMaps(),
+    winsByInitialTurnSlot: (stats.winsByInitialTurnSlot || []).slice(),
+    playedByInitialTurnSlot: (stats.playedByInitialTurnSlot || []).slice(),
+    pointsByInitialTurnSlot: (stats.pointsByInitialTurnSlot || []).slice(),
+    starterWins: stats.starterWins || 0,
+    dmCloserByInitialTurnSlot: (stats.dmCloserByInitialTurnSlot || []).slice(),
+    dmClosedCount: stats.dmClosedCount || 0,
+    dmCloserWins: stats.dmCloserWins || 0,
     stalls: stats.stalls,
     turnMin: stats.turnMin,
     turnMax: stats.turnMax,
@@ -892,8 +912,6 @@ function serializeConfig(config) {
     gMax: config.gMax,
     workers: config.workers,
     seed: config.seed,
-    invertTurnOrderOnClose: config.invertTurnOrderOnClose,
-    drawAtTurnStart: config.drawAtTurnStart,
     durissimaMater: config.durissimaMater,
     randomizeTurnOrder: config.randomizeTurnOrder !== false,
     shuffleStrategiesAmongSeats: config.shuffleStrategiesAmongSeats === true,
@@ -1016,9 +1034,13 @@ function buildWorkflowSnapshot(state, meta = {}) {
     shared: state.workflowShared,
     steps,
     auditGuide: state.workflow.auditGuide || null,
+    matrixGuide: state.workflow.matrixGuide || null,
+    inversionGuide: state.workflow.inversionGuide || null,
+    turnOrderGuide: state.workflow.turnOrderGuide || null,
+    initialTurnGuide: state.workflow.initialTurnGuide || null,
     hints: {
       forAnalysis:
-        "Passa questo file intero all'assistente: ogni elemento in `steps` è un blocco scenario; `seatStrategyBreakdown` separa posto+strategia; `analysis.positions` misura solo il posto; `auditGuide` spiega come leggere l'audit MASTER."
+        "Passa questo file intero all'assistente: `analysis.initialTurn` = ruolo 1°/2°/… nel turno iniziale (domanda «primo vs ultimo»); `analysis.positions` = posto G1…Gn. Guide: initialTurnGuide, …"
     }
   };
 }
@@ -1046,6 +1068,12 @@ function formatDeviationPct(ratio) {
   const deviation = (ratio - 1) * 100;
   const sign = deviation > 0 ? "+" : "";
   return `${sign}${deviation.toFixed(1)}%`;
+}
+
+function formatSignedPct(value) {
+  if (value === null || value === undefined) return "—";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)}%`;
 }
 
 function sampleStrength(done) {
@@ -1109,6 +1137,140 @@ function buildAnalysisContext(config, grandTotal) {
     strategyBiasReliable: competitiveBiasReliable,
     warnings
   };
+}
+
+function initialTurnSlotLabel(slot) {
+  const labels = ["1° nel turno", "2° nel turno", "3° nel turno", "4° nel turno", "5° nel turno", "6° nel turno", "7° nel turno", "8° nel turno"];
+  return labels[slot] || `${slot + 1}° nel turno`;
+}
+
+function analyzeInitialTurnSlots(stats, config, ctx) {
+  if (!ctx.competitiveBiasReliable) {
+    return {
+      rows: [],
+      spread: 0,
+      skipped: true,
+      starterWinPct: null,
+      expectedStarterWinPct: null,
+      verdict: "Ruolo nel turno iniziale non calcolabile: troppi stalli o poche partite con vincitore."
+    };
+  }
+  const maxSlots = config.gMax || stats.players || 8;
+  const rows = [];
+  for (let slot = 0; slot < maxSlots; slot++) {
+    const played = stats.playedByInitialTurnSlot?.[slot] || 0;
+    if (!played) continue;
+    const wins = stats.winsByInitialTurnSlot?.[slot] || 0;
+    const points = stats.pointsByInitialTurnSlot?.[slot] || 0;
+    const ratio = performanceRatio(points, played);
+    rows.push({
+      slot,
+      label: initialTurnSlotLabel(slot),
+      role: "ordine di gioco all'inizio partita (prima di eventuale inversione DM)",
+      played,
+      wins,
+      winRate: wins / played,
+      ratio,
+      performancePct: ratio * 100,
+      deviationPct: (ratio - 1) * 100
+    });
+  }
+  rows.sort((a, b) => b.deviationPct - a.deviationPct);
+  const deviations = rows.map(row => row.deviationPct);
+  const spread = deviations.length >= 2 ? Math.max(...deviations) - Math.min(...deviations) : 0;
+  const successes = stats.done - stats.stalls;
+  const starterWinPct = successes > 0 ? (stats.starterWins || 0) / successes * 100 : null;
+  const expectedStarterWinPct = maxSlots > 0 ? 100 / maxSlots : null;
+  let verdict = "Nessun bias marcato sul ruolo nel turno iniziale (1°…n°).";
+  if (rows.length >= 2) {
+    const best = rows[0];
+    const worst = rows[rows.length - 1];
+    if (spread >= 20) {
+      verdict = `Bias turno GRAVE: ${best.label} ${formatDeviationPct(best.ratio)} vs ${worst.label} ${formatDeviationPct(worst.ratio)} (spread ${spread.toFixed(1)} pt).`;
+    } else if (spread >= 12) {
+      verdict = `Bias turno marcato (spread ${spread.toFixed(1)} pt): meglio ${best.label}, peggio ${worst.label}.`;
+    } else if (spread >= 6) {
+      verdict = `Bias turno moderato (spread ${spread.toFixed(1)} pt): ${best.label} vs ${worst.label}.`;
+    }
+  }
+  if (starterWinPct !== null && expectedStarterWinPct !== null) {
+    const starterDelta = starterWinPct - expectedStarterWinPct;
+    if (Math.abs(starterDelta) >= 8) {
+      verdict += ` Chi apre il turno vince ${starterWinPct.toFixed(1)}% (atteso ~${expectedStarterWinPct.toFixed(1)}%).`;
+    }
+  }
+  return { rows, spread, skipped: false, starterWinPct, expectedStarterWinPct, verdict };
+}
+
+function analyzeDmCloserSlots(stats, config, ctx) {
+  const closed = stats.dmClosedCount || 0;
+  if (!closed) {
+    return {
+      rows: [],
+      spread: 0,
+      skipped: true,
+      closerWinPct: null,
+      verdict: "Nessuna chiusura Dura Mater nel campione."
+    };
+  }
+  const maxSlots = config.gMax || stats.players || 8;
+  const expectedPct = maxSlots > 0 ? 100 / maxSlots : 0;
+  const rows = [];
+  for (let slot = 0; slot < maxSlots; slot++) {
+    const count = stats.dmCloserByInitialTurnSlot?.[slot] || 0;
+    if (!count) continue;
+    const sharePct = count / closed * 100;
+    rows.push({
+      slot,
+      label: initialTurnSlotLabel(slot),
+      closings: count,
+      sharePct,
+      expectedPct,
+      deviationPct: sharePct - expectedPct
+    });
+  }
+  rows.sort((a, b) => b.deviationPct - a.deviationPct);
+  const deviations = rows.map(row => row.deviationPct);
+  const spread = deviations.length >= 2 ? Math.max(...deviations) - Math.min(...deviations) : 0;
+  const closerWinPct = closed > 0 && ctx.competitiveBiasReliable
+    ? (stats.dmCloserWins || 0) / closed * 100
+    : null;
+  let verdict = `DM chiusa in ${pct(closed, stats.done)} partite; chi chiude è distribuito senza bias marcato sul ruolo nel turno.`;
+  if (rows.length >= 2) {
+    const best = rows[0];
+    const worst = rows[rows.length - 1];
+    if (spread >= 12) {
+      verdict = `Bias su chi chiude DM: ${best.label} ${best.sharePct.toFixed(1)}% vs atteso ~${expectedPct.toFixed(1)}% (spread ${spread.toFixed(1)} pt).`;
+    } else if (spread >= 6) {
+      verdict = `Leggero bias su chi chiude DM (spread ${spread.toFixed(1)} pt): ${best.label} vs ${worst.label}.`;
+    }
+  }
+  if (closerWinPct !== null) {
+    verdict += ` Chi chiude vince poi: ${closerWinPct.toFixed(1)}% delle chiusure.`;
+  }
+  return { rows, spread, skipped: false, closed, closerWinPct, expectedPct, verdict };
+}
+
+function analyzeScenarioInitialTurn(cells, config, ctx) {
+  if (!ctx.competitiveBiasReliable) return [];
+  const scenarios = [];
+  for (const [id, stats] of cells.entries()) {
+    if (!stats.done) continue;
+    const slots = analyzeInitialTurnSlots(stats, config, ctx);
+    if (slots.skipped || slots.rows.length < 2) continue;
+    const best = slots.rows[0];
+    const worst = slots.rows[slots.rows.length - 1];
+    scenarios.push({
+      id,
+      done: stats.done,
+      spread: slots.spread,
+      best,
+      worst,
+      stallsPct: stats.stalls / stats.done * 100
+    });
+  }
+  scenarios.sort((a, b) => b.spread - a.spread);
+  return scenarios.slice(0, 8);
 }
 
 function analyzePlayerPositions(stats, config, ctx) {
@@ -1247,8 +1409,11 @@ function buildAnalysisReport(grandTotal, config, cells) {
   const sample = sampleStrength(grandTotal.done);
   const context = buildAnalysisContext(config, grandTotal);
   const positions = analyzePlayerPositions(grandTotal, config, context);
+  const initialTurn = analyzeInitialTurnSlots(grandTotal, config, context);
+  const dmCloser = analyzeDmCloserSlots(grandTotal, config, context);
   const strategies = analyzeStrategies(grandTotal, context);
   const scenarios = analyzeScenarios(cells, config, context);
+  const scenarioInitialTurn = analyzeScenarioInitialTurn(cells, config, context);
   const scenarioCompletions = analyzeScenarioCompletions(cells);
   const avgTurns = grandTotal.done ? grandTotal.turnSum / grandTotal.done : 0;
 
@@ -1258,9 +1423,12 @@ function buildAnalysisReport(grandTotal, config, cells) {
     sample,
     context,
     positions,
+    initialTurn,
+    dmCloser,
     strategies,
     seatStrategy,
     scenarios,
+    scenarioInitialTurn,
     scenarioCompletions,
     summary: {
       simulations: grandTotal.done,
@@ -1270,8 +1438,6 @@ function buildAnalysisReport(grandTotal, config, cells) {
       goalLabel: context.durissima ? "Completamento matrice" : "Partite con vincitore",
       scenarioOutcome: scenarioOutcomeLabels(context.durissima),
       options: {
-        invertTurnOrderOnClose: config.invertTurnOrderOnClose,
-        drawAtTurnStart: config.drawAtTurnStart,
         durissimaMater: config.durissimaMater,
         randomizeTurnOrder: config.randomizeTurnOrder !== false
       }
@@ -1286,7 +1452,7 @@ function formatAnalysisPlainText(snapshot) {
     partial ? "(run parziale)" : "",
     `Partite aggregate: ${simulationsDone}`,
     `Parametri: area ${formatAreaLabel(config.lMin)} – ${formatAreaLabel(config.lMax)}, giocatori ${config.gMin}–${config.gMax}, ${config.count} sim/caso`,
-    `Opzioni: ordine DM ${config.invertTurnOrderOnClose ? "on" : "off"}, pesca inizio turno ${config.drawAtTurnStart ? "on" : "off"}, Durissima Mater ${config.durissimaMater ? "on" : "off"}, ordine iniziale ${config.randomizeTurnOrder !== false ? "casuale" : "fisso G1"}`,
+    `Opzioni: inversione ai limiti DM, Durissima Mater ${config.durissimaMater ? "on (solo G=1 in sim)" : "off"}, ordine iniziale ${config.randomizeTurnOrder !== false ? "casuale" : "fisso G1"}`,
     "",
     analysis.sample.text,
     ...analysis.context.warnings.map(note => `⚠ ${note}`),
@@ -1319,6 +1485,43 @@ function formatAnalysisPlainText(snapshot) {
     );
   } else {
     lines.push("", "Posizione:", analysis.positions.verdict);
+  }
+  if (!analysis.initialTurn.skipped && analysis.initialTurn.rows.length) {
+    lines.push(
+      "",
+      "Ruolo nel turno iniziale (1° = apre la partita, prima di inversione DM; 100% = atteso):",
+      ...analysis.initialTurn.rows.map(row =>
+        `- ${row.label}: ${formatRatioPct(row.ratio)} (${formatDeviationPct(row.ratio)}), ${row.wins}/${row.played} vittorie`
+      ),
+      analysis.initialTurn.verdict
+    );
+    if (analysis.initialTurn.starterWinPct !== null) {
+      lines.push(
+        `Chi apre il turno vince: ${analysis.initialTurn.starterWinPct.toFixed(1)}% (atteso ~${analysis.initialTurn.expectedStarterWinPct.toFixed(1)}% con G=${config.gMax})`
+      );
+    }
+  } else {
+    lines.push("", "Turno iniziale:", analysis.initialTurn.verdict);
+  }
+  if (!analysis.dmCloser?.skipped && analysis.dmCloser.rows?.length) {
+    lines.push(
+      "",
+      `Chi chiude Dura Mater (${analysis.dmCloser.closed} chiusure, atteso ~${analysis.dmCloser.expectedPct.toFixed(1)}% per ruolo):`,
+      ...analysis.dmCloser.rows.map(row =>
+        `- ${row.label}: ${row.sharePct.toFixed(1)}% chiusure (${formatSignedPct(row.deviationPct)} vs atteso)`
+      ),
+      analysis.dmCloser.verdict
+    );
+  } else if (analysis.dmCloser?.verdict) {
+    lines.push("", "Chiusura DM:", analysis.dmCloser.verdict);
+  }
+  if (analysis.scenarioInitialTurn?.length) {
+    lines.push("", "Scenari con maggior bias turno iniziale (1°…n° nel turno):");
+    for (const scenario of analysis.scenarioInitialTurn) {
+      lines.push(
+        `- ${scenario.id}: spread ${scenario.spread.toFixed(1)} pt (${scenario.best.label} vs ${scenario.worst.label}), stallo ${scenario.stallsPct.toFixed(1)}%`
+      );
+    }
   }
   if (!analysis.strategies.skipped && analysis.strategies.rows.length) {
     lines.push(
@@ -1353,7 +1556,10 @@ function formatAnalysisPlainText(snapshot) {
 
 function formatWorkflowStepSummary(step) {
   const a = step.analysis.summary;
-  return `${step.stepLabel}: ${a.goalLabel} ${a.successPct.toFixed(1)}%, stallo ${a.stallPct.toFixed(1)}%, ${step.simulationsDone} partite — ${step.analysis.positions.verdict}`;
+  const turn = step.analysis.initialTurn?.skipped
+    ? ""
+    : ` · turno: ${step.analysis.initialTurn.verdict}`;
+  return `${step.stepLabel}: ${a.goalLabel} ${a.successPct.toFixed(1)}%, stallo ${a.stallPct.toFixed(1)}%, ${step.simulationsDone} partite${turn}`;
 }
 
 function formatWorkflowPlainText(snapshot) {
@@ -1401,6 +1607,42 @@ function renderWorkflowAnalysis(snapshot) {
   els.analysisContent.appendChild(stepsBlock);
 
   const last = snapshot.steps[snapshot.steps.length - 1];
+  if (last && !last.analysis.initialTurn?.skipped && last.analysis.initialTurn.rows?.length) {
+    const turnBlock = document.createElement("div");
+    turnBlock.className = "analysis-block";
+    turnBlock.innerHTML = `<h3>Ruolo nel turno (${last.stepLabel})</h3>`;
+    turnBlock.appendChild(renderAnalysisList(last.analysis.initialTurn.rows, row =>
+      `${row.label}: ${formatRatioPct(row.ratio)} (${formatDeviationPct(row.ratio)}), ${row.wins}/${row.played}`
+    ));
+    const turnVerdict = document.createElement("p");
+    turnVerdict.className = "analysis-verdict";
+    turnVerdict.textContent = last.analysis.initialTurn.verdict;
+    turnBlock.appendChild(turnVerdict);
+    if (!last.analysis.dmCloser?.skipped && last.analysis.dmCloser.rows?.length) {
+      turnBlock.appendChild(renderAnalysisList(last.analysis.dmCloser.rows, row =>
+        `Chiude DM — ${row.label}: ${row.sharePct.toFixed(1)}%`
+      ));
+      const dmLine = document.createElement("p");
+      dmLine.textContent = last.analysis.dmCloser.verdict;
+      turnBlock.appendChild(dmLine);
+    }
+    els.analysisContent.appendChild(turnBlock);
+  }
+
+  if (snapshot.initialTurnGuide) {
+    const guide = document.createElement("div");
+    guide.className = "analysis-block";
+    guide.innerHTML = "<h3>Come leggere (ruolo nel turno)</h3>";
+    const parts = [];
+    if (snapshot.initialTurnGuide.question) parts.push(snapshot.initialTurnGuide.question);
+    if (snapshot.initialTurnGuide.read) parts.push(snapshot.initialTurnGuide.read);
+    if (snapshot.initialTurnGuide.compare) parts.push(snapshot.initialTurnGuide.compare);
+    if (snapshot.initialTurnGuide.dmCloser) parts.push(snapshot.initialTurnGuide.dmCloser);
+    if (snapshot.initialTurnGuide.fair) parts.push(snapshot.initialTurnGuide.fair);
+    guide.appendChild(renderAnalysisList(parts, text => text));
+    els.analysisContent.appendChild(guide);
+  }
+
   if (last?.analysis?.seatStrategy?.rows?.length) {
     const seatBlock = document.createElement("div");
     seatBlock.className = "analysis-block";
@@ -1480,7 +1722,7 @@ function renderAnalysis(snapshot) {
     `<p>${modeLine}</p>
      <p>${analysis.summary.goalLabel}: <strong>${analysis.summary.successPct.toFixed(1)}%</strong> · Stallo: <strong>${analysis.summary.stallPct.toFixed(1)}%</strong></p>
      <p>Turni medi: <strong>${analysis.summary.avgTurns.toFixed(1)}</strong></p>
-     <p>Opzioni run: ordine DM ${analysis.summary.options.invertTurnOrderOnClose ? "sì" : "no"}, pesca inizio turno ${analysis.summary.options.drawAtTurnStart ? "sì" : "no"}, ordine iniziale ${analysis.summary.options.randomizeTurnOrder ? "casuale (come partita reale)" : "fisso G1 primo (solo test)"}.</p>`
+     <p>Opzioni run: inversione ai limiti DM, ordine iniziale ${analysis.summary.options.randomizeTurnOrder ? "casuale (come partita reale)" : "fisso G1 primo (solo test)"}.</p>`
   );
   els.analysisContent.appendChild(summaryBlock);
 
@@ -1513,6 +1755,46 @@ function renderAnalysis(snapshot) {
   positionVerdict.textContent = analysis.positions.verdict;
   positionBlock.appendChild(positionVerdict);
   els.analysisContent.appendChild(positionBlock);
+
+  const turnBlock = document.createElement("div");
+  turnBlock.className = "analysis-block";
+  turnBlock.innerHTML = "<h3>Ruolo nel turno iniziale (1° / 2° / …)</h3>";
+  turnBlock.insertAdjacentHTML(
+    "beforeend",
+    "<p>Indipendente dal posto G1…Gn: misura chi era 1°, 2°, … nel turno <strong>prima</strong> di eventuale inversione DM. Con stessa strategia su tutti i posti, qui si vede se il gioco è strutturalmente equo.</p>"
+  );
+  if (!analysis.initialTurn.skipped && analysis.initialTurn.rows.length) {
+    turnBlock.appendChild(renderAnalysisList(analysis.initialTurn.rows, row =>
+      `${row.label}: ${formatRatioPct(row.ratio)} (${formatDeviationPct(row.ratio)}), ${row.wins}/${row.played} vittorie`
+    ));
+    if (analysis.initialTurn.starterWinPct !== null) {
+      const starter = document.createElement("p");
+      starter.textContent =
+        `Chi apre il turno vince: ${analysis.initialTurn.starterWinPct.toFixed(1)}% (atteso ~${analysis.initialTurn.expectedStarterWinPct.toFixed(1)}%).`;
+      turnBlock.appendChild(starter);
+    }
+  }
+  const turnVerdict = document.createElement("p");
+  turnVerdict.className = "analysis-verdict";
+  turnVerdict.textContent = analysis.initialTurn.verdict;
+  turnBlock.appendChild(turnVerdict);
+  els.analysisContent.appendChild(turnBlock);
+
+  if (!analysis.dmCloser?.skipped || analysis.dmCloser?.verdict) {
+    const dmBlock = document.createElement("div");
+    dmBlock.className = "analysis-block";
+    dmBlock.innerHTML = "<h3>Chiusura Dura Mater per ruolo nel turno</h3>";
+    if (!analysis.dmCloser.skipped && analysis.dmCloser.rows.length) {
+      dmBlock.appendChild(renderAnalysisList(analysis.dmCloser.rows, row =>
+        `${row.label}: ${row.sharePct.toFixed(1)}% chiusure (${formatSignedPct(row.deviationPct)} vs ~${row.expectedPct.toFixed(1)}%)`
+      ));
+    }
+    const dmVerdict = document.createElement("p");
+    dmVerdict.className = "analysis-verdict";
+    dmVerdict.textContent = analysis.dmCloser.verdict;
+    dmBlock.appendChild(dmVerdict);
+    els.analysisContent.appendChild(dmBlock);
+  }
 
   const strategyBlock = document.createElement("div");
   strategyBlock.className = "analysis-block";
@@ -1657,8 +1939,6 @@ function workerSource() {
           players: job.players,
           strategies: job.strategies,
           random,
-          invertTurnOrderOnClose: job.invertTurnOrderOnClose !== false,
-          drawAtTurnStart: job.drawAtTurnStart === true,
           durissimaMater: job.durissimaMater === true,
           randomizeTurnOrder: job.randomizeTurnOrder !== false,
           shuffleStrategiesAmongSeats: job.shuffleStrategiesAmongSeats === true
@@ -1696,6 +1976,7 @@ function workerSource() {
         } else {
           patch.stalls++;
         }
+        MPCardsCore.accumulateTurnRoleStats(patch, result, job.players);
 
         if (patch.done >= flushEvery) {
           self.postMessage({ type: "progress", id: job.id, patch });
@@ -1883,6 +2164,15 @@ els.gMax.addEventListener("input", () => {
   renderStrategyInputs();
   scheduleSavePrefs();
 });
+if (els.durissimaMater) {
+  els.durissimaMater.addEventListener("change", () => {
+    if (els.durissimaMater.checked) {
+      clampConfigForDurissima({ gMin: 1, gMax: 1, durissimaMater: true });
+      setStatus("Durissima Mater: simulazione limitata a 1 giocatore (collaborativa al tavolo).", "good");
+    }
+    scheduleSavePrefs();
+  });
+}
 if (els.toggleDeckEdit) {
   els.toggleDeckEdit.addEventListener("click", () => {
     setDeckEditVisible(els.deckEditPanel.hidden);

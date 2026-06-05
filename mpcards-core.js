@@ -172,6 +172,7 @@ const MPCARDS_CORE_SOURCE = `
     return Array.from({ length: players }, (_, step) => (start + step) % players);
   }
 
+  /** @deprecated Usare turnDirection; mantenuto per test legacy. */
   function invertedTurnOrder(players, closerId) {
     const order = [];
     for (let step = 0; step < players; step++) {
@@ -180,36 +181,85 @@ const MPCARDS_CORE_SOURCE = `
     return order;
   }
 
-  function shouldInvertTurnOrderOnClose(state) {
-    return state.invertTurnOrderOnClose !== false;
-  }
-
   function ensureTurnOrder(state) {
     if (!state.turnOrder || state.turnOrder.length !== state.players) {
-      if (state.duraMaterClosed && state.closedByPlayer != null && shouldInvertTurnOrderOnClose(state)) {
-        state.turnOrder = invertedTurnOrder(state.players, state.closedByPlayer);
-      } else {
-        state.turnOrder = defaultTurnOrder(state.players);
-      }
+      state.turnOrder = state.initialTurnOrder
+        ? state.initialTurnOrder.slice()
+        : defaultTurnOrder(state.players);
     }
     return state.turnOrder;
+  }
+
+  function toggleTurnDirection(state) {
+    state.turnDirection = state.turnDirection === -1 ? 1 : -1;
+  }
+
+  function maxLineRun(board, horizontal) {
+    if (!board.length) return 0;
+    const groups = new Map();
+    for (const entry of board) {
+      const key = horizontal ? entry.y : entry.x;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(horizontal ? entry.x : entry.y);
+    }
+    let best = 0;
+    for (const coords of groups.values()) {
+      coords.sort((a, b) => a - b);
+      let run = 1;
+      let localBest = 1;
+      for (let index = 1; index < coords.length; index++) {
+        if (coords[index] === coords[index - 1] + 1) {
+          run++;
+          localBest = Math.max(localBest, run);
+        } else {
+          run = 1;
+        }
+      }
+      best = Math.max(best, localBest);
+    }
+    return best;
+  }
+
+  function syncAxisLocksFromBoard(state) {
+    const size = state.size;
+    state.widthAxisFixed = maxLineRun(state.board, true) >= size;
+    state.heightAxisFixed = maxLineRun(state.board, false) >= size;
+  }
+
+  function handleTurnOrderAfterPlacement(state, closerId, before) {
+    syncAxisLocksFromBoard(state);
+    const hadAxis = before.widthAxisFixed || before.heightAxisFixed;
+    const hasAxis = state.widthAxisFixed || state.heightAxisFixed;
+
+    if (!state.firstAxisInversionDone && hasAxis && !hadAxis) {
+      state.firstAxisInversionDone = true;
+      toggleTurnDirection(state);
+    }
+
+    if (!state.duraMaterClosed && isDuraMaterDelimited(state)) {
+      state.duraMaterClosed = true;
+      state.closedByPlayer = closerId;
+      toggleTurnDirection(state);
+    }
   }
 
   function nextPlayerId(state) {
     const order = ensureTurnOrder(state);
     const index = order.indexOf(state.currentPlayer);
-    const nextIndex = index < 0 ? 0 : (index + 1) % state.players;
+    if (index < 0) return order[0];
+    const step = state.turnDirection === -1 ? -1 : 1;
+    const nextIndex = (index + step + order.length) % order.length;
     return order[nextIndex];
   }
 
   function maybeCloseDuraMater(state, closerId) {
     if (!state || state.duraMaterClosed || !isDuraMaterDelimited(state)) return false;
-    state.duraMaterClosed = true;
-    state.closedByPlayer = closerId;
-    if (shouldInvertTurnOrderOnClose(state)) {
-      state.turnOrder = invertedTurnOrder(state.players, closerId);
-    }
-    return true;
+    const before = {
+      widthAxisFixed: state.widthAxisFixed === true,
+      heightAxisFixed: state.heightAxisFixed === true
+    };
+    handleTurnOrderAfterPlacement(state, closerId, before);
+    return state.duraMaterClosed;
   }
 
   function sharedProperties(a, b) {
@@ -474,7 +524,6 @@ const MPCARDS_CORE_SOURCE = `
     const playerId = state.currentPlayer;
     if ((state.hands[playerId] || []).length > 0) return false;
     if (state.drawPile.length === 0) return false;
-    if (drawsAtTurnStart(state)) return maybeDrawAtTurnStart(state);
     return drawForPlayer(state, playerId);
   }
 
@@ -484,12 +533,15 @@ const MPCARDS_CORE_SOURCE = `
     const cardIndex = hand.findIndex(card => card.uid === legalMove.cardUid);
     if (cardIndex < 0) throw new Error("Carta non presente nella mano.");
     const card = hand.splice(cardIndex, 1)[0];
-    const wasClosed = state.duraMaterClosed;
+    const milestoneBefore = {
+      widthAxisFixed: state.widthAxisFixed === true,
+      heightAxisFixed: state.heightAxisFixed === true
+    };
     state.board.push({ x: legalMove.x, y: legalMove.y, card, playerId });
     state.consecutivePasses = 0;
     state.turnPlayed++;
     state.lastMove = { playerId, card, x: legalMove.x, y: legalMove.y, matches: legalMove.matches, requirement: state.turnPlayed };
-    if (!wasClosed) maybeCloseDuraMater(state, playerId);
+    handleTurnOrderAfterPlacement(state, playerId, milestoneBefore);
     if (isDurissimaMater(state)) {
       maybeCompleteDurissima(state);
     } else if (hand.length === 0) {
@@ -498,26 +550,8 @@ const MPCARDS_CORE_SOURCE = `
     }
   }
 
-  function drawsAtTurnStart(state) {
-    return state.drawAtTurnStart === true;
-  }
-
-  function maybeDrawAtTurnStart(state) {
-    if (!drawsAtTurnStart(state) || state.status !== "playing") return false;
-    if (state.turnPlayed !== 0 || state.turnStartDrawDone) return false;
-    state.turnStartDrawDone = true;
-    state.turnStartDrew = drawForPlayer(state, state.currentPlayer);
-    return state.turnStartDrew;
-  }
-
   function passTurn(state) {
-    let drew;
-    if (!drawsAtTurnStart(state)) {
-      drew = drawForPlayer(state, state.currentPlayer);
-    } else {
-      if (!state.turnStartDrawDone) maybeDrawAtTurnStart(state);
-      drew = Boolean(state.turnStartDrew);
-    }
+    const drew = drawForPlayer(state, state.currentPlayer);
     state.consecutivePasses++;
     const canStall = !isDurissimaMater(state) || !isBoardComplete(state);
     if (canStall && state.consecutivePasses >= state.players && !drew && state.drawPile.length === 0) {
@@ -538,7 +572,6 @@ const MPCARDS_CORE_SOURCE = `
     if (
       state.status === "playing" &&
       state.turnPlayed > 0 &&
-      !drawsAtTurnStart(state) &&
       !(isDurissimaMater(state) && handEmpty)
     ) {
       drawForPlayer(state, playerId);
@@ -546,8 +579,6 @@ const MPCARDS_CORE_SOURCE = `
     state.turns++;
     state.currentPlayer = nextPlayerId(state);
     state.turnPlayed = 0;
-    state.turnStartDrawDone = false;
-    state.turnStartDrew = false;
   }
 
   function setupGame(deck, options) {
@@ -566,13 +597,16 @@ const MPCARDS_CORE_SOURCE = `
     const turnOrder = randomizeTurnOrder
       ? randomInitialTurnOrder(players, random)
       : defaultTurnOrder(players);
+    const initialTurnOrder = turnOrder.slice();
     return {
       size,
       players,
       hands,
       drawPile: shuffled,
       board: [],
-      currentPlayer: turnOrder[0],
+      currentPlayer: initialTurnOrder[0],
+      initialTurnOrder,
+      startingPlayer: initialTurnOrder[0],
       consecutivePasses: 0,
       turns: 0,
       turnPlayed: 0,
@@ -581,13 +615,13 @@ const MPCARDS_CORE_SOURCE = `
       lastMove: null,
       duraMaterClosed: false,
       closedByPlayer: null,
-      invertTurnOrderOnClose: options.invertTurnOrderOnClose !== false,
-      drawAtTurnStart: options.drawAtTurnStart === true,
+      widthAxisFixed: false,
+      heightAxisFixed: false,
+      firstAxisInversionDone: false,
+      turnDirection: 1,
       durissimaMater: options.durissimaMater === true,
       randomizeTurnOrder,
-      turnStartDrawDone: false,
-      turnStartDrew: false,
-      turnOrder
+      turnOrder: initialTurnOrder.slice()
     };
   }
 
@@ -601,7 +635,6 @@ const MPCARDS_CORE_SOURCE = `
 
   function botStep(state, strategies, random) {
     if (state.status !== "playing") return { played: false, passed: false };
-    maybeDrawAtTurnStart(state);
     maybeDrawDurissimaEmptyHand(state);
     const playerId = state.currentPlayer;
     const playerStrategy = Array.isArray(strategies) ? strategies[playerId] : strategies;
@@ -621,6 +654,56 @@ const MPCARDS_CORE_SOURCE = `
     return { played: true, move };
   }
 
+  function initialTurnSlotFor(result, playerId) {
+    const order = result.initialTurnOrder;
+    if (!Array.isArray(order) || !order.length) return playerId;
+    const idx = order.indexOf(playerId);
+    return idx >= 0 ? idx : playerId;
+  }
+
+  function ensureTurnRolePatch(patch) {
+    if (!patch.winsByInitialTurnSlot) {
+      patch.winsByInitialTurnSlot = Array.from({ length: 8 }, () => 0);
+      patch.playedByInitialTurnSlot = Array.from({ length: 8 }, () => 0);
+      patch.pointsByInitialTurnSlot = Array.from({ length: 8 }, () => 0);
+      patch.dmCloserByInitialTurnSlot = Array.from({ length: 8 }, () => 0);
+      patch.starterWins = 0;
+      patch.dmClosedCount = 0;
+      patch.dmCloserWins = 0;
+    }
+  }
+
+  /** Aggrega vincitore e chi chiude DM per ruolo 1°/2°/… nel turno iniziale (simulatore). */
+  function accumulateTurnRoleStats(patch, result, playerCount) {
+    ensureTurnRolePatch(patch);
+    for (let player = 0; player < playerCount; player++) {
+      const slot = initialTurnSlotFor(result, player);
+      patch.playedByInitialTurnSlot[slot]++;
+    }
+    if (result.status === "success") {
+      if (result.winner === null) {
+        for (let player = 0; player < playerCount; player++) {
+          const slot = initialTurnSlotFor(result, player);
+          patch.winsByInitialTurnSlot[slot]++;
+          patch.pointsByInitialTurnSlot[slot] += playerCount;
+        }
+      } else {
+        const slot = initialTurnSlotFor(result, result.winner);
+        patch.winsByInitialTurnSlot[slot]++;
+        patch.pointsByInitialTurnSlot[slot] += playerCount;
+        if (slot === 0) patch.starterWins++;
+      }
+    }
+    if (result.duraMaterClosed && result.closedByPlayer != null) {
+      patch.dmClosedCount++;
+      const closerSlot = initialTurnSlotFor(result, result.closedByPlayer);
+      patch.dmCloserByInitialTurnSlot[closerSlot]++;
+      if (result.status === "success" && result.winner === result.closedByPlayer) {
+        patch.dmCloserWins++;
+      }
+    }
+  }
+
   function simulateGame(deck, options) {
     const random = options.random;
     let strategies = resolveStrategies(options.strategies, options.players, random);
@@ -636,13 +719,26 @@ const MPCARDS_CORE_SOURCE = `
       steps++;
     }
     if (state.status === "playing") state.status = "stalled";
+    const winnerInitialTurnSlot = state.winner === null
+      ? null
+      : state.initialTurnOrder.indexOf(state.winner);
+    const closedByInitialTurnSlot = state.closedByPlayer === null
+      ? null
+      : state.initialTurnOrder.indexOf(state.closedByPlayer);
     return {
       status: state.status,
       winner: state.winner,
       turns: state.turns,
       strategies,
+      startingPlayer: state.startingPlayer,
+      initialTurnOrder: state.initialTurnOrder.slice(),
+      winnerInitialTurnSlot: winnerInitialTurnSlot >= 0 ? winnerInitialTurnSlot : null,
+      closedByInitialTurnSlot: closedByInitialTurnSlot >= 0 ? closedByInitialTurnSlot : null,
       duraMaterClosed: state.duraMaterClosed,
       closedByPlayer: state.closedByPlayer,
+      widthAxisFixed: state.widthAxisFixed === true,
+      heightAxisFixed: state.heightAxisFixed === true,
+      turnDirection: state.turnDirection,
       durissimaMater: state.durissimaMater === true,
       boardComplete: isBoardComplete(state)
     };
@@ -677,6 +773,10 @@ const MPCARDS_CORE_SOURCE = `
     defaultTurnOrder,
     randomInitialTurnOrder,
     invertedTurnOrder,
+    maxLineRun,
+    syncAxisLocksFromBoard,
+    toggleTurnDirection,
+    handleTurnOrderAfterPlacement,
     ensureTurnOrder,
     nextPlayerId,
     maybeCloseDuraMater,
@@ -691,8 +791,6 @@ const MPCARDS_CORE_SOURCE = `
     isBoardComplete,
     maybeCompleteDurissima,
     maybeDrawDurissimaEmptyHand,
-    drawsAtTurnStart,
-    maybeDrawAtTurnStart,
     passTurn,
     drawForPlayer,
     endTurn,
@@ -700,6 +798,9 @@ const MPCARDS_CORE_SOURCE = `
     resolveStrategies,
     botStep,
     simulateGame,
+    initialTurnSlotFor,
+    ensureTurnRolePatch,
+    accumulateTurnRoleStats,
     strategyLabel,
     strategyShortLabel
   };

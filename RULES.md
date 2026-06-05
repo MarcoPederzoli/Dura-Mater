@@ -87,22 +87,26 @@ Il nome leggibile in italiano (es. «Cinque di Croci Gialle») e' generato da `c
 5. Si distribuiscono `N` carte a ciascun giocatore.
 6. Le carte non distribuite formano il mazzo di pesca.
 
-## Dura Mater chiusa (inversione turni)
+## Inversione del turno (limiti della Dura Mater)
 
-La matrice e' **Chiusa** quando l'ingombro delle carte posate raggiunge il limite **N×N** (stesso criterio che impedisce di posare oltre: larghezza e altezza relative entrambe pari a **N**). Non serve riempire un'intera riga o colonna di celle.
+La **Dura Mater** e' l'intera griglia di gioco (la matrice **N×N** che si costruisce in partita). Avviene un'**inversione** dell'ordine di gioco alla chiusura di **ciascun limite** della Dura Mater:
 
-La chiusura avviene con la **posa** che porta l'ingombro a N×N (o che lo conferma se era gia' N×N).
+1. **Primo limite** — con una posa, per la prima volta in partita, una sequenza continua di **N** carte in orizzontale **oppure** in verticale fissa un lato della griglia (larghezza o altezza della Dura Mater).
+2. **Secondo limite** — con una posa che porta l'ingombro delle carte al formato **N×N** (Dura Mater chiusa).
 
-Da quel momento, per tutta la partita, l'ordine di gioco si **inverte** rispetto al giocatore che ha chiuso:
+Dopo ogni inversione, chi aveva il turno passa al giocatore precedente nell'ordine ciclico iniziale (es. dopo A → B → C si prosegue C → B → A). L'elenco dei giocatori non cambia: cambia solo la **direzione** (avanti o indietro). Non si ottiene un turno aggiuntivo per chi ha chiuso un limite.
 
-- Esempio con 8 giocatori: se chiude il **Giocatore 3**, l'ordine diventa 3 → 2 → 1 → 8 → 7 → 6 → 5 → 4 (e poi ricomincia).
-- In generale: chi ha chiuso, poi il precedente, fino al 1, poi dall'8 verso il basso fino a completare il giro.
+Se **nello stesso turno** si chiudono entrambi i limiti (due inversioni nella stessa sequenza di pose), gli effetti si **annullano** e la direzione resta quella in corso prima di quel turno.
 
-Serve a bilanciare lo svantaggio di chi gioca dopo gli altri prima della chiusura.
+Ogni inversione e' verificata **al momento della posa** di una carta.
+
+## Dura Mater chiusa
+
+La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **N×N** (larghezza e altezza relative entrambe pari a **N**). La chiusura avviene con la posa che porta l'ingombro al limite (ed e' il **secondo limite** che provoca inversione, salvo annullamento come sopra).
 
 ## Turno di gioco
 
-- I giocatori agiscono a turno (ordine normale 1, 2, … fino alla chiusura; poi ordine invertito come sopra).
+- I giocatori agiscono a turno secondo l'ordine iniziale e la direzione in vigore.
 - Nel proprio turno un giocatore puo' posare da 1 a 4 carte.
 - Il giocatore puo' scegliere di posare meno di 4 carte anche se avrebbe mosse legali disponibili.
 - Alla fine del proprio turno, prima di passare il turno al giocatore successivo, il giocatore deve pescare una carta se il mazzo di pesca contiene ancora carte.

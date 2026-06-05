@@ -653,17 +653,9 @@
           <input id="seed" type="text" placeholder="casuale" aria-label="Seme casuale per riproducibilità">
         </label>
         <label class="option-check">
-          <input id="invert-order-on-close" type="checkbox" checked aria-label="Cambio ordine giocatori alla chiusura DM">
-          Cambio ordine giocatori alla chiusura DM
-        </label>
-        <label class="option-check">
-          <input id="draw-at-turn-start" type="checkbox" aria-label="Pesca all'inizio del turno di gioco">
-          Pesca all'inizio del turno di gioco
-        </label>
-        <label class="option-check">
           <input id="durissima-mater" type="checkbox" aria-label="Durissima Mater">
           Durissima Mater
-          <span class="label-hint">La partita finisce solo quando tutte le carte sono in matrice; mano finita → turno al successivo (collaborativa da 2+ giocatori).</span>
+          <span class="label-hint">Obiettivo: matrice L×L piena. In simulazione usare <strong>1 giocatore</strong> (in tavolo reale è collaborativo; i bot multi‑giocatore non modellano l’aiuto tra giocatori). Pesca a fine turno.</span>
         </label>
         <label class="option-check">
           <input id="fixed-turn-order" type="checkbox" aria-label="Ordine iniziale fisso G1 primo">
@@ -766,6 +758,8 @@
   <script src="simulator-workflows.js"></script>
   <script src="simulator-workflows-audit.js"></script>
   <script src="simulator-workflows-matrix.js"></script>
+  <script src="simulator-workflows-turn-order.js"></script>
+  <script src="simulator-workflows-turn-role.js"></script>
   <script src="simulator.js"></script>
 </body>
 </html>
