@@ -8,6 +8,13 @@ Carica questo file all’inizio di una nuova chat (es. «Leggi `promemoria.md` e
 - **Non** cercare su tutto il disco; **non** usare `DaClaude` (rimossa, tutto è nella cartella sopra).
 - SPA statica: **nessuna build obbligatoria**. Aprire `index.html` nel browser.
 
+## Git / GitHub (gestione a carico dell’IA)
+
+- **Remote:** [https://github.com/MarcoPederzoli/Dura-Mater](https://github.com/MarcoPederzoli/Dura-Mater) — branch `master`.
+- L’utente **non** gestisce commit/push manualmente; a fine sessione o dopo modifiche rilevanti l’agente esegue `git add`, `git commit` (messaggio in italiano, descrittivo), `git push`.
+- VS Code installato solo per setup iniziale; **non** è richiesto all’utente per Git.
+- Se `git push` fallisce per autenticazione scaduta, segnalarlo all’utente (una sola ri-autenticazione GitHub Credential Manager).
+
 ## Cos’è il progetto
 
 Simulatore / gioco locale del gioco da tavolo **Dura Mater** (nel codice compare ancora il nome legacy **MPCards**).

@@ -7,6 +7,12 @@ Progetto SPA statica per **Dura Mater** (codice legacy: MPCards).
 - Il solver/generatore mazzi in `index.html` è stato rimosso; il mazzo è fisso in `mpcards-core.js` (`SIM_DECK_CODES`).
 - Modifiche alle regole: aggiornare `mpcards-core.js`, `RULES.md` e i test in `tests/`.
 
+## Git
+
+- Repository: `https://github.com/MarcoPederzoli/Dura-Mater.git` (branch `master`).
+- Dopo modifiche concluse: commit e push senza chiedere all’utente di usare VS Code o il terminale.
+- Messaggi di commit in italiano, brevi e specifici.
+
 ## Deploy
 
 - Prima di un deploy aggiornare versione in `package.json` e `version.js` (semver indicativo).
