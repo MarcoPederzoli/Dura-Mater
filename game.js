@@ -454,17 +454,16 @@ function playManualMove(move) {
 }
 
 function selectCard(cardUid) {
+  if (!game || isBotTurn()) return;
   selectedCardUid = cardUid;
+  previewCardUid = null;
   highlightedMoves = currentMoves().filter(move => move.cardUid === cardUid);
-  if (highlightedMoves.length === 1) {
-    playManualMove(highlightedMoves[0]);
-    return;
-  }
   render();
 }
 
 function hoverCard(cardUid) {
   if (!game || isBotTurn()) return;
+  if (selectedCardUid) return;
   previewCardUid = null;
   highlightedMoves = currentMoves().filter(move => move.cardUid === cardUid);
   renderBoard();

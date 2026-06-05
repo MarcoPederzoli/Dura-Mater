@@ -404,10 +404,15 @@
     /* Click singolo: carta scelta per la posa (distinta dalle altre posabili) */
     .hand-card.selected,
     .hand-card.playable.selected {
-      border: 3px solid var(--bad);
+      border-color: var(--bad);
+      border-width: 3px;
       background: #fef2f2;
-      box-shadow: 0 0 0 2px rgba(185, 28, 28, 0.28);
+      outline: 3px solid var(--bad);
+      outline-offset: 2px;
+      box-shadow: 0 0 0 4px rgba(185, 28, 28, 0.35);
       cursor: pointer;
+      position: relative;
+      z-index: 1;
     }
 
     .side {
