@@ -1,0 +1,860 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dura Mater — Gioco</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f4ef;
+      --panel: #ffffff;
+      --ink: #202124;
+      --muted: #61656d;
+      --line: #d9d3c8;
+      --accent: #0f766e;
+      --accent-dark: #0b5f59;
+      --warn: #b45309;
+      --good: #15803d;
+      --bad: #b91c1c;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    main {
+      width: min(1400px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 24px 0 40px;
+    }
+
+    header.page-head nav {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      font-size: 14px;
+    }
+
+    header.page-head nav a {
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    header.page-head nav a[aria-current="page"] {
+      color: var(--ink);
+      pointer-events: none;
+    }
+
+    .page-head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    a { color: var(--accent); }
+
+    section, aside {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(25, 28, 33, 0.05);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    label {
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    input, select, textarea, button {
+      font: inherit;
+    }
+
+    input, select, textarea {
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 8px 10px;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 76px;
+      font: 13px/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      resize: vertical;
+    }
+
+    button {
+      min-height: 40px;
+      border: 0;
+      border-radius: 7px;
+      padding: 10px 13px;
+      color: #fff;
+      background: var(--accent);
+      cursor: pointer;
+    }
+
+    button:hover { background: var(--accent-dark); }
+    button.secondary { background: #374151; }
+    button.secondary:hover { background: #1f2937; }
+    button.warn { background: var(--warn); }
+    button:disabled { opacity: 0.55; cursor: default; }
+
+    .setup {
+      margin-bottom: 18px;
+    }
+
+    body.playing .setup {
+      display: none;
+    }
+
+    .controls,
+    .players {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .players {
+      display: grid;
+      grid-template-columns: 1fr;
+      align-items: stretch;
+    }
+
+    .players.hidden {
+      display: none;
+    }
+
+    .player-row {
+      display: grid;
+      grid-template-columns: minmax(108px, 140px) minmax(120px, 180px) minmax(180px, 260px);
+      gap: 8px;
+      align-items: end;
+      max-width: 560px;
+      padding: 8px 0;
+      border-bottom: 1px solid #ece7df;
+    }
+
+    .player-row:last-child {
+      border-bottom: 0;
+    }
+
+    .setup.started .player-row select,
+    .setup.started #players,
+    .setup.started #size,
+    .setup.started #seed {
+      background: #f3f0ea;
+      color: var(--muted);
+    }
+
+    .game-shell[hidden] {
+      display: none;
+    }
+
+    .gamebar {
+      margin-bottom: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .gamebar .pill {
+      flex: 1 1 260px;
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 8px 10px;
+      background: var(--panel);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 13px;
+    }
+
+    .gamebar .speed-control {
+      min-width: 190px;
+    }
+
+    .play-area {
+      display: grid;
+      gap: 18px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .hand-dock-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(25, 28, 33, 0.05);
+      overflow: hidden;
+    }
+
+    .hand-dock {
+      padding: 16px 18px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      justify-content: center;
+      align-items: flex-end;
+      min-height: 220px;
+      overflow-x: auto;
+    }
+
+    .hand-dock-entry {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+      max-width: 200px;
+    }
+
+    .hand-dock .hand-card {
+      padding: 5px;
+      flex: 0 0 auto;
+    }
+
+    .hand-dock .card-name {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.25;
+      text-align: center;
+      color: var(--ink);
+      max-width: 192px;
+    }
+
+    .hand-dock .card-tile {
+      width: 192px;
+      height: 192px;
+      aspect-ratio: 1;
+      border-radius: 12px;
+      font-size: 18px;
+    }
+
+    .hand-dock .card-tile small {
+      font-size: 11px;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 13px;
+      text-align: right;
+    }
+
+    .status.good { color: var(--good); }
+    .status.bad { color: var(--bad); }
+
+    .board-wrap {
+      padding: 16px;
+      overflow: auto;
+    }
+
+    .board {
+      display: grid;
+      gap: 6px;
+      width: max-content;
+    }
+
+    .cell {
+      width: 58px;
+      height: 58px;
+      border: 1px dashed #d8d0c3;
+      border-radius: 7px;
+      background: #fffdf9;
+      display: grid;
+      place-items: center;
+      position: relative;
+    }
+
+    .cell.target {
+      border: 2px solid var(--accent);
+      background: #e8f5f2;
+      cursor: pointer;
+    }
+
+    .cell.target::after {
+      content: none;
+    }
+
+    .target-score {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 13px;
+    }
+
+    .card-tile {
+      width: 52px;
+      height: 52px;
+      aspect-ratio: 1;
+      border-radius: 7px;
+      border: 1px solid rgba(0, 0, 0, 0.18);
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      color: var(--card-ink, #fff);
+      background: var(--card-bg, #444);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+      user-select: none;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .card-tile.has-art {
+      background: #ece7df;
+      padding: 0;
+    }
+
+    .card-tile.has-art img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center;
+      display: block;
+    }
+
+    .card-tile.has-art .card-fallback {
+      display: none;
+    }
+
+    .card-tile small {
+      display: block;
+      font-size: 10px;
+      font-weight: 700;
+      opacity: 0.85;
+    }
+
+    .hand {
+      padding: 14px 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+      gap: 10px;
+    }
+
+    .hand-card {
+      border: 2px solid transparent;
+      border-radius: 9px;
+      padding: 4px;
+      background: #f4efe7;
+      cursor: default;
+    }
+
+    .hand-card.playable {
+      border-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .hand-card.selected {
+      border-color: var(--warn);
+      background: #fff7ed;
+    }
+
+    .side {
+      display: grid;
+      gap: 18px;
+    }
+
+    .actions,
+    .strategy-hints,
+    .summary,
+    .log {
+      padding: 14px 16px;
+    }
+
+    .actions {
+      display: grid;
+      gap: 10px;
+    }
+
+    .strategy-hints {
+      display: grid;
+      gap: 8px;
+    }
+
+    .strategy-hints[hidden] {
+      display: none;
+    }
+
+    .strategy-hint {
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 8px 10px;
+      background: #fffdf9;
+      color: var(--ink);
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .strategy-hint:hover,
+    .strategy-hint:focus-visible {
+      border-color: var(--accent);
+      background: #e8f5f2;
+      outline: none;
+    }
+
+    .strategy-hint:disabled {
+      opacity: 0.55;
+      cursor: default;
+    }
+
+    .strategy-hint:disabled:hover {
+      border-color: var(--line);
+      background: #fffdf9;
+    }
+
+    .strategy-hint strong {
+      min-width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      padding: 0 7px;
+      background: var(--accent);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+    }
+
+    .strategy-hint span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
+    .hand-card.preview {
+      border-color: var(--warn);
+      background: #fff7ed;
+      box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.18);
+    }
+
+    .summary {
+      display: grid;
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    .summary div {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      border-bottom: 1px solid #ece7df;
+      padding-bottom: 6px;
+    }
+
+    .summary div:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .log {
+      min-height: 160px;
+      max-height: 260px;
+      overflow: auto;
+      margin: 0;
+      white-space: pre-wrap;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      color: #3f4652;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      background: rgba(32, 33, 36, 0.44);
+      display: grid;
+      place-items: center;
+      padding: 16px;
+    }
+
+    .modal[hidden] {
+      display: none;
+    }
+
+    .modal-panel {
+      width: min(720px, 100%);
+      max-height: min(720px, calc(100vh - 32px));
+      overflow: auto;
+      background: var(--panel);
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    .modal-tabs {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .modal-content {
+      padding: 0;
+    }
+
+    .modal-content > div[hidden] {
+      display: none;
+    }
+
+    @media (max-width: 980px) {
+      header,
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 700px) {
+      main {
+        width: min(100vw - 14px, 1400px);
+        padding: 12px 0 28px;
+      }
+
+      .page-head {
+        grid-template-columns: 1fr;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      h1 {
+        font-size: 23px;
+      }
+
+      .panel-head {
+        padding: 12px;
+        align-items: start;
+        flex-direction: column;
+      }
+
+      .status {
+        text-align: left;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        padding: 12px;
+      }
+
+      input, select, button {
+        width: 100%;
+      }
+
+      .players {
+        padding: 12px;
+      }
+
+      .player-row {
+        grid-template-columns: 1fr;
+        max-width: none;
+        gap: 6px;
+      }
+
+      .layout,
+      .side {
+        gap: 12px;
+      }
+
+      .gamebar {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .gamebar .pill {
+        grid-column: span 2;
+      }
+
+      .board-wrap {
+        padding: 10px;
+        max-height: 58vh;
+      }
+
+      .board {
+        gap: 4px;
+      }
+
+      .cell {
+        width: 46px;
+        height: 46px;
+        border-radius: 6px;
+      }
+
+      .card-tile {
+        width: 42px;
+        height: 42px;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+
+      .card-tile small {
+        font-size: 8px;
+      }
+
+      .hand {
+        padding: 10px;
+        grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+        gap: 6px;
+      }
+
+      .hand-card {
+        padding: 3px;
+      }
+
+      .hand-dock {
+        padding: 12px;
+        gap: 10px;
+        min-height: 168px;
+      }
+
+      .hand-dock .card-tile {
+        width: 144px;
+        height: 144px;
+      }
+
+      .hand-dock .card-name {
+        font-size: 12px;
+        max-width: 144px;
+      }
+
+      .actions,
+      .strategy-hints,
+      .summary,
+      .log {
+        padding: 12px;
+      }
+
+      .actions {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 420px) {
+      .controls,
+      .actions,
+      .gamebar {
+        grid-template-columns: 1fr;
+      }
+
+      .gamebar .pill {
+        grid-column: auto;
+      }
+
+      .cell {
+        width: 40px;
+        height: 40px;
+      }
+
+      .card-tile {
+        width: 36px;
+        height: 36px;
+        font-size: 12px;
+      }
+    }
+
+    .app-version {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="page-head">
+      <div>
+        <h1>Dura Mater</h1>
+        <p>Partita locale con giocatori manuali e bot.</p>
+      </div>
+      <nav>
+        <a href="index.html" aria-current="page">Gioco</a>
+        <a href="simulator.html">Simulatore</a>
+      </nav>
+    </header>
+
+    <section class="setup">
+      <div class="panel-head">
+        <h2>Impostazioni</h2>
+        <div id="status" class="status">Configura e avvia una partita.</div>
+      </div>
+      <div class="controls">
+        <label>
+          Giocatori
+          <input id="players" type="number" min="1" max="8" value="3">
+        </label>
+        <label>
+          Lato matrice
+          <input id="size" type="number" min="3" max="8" value="5">
+        </label>
+        <label>
+          Velocita' computer
+          <select id="speed">
+            <option value="step">Step by step</option>
+            <option value="5000">Una azione ogni 5s</option>
+            <option value="1000" selected>Una azione ogni 1s</option>
+            <option value="500">Una azione ogni 0.5s</option>
+          </select>
+        </label>
+        <label>
+          Seed
+          <input id="seed" type="text" placeholder="casuale">
+        </label>
+        <button id="new-game">Nuova partita</button>
+        <button id="load-game-setup" class="secondary" type="button">Carica partita</button>
+      </div>
+      <div id="player-config" class="players"></div>
+    </section>
+
+    <div id="game-shell" class="game-shell" hidden>
+      <div class="gamebar">
+        <div class="pill"><span id="active-player">-</span><strong id="draw-count">Pesca: 0</strong></div>
+        <label class="speed-control" aria-label="Velocita' computer">
+          <select id="speed-live">
+            <option value="step">Step by step</option>
+            <option value="5000">Una azione ogni 5s</option>
+            <option value="1000" selected>Una azione ogni 1s</option>
+            <option value="500">Una azione ogni 0.5s</option>
+          </select>
+        </label>
+        <button id="pass" class="secondary">Passa</button>
+        <button id="bot-step" class="secondary">Step computer</button>
+        <button id="undo" class="secondary" type="button">Undo</button>
+        <button id="redo" class="secondary" type="button">Redo</button>
+        <button id="save-game" class="secondary" type="button">Salva</button>
+        <button id="load-game" class="secondary" type="button">Carica</button>
+        <button id="open-players" class="secondary" type="button">Giocatori</button>
+        <button id="open-info" class="secondary" type="button">Info</button>
+      </div>
+
+    <div class="play-area">
+      <div class="layout">
+        <section>
+          <div class="panel-head">
+            <h2>Tabellone</h2>
+            <div id="board-status" class="status"></div>
+          </div>
+          <div class="board-wrap">
+            <div id="board" class="board"></div>
+          </div>
+        </section>
+
+        <div class="side">
+          <aside>
+            <div class="panel-head">
+              <h2>Mano corrente</h2>
+              <div id="turn-status" class="status"></div>
+            </div>
+            <div id="hand" class="hand"></div>
+          </aside>
+          <aside id="strategy-hints-panel" hidden>
+            <div class="panel-head">
+              <h2>Strategie</h2>
+              <div class="status">Anteprima mosse</div>
+            </div>
+            <div id="strategy-hints" class="strategy-hints"></div>
+          </aside>
+        </div>
+      </div>
+
+      <section class="hand-dock-panel" aria-label="Mano grafica del giocatore attivo">
+        <div class="panel-head">
+          <h2 id="hand-dock-title">Mano del giocatore</h2>
+          <div id="hand-dock-status" class="status"></div>
+        </div>
+        <div id="hand-dock" class="hand-dock"></div>
+      </section>
+    </div>
+    </div>
+
+    <div id="modal" class="modal" hidden>
+      <div class="modal-panel">
+        <div class="panel-head">
+          <h2 id="modal-title">Dettagli</h2>
+          <button id="close-modal" class="secondary" type="button">Chiudi</button>
+        </div>
+        <div class="modal-tabs">
+          <button id="tab-players" class="secondary" type="button">Giocatori</button>
+          <button id="tab-info" class="secondary" type="button">Stato / log</button>
+        </div>
+        <div class="modal-content">
+          <div id="modal-players"></div>
+          <div id="modal-info" hidden>
+            <div id="summary" class="summary"></div>
+            <pre id="log" class="log"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="app-version" class="app-version">v0.1.0 local</div>
+  </main>
+
+  <input id="load-game-file" type="file" accept="application/json,.json" hidden>
+
+  <script src="version.js"></script>
+  <script src="mpcards-core.js"></script>
+  <script src="card-art.js"></script>
+  <script src="card-names.js"></script>
+  <script src="game-state.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

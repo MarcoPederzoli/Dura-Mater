@@ -1,0 +1,11 @@
+{
+  "name": "mpcards",
+  "compatibilityDate": "2026-05-25",
+  "main": "party/server.js",
+  "serve": {
+    "path": ".partykit-static",
+    "singlePageApp": false,
+    "browserTTL": 300,
+    "edgeTTL": 300
+  }
+}
