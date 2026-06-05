@@ -401,9 +401,13 @@
       cursor: pointer;
     }
 
-    .hand-card.selected {
-      border-color: var(--warn);
-      background: #fff7ed;
+    /* Click singolo: carta scelta per la posa (distinta dalle altre posabili) */
+    .hand-card.selected,
+    .hand-card.playable.selected {
+      border: 3px solid var(--bad);
+      background: #fef2f2;
+      box-shadow: 0 0 0 2px rgba(185, 28, 28, 0.28);
+      cursor: pointer;
     }
 
     .side {
@@ -484,7 +488,7 @@
       font-size: 13px;
     }
 
-    .hand-card.preview {
+    .hand-card.preview:not(.selected) {
       border-color: var(--warn);
       background: #fff7ed;
       box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.18);
