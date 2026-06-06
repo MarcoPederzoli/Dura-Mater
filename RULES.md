@@ -69,23 +69,32 @@ Il nome leggibile in italiano (es. «Cinque di Croci Gialle») e' generato da `c
 
 ## Parametri della partita
 
-- Numero di giocatori: `G`, con `1 <= G <= 8`.
+- Numero di giocatori: `G`, con `1 <= G <= 2N`.
 - Lato della matrice: `N`.
 - Vincoli su `N`:
-  - `N >= G`
   - `N >= 3`
   - `N <= 8`
 - Per la partita si usano solo le carte con `VALORE <= N`.
 - Dato il vincolo di composizione del mazzo, il filtro `VALORE <= N` produce sempre `N * N` carte.
+- Ogni giocatore deve ricevere **almeno 3 carte** in mano all'inizio (come nel gioco normale: la griglia minima 3×3 con 1–3 giocatori parte sempre da 3 carte a testa).
+- Numero massimo **ammesso**: `G <= 2N`. Esempi: 3×3 → **6**; 5×5 → **10**; 8×8 → **16**. La partita si avvia solo se la distribuzione rispetta anche il minimo di 3 carte a testa.
+- Formato **consigliato**: `G = N`. In quel caso non c'e' mazzo di pesca e la fortuna e' gia' tutta nelle mani iniziali. Con `G > N` (overcrowd) la partita resta legale fino a `2N`, ma le carte in mano sono meno e le carte non distribuite formano il mazzo di pesca.
 
 ## Preparazione
 
 1. Si sceglie il numero di giocatori `G`.
-2. Si sceglie il lato della matrice `N`, rispettando i vincoli della partita.
+2. Si sceglie il lato della matrice `N`, rispettando i vincoli della partita e il massimo giocatori per quella griglia.
 3. Si filtra il mazzo, mantenendo solo le carte con `VALORE <= N`.
 4. Si mescola il mazzo filtrato.
-5. Si distribuiscono `N` carte a ciascun giocatore.
-6. Le carte non distribuite formano il mazzo di pesca.
+5. Si distribuiscono le carte in mano:
+   - se `G <= N`: **N** carte a ciascun giocatore (come prima);
+   - se `G > N`: si ripartiscono le `N * N` carte in modo **uguale** tra tutti i giocatori — ciascuno riceve `floor(N * N / G)` carte; se una ripartizione piena lascerebbe qualcuno con meno carte degli altri, si ferma all'ultimo conteggio identico per tutti; le carte rimanenti formano il mazzo di pesca.
+6. La distribuzione e' valida solo se ogni giocatore riceve almeno **3** carte (altrimenti la configurazione non si puo' avviare).
+7. Le carte non distribuite formano il mazzo di pesca.
+
+Esempio: griglia **5×5** (25 carte) con **7** giocatori → 3 carte ciascuno (21 in mano), **4** carte nel mazzo di pesca.
+
+Controesempio: **3×3** con **4** giocatori → `floor(9/4) = 2` carte a testa → **non ammesso** (sotto il minimo di 3).
 
 ## Inversione del turno (limiti della Dura Mater)
 
@@ -134,6 +143,14 @@ La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **N×
   - terza carta posata nel turno: requisito 3
   - quarta carta posata nel turno: requisito 4
 - La prima carta assoluta della partita e' un'eccezione: puo' essere posata senza adiacenze.
+
+## Idea (quinta carta)
+
+- Se in un turno un giocatore posa **quattro carte legali** e ha ancora almeno una carta in mano, realizza un'**Idea**: puo' posare **una quinta carta** nello stesso turno, subito dopo la quarta, **senza pescare** tra le due pose.
+- La quinta carta segue solo il vincolo fondamentale di compatibilita': deve essere adiacente ortogonalmente ad almeno una carta in gioco e condividere almeno una caratteristica con **ogni** carta adiacente ortogonalmente (equivalente al requisito 1 del turno, non al requisito 4).
+- La quinta carta e' **opzionale**: il giocatore puo' chiudere il turno dopo la quarta posa.
+- Dopo la quinta carta (o dopo aver chiuso il turno senza usarla), il turno termina normalmente (pesca di fine turno inclusa, se prevista).
+- Se la quarta carta svuota la mano (vittoria) o non restano carte in mano, l'Idea non si applica.
 
 ## Idea (quinta carta)
 

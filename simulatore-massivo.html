@@ -639,11 +639,11 @@
         </label>
         <label>
           Num Giocatori min
-          <input id="g-min" type="number" min="1" max="8" value="1" aria-label="Numero minimo giocatori">
+          <input id="g-min" type="number" min="1" max="21" value="1" aria-label="Numero minimo giocatori">
         </label>
         <label>
           Num Giocatori max
-          <input id="g-max" type="number" min="1" max="8" value="8" aria-label="Numero massimo giocatori">
+          <input id="g-max" type="number" min="1" max="21" value="8" aria-label="Numero massimo giocatori">
         </label>
         <label>
           Worker
@@ -753,6 +753,8 @@
         <div class="strategy-help">
           <div><span>≥1 turno da 4</span> % partite con catena da 4 carte in un turno</div>
           <div><span>Idea (5ª)</span> % partite in cui la quinta carta viene posata · <span>Idea usate</span> % idee realizzate sulle offerte</div>
+          <div><span>Tutti posano</span> % partite in cui ogni giocatore posa almeno una carta</div>
+          <div><span>Ultimo posa</span> % partite in cui l'ultimo nel turno iniziale posa almeno una carta</div>
         </div>
         <div class="table-wrap">
           <table id="turn-table"></table>
@@ -770,6 +772,9 @@
   <script src="simulator-workflows-turn-order.js"></script>
   <script src="simulator-workflows-turn-role.js"></script>
   <script src="simulator-workflows-four-card.js"></script>
+  <script src="simulator-workflows-overcrowd.js"></script>
+  <script src="simulator-workflows-playability.js"></script>
+  <script src="simulator-workflows-participation.js"></script>
   <script src="simulator.js"></script>
 </body>
 </html>

@@ -490,4 +490,125 @@ function testIdeaOffersCountedOnFourthPlacement() {
 
 testIdeaOffersCountedOnFourthPlacement();
 
+function testComputeInitialDealOvercrowded() {
+  assert.deepEqual(core.computeInitialDeal(5, 7), {
+    cardsPerPlayer: 3,
+    drawCount: 4,
+    overcrowded: true,
+    totalCards: 25
+  });
+  assert.deepEqual(core.computeInitialDeal(8, 16), {
+    cardsPerPlayer: 4,
+    drawCount: 0,
+    overcrowded: true,
+    totalCards: 64
+  });
+  assert.deepEqual(core.computeInitialDeal(5, 4), {
+    cardsPerPlayer: 5,
+    drawCount: 5,
+    overcrowded: false,
+    totalCards: 25
+  });
+}
+
+function testOvercrowdedSetupDeal() {
+  const sub = deck.filter(card => Number(card.value) <= 5);
+  const state = core.setupGame(sub, { size: 5, players: 7, random: () => 0 });
+  assert.equal(state.hands.length, 7);
+  state.hands.forEach(hand => assert.equal(hand.length, 3));
+  assert.equal(state.drawPile.length, 4);
+  assert.equal(state.initialHandSize, 3);
+  assert.equal(state.overcrowdedDeal, true);
+}
+
+function testClassicDealWhenGNotGreaterThanN() {
+  const sub = deck.filter(card => Number(card.value) <= 5);
+  const state = core.setupGame(sub, { size: 5, players: 4, random: () => 0 });
+  state.hands.forEach(hand => assert.equal(hand.length, 5));
+  assert.equal(state.drawPile.length, 5);
+  assert.equal(state.overcrowdedDeal, false);
+}
+
+function testIsPlayableSetupBounds() {
+  assert.equal(core.isPlayableSetup(3, 3), true);
+  assert.equal(core.isPlayableSetup(3, 4), false);
+  assert.equal(core.isPlayableSetup(3, 9), false);
+  assert.equal(core.isPlayableSetup(4, 5), true);
+  assert.equal(core.isPlayableSetup(4, 6), false);
+  assert.equal(core.isPlayableSetup(5, 8), true);
+  assert.equal(core.isPlayableSetup(5, 9), false);
+  assert.equal(core.isPlayableSetup(8, 16), true);
+  assert.equal(core.isPlayableSetup(8, 17), false);
+  assert.equal(core.isPlayableSetup(8, 21), false);
+  assert.equal(core.isPlayableSetup(8, 22), false);
+}
+
+function testMaxPlayersForSize() {
+  assert.equal(core.maxPlayersForSize(3), 6);
+  assert.equal(core.maxPlayersForSize(4), 8);
+  assert.equal(core.maxPlayersForSize(5), 10);
+  assert.equal(core.maxPlayersForSize(8), 16);
+}
+
+function testRecommendedMaxPlayersIsClassicFormat() {
+  assert.equal(core.recommendedMaxPlayers(3), 3);
+  assert.equal(core.recommendedMaxPlayers(4), 4);
+  assert.equal(core.recommendedMaxPlayers(5), 5);
+  assert.equal(core.recommendedMaxPlayers(6), 6);
+  assert.equal(core.recommendedMaxPlayers(7), 7);
+  assert.equal(core.recommendedMaxPlayers(8), 8);
+  assert.equal(core.isRecommendedSetup(5, 5), true);
+  assert.equal(core.isRecommendedSetup(5, 7), false);
+  assert.equal(core.isRecommendedSetup(5, 8), false);
+  assert.equal(core.isPlayableSetup(5, 8), true);
+  assert.equal(core.isRecommendedSetup(8, 16), false);
+  assert.equal(core.isPlayableSetup(8, 16), true);
+}
+
+function testRejectsUnderThreeCardsPerHand() {
+  assert.throws(
+    () => core.setupGame(deck.filter(c => Number(c.value) <= 3), { size: 3, players: 4, random: () => 0 }),
+    /almeno 3 carte a testa/
+  );
+}
+
+testComputeInitialDealOvercrowded();
+testOvercrowdedSetupDeal();
+testClassicDealWhenGNotGreaterThanN();
+testIsPlayableSetupBounds();
+testMaxPlayersForSize();
+testRecommendedMaxPlayersIsClassicFormat();
+testRejectsUnderThreeCardsPerHand();
+
+function testSummarizeParticipationCountsPlacementsPerPlayer() {
+  const board = [
+    { playerId: 0 },
+    { playerId: 0 },
+    { playerId: 1 },
+    { playerId: 2 }
+  ];
+  const summary = core.summarizeParticipation(board, 3, 4, 0);
+  assert.deepEqual(summary.placementsByPlayer, [2, 1, 1]);
+  assert.equal(summary.totalPlacements, 4);
+  assert.equal(summary.minPlacementsPerPlayer, 1);
+  assert.equal(summary.playersWithZeroPlacements, 0);
+  assert.equal(summary.playersWithOnePlacement, 2);
+  assert.equal(summary.hasPlayerWithOnePlacement, true);
+  assert.equal(summary.everyonePlacedAtLeastTwo, false);
+  assert.equal(summary.winnerPlacements, 2);
+  assert.equal(summary.winnerPlacedAtLeastHalfHand, true);
+}
+
+function testSummarizeParticipationDetectsExcludedPlayer() {
+  const board = [{ playerId: 0 }, { playerId: 0 }, { playerId: 0 }];
+  const summary = core.summarizeParticipation(board, 4, 3, 0);
+  assert.deepEqual(summary.placementsByPlayer, [3, 0, 0, 0]);
+  assert.equal(summary.playersWithZeroPlacements, 3);
+  assert.equal(summary.hasPlayerWithZeroPlacements, true);
+  assert.equal(summary.minPlacementsPerPlayer, 0);
+}
+
+testSummarizeParticipationCountsPlacementsPerPlayer();
+testSummarizeParticipationDetectsExcludedPlayer();
+
 console.log("core regression tests passed");

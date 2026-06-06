@@ -34,6 +34,8 @@ const MPCARDS_CORE_SOURCE = `
   const PLANNER_BRANCH_LIMIT = 10;
   const PLANNER_MAX_NODES = 280;
   const POSITIONAL_COUNTS = [1, 3, 5, 7, 9, 11, 13, 15];
+  const MAX_PLAYERS = 21;
+  const MIN_INITIAL_HAND = 3;
 
   function hashSeed(text) {
     let h = 2166136261;
@@ -653,9 +655,50 @@ const MPCARDS_CORE_SOURCE = `
     state.turnPlayed = 0;
   }
 
+  function computeInitialDeal(size, players) {
+    const totalCards = size * size;
+    const overcrowded = players > size;
+    const cardsPerPlayer = overcrowded ? Math.floor(totalCards / players) : size;
+    const dealt = cardsPerPlayer * players;
+    return {
+      cardsPerPlayer,
+      drawCount: totalCards - dealt,
+      overcrowded,
+      totalCards
+    };
+  }
+
+  function maxPlayersForSize(size) {
+    if (!Number.isInteger(size) || size < 3 || size > 8) return 0;
+    return Math.min(MAX_PLAYERS, 2 * size);
+  }
+
+  /** Formato consigliato: G = N (senza mazzo di pesca). */
+  function recommendedMaxPlayers(size) {
+    if (!Number.isInteger(size) || size < 3 || size > 8) return 0;
+    return size;
+  }
+
+  function isRecommendedSetup(size, players) {
+    return isPlayableSetup(size, players) && players <= recommendedMaxPlayers(size);
+  }
+
+  function isPlayableSetup(size, players) {
+    if (!Number.isInteger(size) || size < 3 || size > 8) return false;
+    if (!Number.isInteger(players) || players < 1 || players > MAX_PLAYERS) return false;
+    if (players > maxPlayersForSize(size)) return false;
+    return computeInitialDeal(size, players).cardsPerPlayer >= MIN_INITIAL_HAND;
+  }
+
   function setupGame(deck, options) {
     const size = options.size;
     const players = options.players;
+    const deal = computeInitialDeal(size, players);
+    if (deal.cardsPerPlayer < MIN_INITIAL_HAND) {
+      throw new Error(
+        "Troppi giocatori per " + size + "×" + size + ": servono almeno " + MIN_INITIAL_HAND + " carte a testa."
+      );
+    }
     const gameDeck = deck
       .filter(card => Number(card.value) <= size)
       .map(cloneCardForGame);
@@ -664,7 +707,7 @@ const MPCARDS_CORE_SOURCE = `
     }
     const random = options.random;
     const shuffled = shuffle(gameDeck, random);
-    const hands = Array.from({ length: players }, () => shuffled.splice(0, size));
+    const hands = Array.from({ length: players }, () => shuffled.splice(0, deal.cardsPerPlayer));
     const randomizeTurnOrder = options.randomizeTurnOrder !== false;
     const turnOrder = randomizeTurnOrder
       ? randomInitialTurnOrder(players, random)
@@ -694,7 +737,10 @@ const MPCARDS_CORE_SOURCE = `
       durissimaMater: options.durissimaMater === true,
       randomizeTurnOrder,
       turnOrder: initialTurnOrder.slice(),
-      turnPlacementStats: emptyTurnPlacementStats()
+      turnPlacementStats: emptyTurnPlacementStats(),
+      initialHandSize: deal.cardsPerPlayer,
+      initialDrawCount: deal.drawCount,
+      overcrowdedDeal: deal.overcrowded
     };
   }
 
@@ -734,21 +780,23 @@ const MPCARDS_CORE_SOURCE = `
     return idx >= 0 ? idx : playerId;
   }
 
-  function ensureTurnRolePatch(patch) {
-    if (!patch.winsByInitialTurnSlot) {
-      patch.winsByInitialTurnSlot = Array.from({ length: 8 }, () => 0);
-      patch.playedByInitialTurnSlot = Array.from({ length: 8 }, () => 0);
-      patch.pointsByInitialTurnSlot = Array.from({ length: 8 }, () => 0);
-      patch.dmCloserByInitialTurnSlot = Array.from({ length: 8 }, () => 0);
-      patch.starterWins = 0;
-      patch.dmClosedCount = 0;
-      patch.dmCloserWins = 0;
+  function ensureTurnRolePatch(patch, playerCount) {
+    const slots = Math.max(MAX_PLAYERS, playerCount || MAX_PLAYERS);
+    if (!patch.winsByInitialTurnSlot || patch.winsByInitialTurnSlot.length < slots) {
+      const grow = (list, len) => Array.from({ length: len }, (_, index) => list?.[index] || 0);
+      patch.winsByInitialTurnSlot = grow(patch.winsByInitialTurnSlot, slots);
+      patch.playedByInitialTurnSlot = grow(patch.playedByInitialTurnSlot, slots);
+      patch.pointsByInitialTurnSlot = grow(patch.pointsByInitialTurnSlot, slots);
+      patch.dmCloserByInitialTurnSlot = grow(patch.dmCloserByInitialTurnSlot, slots);
+      patch.starterWins = patch.starterWins || 0;
+      patch.dmClosedCount = patch.dmClosedCount || 0;
+      patch.dmCloserWins = patch.dmCloserWins || 0;
     }
   }
 
   /** Aggrega vincitore e chi chiude DM per ruolo 1°/2°/… nel turno iniziale (simulatore). */
   function accumulateTurnRoleStats(patch, result, playerCount) {
-    ensureTurnRolePatch(patch);
+    ensureTurnRolePatch(patch, playerCount);
     for (let player = 0; player < playerCount; player++) {
       const slot = initialTurnSlotFor(result, player);
       patch.playedByInitialTurnSlot[slot]++;
@@ -777,6 +825,47 @@ const MPCARDS_CORE_SOURCE = `
     }
   }
 
+  function summarizeParticipation(board, players, initialHandSize, winner) {
+    const placementsByPlayer = Array.from({ length: players }, () => 0);
+    for (const entry of board) {
+      const playerId = entry.playerId;
+      if (playerId >= 0 && playerId < players) placementsByPlayer[playerId]++;
+    }
+    let minPlacementsPerPlayer = players ? Infinity : 0;
+    let maxPlacementsPerPlayer = 0;
+    let totalPlacements = 0;
+    let playersWithZeroPlacements = 0;
+    let playersWithOnePlacement = 0;
+    for (let player = 0; player < players; player++) {
+      const count = placementsByPlayer[player];
+      totalPlacements += count;
+      if (count < minPlacementsPerPlayer) minPlacementsPerPlayer = count;
+      if (count > maxPlacementsPerPlayer) maxPlacementsPerPlayer = count;
+      if (count === 0) playersWithZeroPlacements++;
+      if (count === 1) playersWithOnePlacement++;
+    }
+    if (!players) minPlacementsPerPlayer = 0;
+    const hand = initialHandSize || 0;
+    const winnerPlacements = winner !== null && winner >= 0 && winner < players
+      ? placementsByPlayer[winner]
+      : 0;
+    const halfHand = hand > 0 ? Math.ceil(hand / 2) : 0;
+    return {
+      placementsByPlayer,
+      totalPlacements,
+      minPlacementsPerPlayer: minPlacementsPerPlayer === Infinity ? 0 : minPlacementsPerPlayer,
+      maxPlacementsPerPlayer,
+      avgPlacementsPerPlayer: players ? totalPlacements / players : 0,
+      playersWithZeroPlacements,
+      playersWithOnePlacement,
+      hasPlayerWithZeroPlacements: playersWithZeroPlacements > 0,
+      hasPlayerWithOnePlacement: playersWithOnePlacement > 0,
+      everyonePlacedAtLeastTwo: players > 0 && minPlacementsPerPlayer >= 2,
+      winnerPlacements,
+      winnerPlacedAtLeastHalfHand: halfHand > 0 && winnerPlacements >= halfHand
+    };
+  }
+
   function simulateGame(deck, options) {
     const random = options.random;
     let strategies = resolveStrategies(options.strategies, options.players, random);
@@ -794,6 +883,19 @@ const MPCARDS_CORE_SOURCE = `
     if (state.status === "playing") state.status = "stalled";
     if (state.turnPlayed > 0) recordTurnPlacements(state);
     const placementStats = state.turnPlacementStats || emptyTurnPlacementStats();
+    const participation = summarizeParticipation(
+      state.board,
+      state.players,
+      state.initialHandSize,
+      state.winner
+    );
+    const playersWhoPlaced = state.players - participation.playersWithZeroPlacements;
+    const order = state.initialTurnOrder;
+    const lastPlayerId = order[order.length - 1];
+    const lastPlayerPlaced = participation.placementsByPlayer[lastPlayerId] > 0;
+    const tailSize = Math.min(3, order.length);
+    const tailIds = order.slice(-tailSize);
+    const lastThreeAllPlaced = tailIds.every(id => participation.placementsByPlayer[id] > 0);
     const winnerInitialTurnSlot = state.winner === null
       ? null
       : state.initialTurnOrder.indexOf(state.winner);
@@ -821,7 +923,15 @@ const MPCARDS_CORE_SOURCE = `
       hadFourCardTurn: placementStats.maxInTurn >= 4,
       ideaOffers: placementStats.ideaOffers || 0,
       fiveCardTurns: placementStats.byCount[5],
-      hadFiveCardTurn: placementStats.maxInTurn >= 5
+      hadFiveCardTurn: placementStats.maxInTurn >= 5,
+      initialHandSize: state.initialHandSize,
+      initialDrawCount: state.initialDrawCount,
+      overcrowdedDeal: state.overcrowdedDeal === true,
+      playersWhoPlaced,
+      allPlayersPlaced: playersWhoPlaced === state.players,
+      lastPlayerPlaced,
+      lastThreeAllPlaced,
+      ...participation
     };
   }
 
@@ -837,6 +947,8 @@ const MPCARDS_CORE_SOURCE = `
     VALUES,
     SHAPES,
     COLORS,
+    MAX_PLAYERS,
+    MIN_INITIAL_HAND,
     SIM_DECK_CODES,
     deckCodesText,
     parseDeckCodes,
@@ -877,9 +989,15 @@ const MPCARDS_CORE_SOURCE = `
     passTurn,
     drawForPlayer,
     endTurn,
+    computeInitialDeal,
+    maxPlayersForSize,
+    recommendedMaxPlayers,
+    isRecommendedSetup,
+    isPlayableSetup,
     setupGame,
     resolveStrategies,
     botStep,
+    summarizeParticipation,
     simulateGame,
     initialTurnSlotFor,
     ensureTurnRolePatch,

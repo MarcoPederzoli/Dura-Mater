@@ -49,8 +49,8 @@ const DEFAULT_GAME_PREFS = {
   speed: "1000",
   seed: "",
   playerOneName: "Giocatore 1",
-  modes: ["manual", "bot", "bot", "bot", "bot", "bot", "bot", "bot"],
-  strategies: Array.from({ length: 8 }, () => "auto")
+  modes: ["manual", ...Array.from({ length: MPCardsCore.MAX_PLAYERS - 1 }, () => "bot")],
+  strategies: Array.from({ length: MPCardsCore.MAX_PLAYERS }, () => "auto")
 };
 
 function readPlayerOneName() {
@@ -65,7 +65,8 @@ function playerOneNameValue() {
 
 function playerLabel(playerIndex) {
   if (playerIndex === 0) return playerOneNameValue();
-  return OPPONENT_NAMES[playerIndex - 1] || `Giocatore ${playerIndex + 1}`;
+  if (playerIndex >= 8) return `G${playerIndex + 1}`;
+  return OPPONENT_NAMES[playerIndex - 1] || `G${playerIndex + 1}`;
 }
 
 function playerShortLabel(playerIndex) {
@@ -83,6 +84,16 @@ function handViewPlayer() {
   if (game.modes[state.currentPlayer] === "manual") return state.currentPlayer;
   const firstManual = game.modes.indexOf("manual");
   return firstManual >= 0 ? firstManual : state.currentPlayer;
+}
+
+function isHumanPlayerTurn() {
+  if (!game || !isRealGame() || game.state.status !== "playing") return false;
+  return game.modes[game.state.currentPlayer] === "manual";
+}
+
+function activeHandStatusElement() {
+  if (isRealGame() && isHumanPlayerTurn() && els.sidebarHandStatus) return els.sidebarHandStatus;
+  return els.handDockStatus;
 }
 
 function isHumanPlayerTurn() {
@@ -133,9 +144,16 @@ const els = {
   inversionAlert: document.querySelector("#inversion-alert"),
   board: document.querySelector("#board"),
   handDockPanel: document.querySelector("#hand-dock-panel"),
+  handDockPanel: document.querySelector("#hand-dock-panel"),
   handDock: document.querySelector("#hand-dock"),
   handDockTitle: document.querySelector("#hand-dock-title"),
   handDockStatus: document.querySelector("#hand-dock-status"),
+  playerHandsPanel: document.querySelector("#player-hands-panel"),
+  sidebarHandPanel: document.querySelector("#sidebar-hand-panel"),
+  sidebarHand: document.querySelector("#sidebar-hand"),
+  sidebarHandTitle: document.querySelector("#sidebar-hand-title"),
+  sidebarHandStatus: document.querySelector("#sidebar-hand-status"),
+  handCountsList: document.querySelector("#hand-counts-list"),
   playerHandsPanel: document.querySelector("#player-hands-panel"),
   sidebarHandPanel: document.querySelector("#sidebar-hand-panel"),
   sidebarHand: document.querySelector("#sidebar-hand"),
@@ -164,6 +182,16 @@ let timer = null;
 let selectedCardUid = null;
 let highlightedMoves = [];
 let previewCardUid = null;
+let inversionUiFlags = { firstAxisInversionDone: false, duraMaterClosed: false };
+let loadedPlayerPrefs = null;
+let saveGamePrefsTimer = null;
+
+function resetInversionUiFlags(state) {
+  inversionUiFlags = {
+    firstAxisInversionDone: !!(state && state.firstAxisInversionDone),
+    duraMaterClosed: !!(state && state.duraMaterClosed)
+  };
+}
 let inversionUiFlags = { firstAxisInversionDone: false, duraMaterClosed: false };
 let loadedPlayerPrefs = null;
 let saveGamePrefsTimer = null;
@@ -234,7 +262,7 @@ function strategyOptions() {
 
 function normalizeGamePrefs(prefs) {
   const normalized = { ...DEFAULT_GAME_PREFS, ...prefs };
-  normalized.players = clampNumber(normalized.players, 1, 8, DEFAULT_GAME_PREFS.players);
+  normalized.players = clampNumber(normalized.players, 1, MPCardsCore.MAX_PLAYERS, DEFAULT_GAME_PREFS.players);
   normalized.size = clampNumber(normalized.size, 3, 8, DEFAULT_GAME_PREFS.size);
   normalized.speed = SPEED_VALUES.has(normalized.speed) ? normalized.speed : DEFAULT_GAME_PREFS.speed;
   normalized.seed = typeof normalized.seed === "string" ? normalized.seed : DEFAULT_GAME_PREFS.seed;
@@ -244,12 +272,12 @@ function normalizeGamePrefs(prefs) {
   if (!normalized.playerOneName) normalized.playerOneName = DEFAULT_GAME_PREFS.playerOneName;
   const validModes = new Set(["manual", "bot"]);
   const validStrategy = new Set(core.STRATEGY_KEYS.concat(["auto"]));
-  normalized.modes = Array.from({ length: 8 }, (_, index) => {
+  normalized.modes = Array.from({ length: MPCardsCore.MAX_PLAYERS }, (_, index) => {
     const value = normalized.modes?.[index];
     if (validModes.has(value)) return value;
     return index === 0 ? "manual" : "bot";
   });
-  normalized.strategies = Array.from({ length: 8 }, (_, index) => {
+  normalized.strategies = Array.from({ length: MPCardsCore.MAX_PLAYERS }, (_, index) => {
     const value = normalized.strategies?.[index];
     return validStrategy.has(value) ? value : "auto";
   });
@@ -257,7 +285,7 @@ function normalizeGamePrefs(prefs) {
 }
 
 function collectGamePrefs() {
-  const players = clampNumber(els.players.value, 1, 8, DEFAULT_GAME_PREFS.players);
+  const players = clampNumber(els.players.value, 1, MPCardsCore.MAX_PLAYERS, DEFAULT_GAME_PREFS.players);
   const config = readPlayersConfig(players);
   return normalizeGamePrefs({
     version: 1,
@@ -357,7 +385,7 @@ function onPlayerConfigChange() {
 }
 
 function renderPlayerConfig() {
-  const players = clampNumber(els.players.value, 1, 8, 3);
+  const players = clampNumber(els.players.value, 1, MPCardsCore.MAX_PLAYERS, 3);
   const previousModes = loadedPlayerPrefs?.modes
     || Array.from(document.querySelectorAll(".player-mode")).map(item => item.value);
   const previousStrategies = loadedPlayerPrefs?.strategies
@@ -394,10 +422,18 @@ function readPlayersConfig(players) {
 function startGame() {
   stopTimer();
   saveGamePrefsNow();
-  const players = clampNumber(els.players.value, 1, 8, 3);
+  const players = clampNumber(els.players.value, 1, MPCardsCore.MAX_PLAYERS, 3);
   const size = clampNumber(els.size.value, 3, 8, 5);
-  if (size < players) {
-    setStatus("Il lato matrice deve essere almeno pari al numero di giocatori.", "bad");
+  if (!core.isPlayableSetup(size, players)) {
+    const maxG = core.maxPlayersForSize(size);
+    if (players > maxG) {
+      setStatus(`Con ${size}×${size} il massimo è ${maxG} giocatori (G ≤ 2N).`, "bad");
+    } else {
+      setStatus(
+        `Con ${size}×${size} e ${players} giocatori servono almeno ${core.MIN_INITIAL_HAND} carte a testa.`,
+        "bad"
+      );
+    }
     return;
   }
   const seed = els.seed.value.trim() || String(Date.now());
@@ -806,6 +842,24 @@ function cardBackTile() {
   return tile;
 }
 
+function cardBackTile() {
+  const tile = document.createElement("div");
+  tile.className = "card-back";
+  const backSrc = globalThis.MPCardsArt && MPCardsArt.back;
+  if (backSrc) {
+    const img = document.createElement("img");
+    img.src = backSrc;
+    img.alt = "Retro carta";
+    img.draggable = false;
+    img.loading = "lazy";
+    img.decoding = "async";
+    tile.appendChild(img);
+  } else {
+    tile.textContent = "?";
+  }
+  return tile;
+}
+
 function cardTile(card) {
   const tile = document.createElement("div");
   const colorIndex = Number(String(card.code).padStart(3, "0")[2]) - 1;
@@ -1131,6 +1185,101 @@ function renderHandCountsBar() {
   }
 }
 
+function renderHandCountsBar() {
+  if (!els.handCountsList || !isRealGame()) return;
+  els.handCountsList.innerHTML = "";
+  if (!game) return;
+  const state = game.state;
+  for (let player = 0; player < state.players; player++) {
+    const count = (state.hands[player] || []).length;
+    const chip = document.createElement("div");
+    chip.className = "hand-count-chip";
+    if (state.status === "success" && player === state.winner) {
+      chip.classList.add("winner");
+    } else if (state.status === "playing" && player === state.currentPlayer) {
+      chip.classList.add("current");
+    }
+    if (player === handViewPlayer()) chip.classList.add("you");
+    const name = document.createElement("strong");
+    name.textContent = playerShortLabel(player);
+    const detail = document.createElement("span");
+    if (state.status === "success" && player === state.winner && count === 0) {
+      detail.textContent = "Vince";
+    } else {
+      detail.textContent = String(count);
+      chip.title = count === 1 ? "1 carta in mano" : `${count} carte in mano`;
+    }
+    chip.appendChild(name);
+    chip.appendChild(detail);
+    els.handCountsList.appendChild(chip);
+  }
+}
+
+function renderSidebarHand() {
+  if (!els.sidebarHand) return;
+  els.sidebarHand.innerHTML = "";
+  if (!game) return;
+  const state = game.state;
+  const player = state.currentPlayer;
+  const hand = state.hands[player] || [];
+  const interactive = isHumanPlayerTurn();
+  if (els.sidebarHandTitle) {
+    els.sidebarHandTitle.textContent = `La tua mano — ${playerShortLabel(player)}`;
+  }
+  updateHandSelectionStatus(hand.length, player, "Manuale");
+  appendHandCards(els.sidebarHand, "sidebar", player, hand, interactive);
+}
+
+function renderRealGameSidebar() {
+  if (!isRealGame()) return;
+  const humanTurn = isHumanPlayerTurn();
+  if (els.playerHandsPanel) els.playerHandsPanel.hidden = humanTurn;
+  if (els.sidebarHandPanel) els.sidebarHandPanel.hidden = !humanTurn;
+  if (humanTurn) {
+    renderSidebarHand();
+  } else {
+    renderPlayerHandStacks();
+  }
+}
+
+function appendHandCards(container, layout, player, hand, interactive) {
+  const moves = currentMoves();
+  const playable = new Set(moves.map(move => move.cardUid));
+  const useSidebarLayout = layout === "sidebar";
+  for (const card of hand) {
+    const item = document.createElement("div");
+    const isSelected = selectedCardUid === card.uid;
+    const canPlay = playable.has(card.uid) && interactive;
+    item.className = "hand-card";
+    item.dataset.cardUid = card.uid;
+    if (canPlay && !isSelected) item.classList.add("playable");
+    if (isSelected) item.classList.add("selected");
+    if (previewCardUid === card.uid) item.classList.add("preview");
+    item.appendChild(cardTile(card));
+    if (isSelected) {
+      const badge = document.createElement("span");
+      badge.className = "hand-card-selected-badge";
+      badge.textContent = "Scelta";
+      item.appendChild(badge);
+    }
+    const entry = document.createElement("div");
+    entry.className = useSidebarLayout ? "sidebar-hand-entry" : "hand-dock-entry";
+    if (canPlay) {
+      item.addEventListener("mouseenter", () => hoverCard(card.uid));
+      item.addEventListener("mouseleave", clearHover);
+      entry.addEventListener("click", event => activateHandCard(card.uid, event));
+    }
+    entry.appendChild(item);
+    const name = document.createElement("p");
+    name.className = "card-name";
+    name.textContent = globalThis.MPCardsNames
+      ? MPCardsNames.formatCardName(card)
+      : card.code;
+    entry.appendChild(name);
+    container.appendChild(entry);
+  }
+}
+
 function renderSidebarHand() {
   if (!els.sidebarHand) return;
   els.sidebarHand.innerHTML = "";
@@ -1322,6 +1471,7 @@ function renderSummary() {
     ["Strategia", game.modes[player] === "bot" ? core.strategyLabel(game.strategies[player]) : "Manuale"],
     ["Mazzo pesca", state.drawPile.length],
     ["Carte giocate nel turno", state.turnPlayed],
+    ...(core.canOfferIdea(state, player) ? [["Idea", "Quinta carta disponibile"]] : []),
     ...(core.canOfferIdea(state, player) ? [["Idea", "Quinta carta disponibile"]] : []),
     ["Passaggi consecutivi", state.consecutivePasses]
   ];

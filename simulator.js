@@ -1,6 +1,6 @@
 "use strict";
 
-const { STRATEGIES, STRATEGY_KEYS, hashSeed, strategyShortLabel } = MPCardsCore;
+const { STRATEGIES, STRATEGY_KEYS, hashSeed, strategyShortLabel, MAX_PLAYERS, isPlayableSetup, computeInitialDeal } = MPCardsCore;
 
 const PREFS_STORAGE_KEY = "dura-mater-simulator-v1";
 
@@ -17,7 +17,7 @@ const DEFAULT_PREFS = {
   fixedTurnOrder: false,
   deckEditOpen: false,
   deckCodes: "",
-  strategies: Array.from({ length: 8 }, () => "auto")
+  strategies: Array.from({ length: MAX_PLAYERS }, () => "auto")
 };
 
 const els = {
@@ -167,8 +167,8 @@ function clampConfigForDurissima(config) {
 function readConfig() {
   const lMin = clampNumber(els.lMin.value, 3, 8, 3);
   const lMax = clampNumber(els.lMax.value, 3, 8, 8);
-  const gMin = clampNumber(els.gMin.value, 1, 8, 1);
-  const gMax = clampNumber(els.gMax.value, 1, 8, 8);
+  const gMin = clampNumber(els.gMin.value, 1, MAX_PLAYERS, 1);
+  const gMax = clampNumber(els.gMax.value, 1, MAX_PLAYERS, MAX_PLAYERS);
   const config = clampConfigForDurissima({
     count: clampNumber(els.count.value, 1, 100000, 100),
     lMin: Math.min(lMin, lMax),
@@ -200,8 +200,8 @@ function defaultWorkerCount() {
 }
 
 function activePlayerCount() {
-  const gMin = clampNumber(els.gMin.value, 1, 8, 1);
-  const gMax = clampNumber(els.gMax.value, 1, 8, 8);
+  const gMin = clampNumber(els.gMin.value, 1, MAX_PLAYERS, 1);
+  const gMax = clampNumber(els.gMax.value, 1, MAX_PLAYERS, MAX_PLAYERS);
   return Math.max(gMin, gMax);
 }
 
@@ -217,8 +217,8 @@ function normalizePrefs(raw) {
   prefs.count = clampNumber(prefs.count, 1, 100000, DEFAULT_PREFS.count);
   prefs.lMin = clampNumber(prefs.lMin, 3, 8, DEFAULT_PREFS.lMin);
   prefs.lMax = clampNumber(prefs.lMax, 3, 8, DEFAULT_PREFS.lMax);
-  prefs.gMin = clampNumber(prefs.gMin, 1, 8, DEFAULT_PREFS.gMin);
-  prefs.gMax = clampNumber(prefs.gMax, 1, 8, DEFAULT_PREFS.gMax);
+  prefs.gMin = clampNumber(prefs.gMin, 1, MAX_PLAYERS, DEFAULT_PREFS.gMin);
+  prefs.gMax = clampNumber(prefs.gMax, 1, MAX_PLAYERS, DEFAULT_PREFS.gMax);
   prefs.lMin = Math.min(prefs.lMin, prefs.lMax);
   prefs.lMax = Math.max(prefs.lMin, prefs.lMax);
   prefs.gMin = Math.min(prefs.gMin, prefs.gMax);
@@ -233,7 +233,7 @@ function normalizePrefs(raw) {
   prefs.deckEditOpen = Boolean(prefs.deckEditOpen);
   prefs.deckCodes = typeof prefs.deckCodes === "string" ? prefs.deckCodes : DEFAULT_PREFS.deckCodes;
   const validStrategy = new Set(STRATEGY_KEYS.concat(["auto"]));
-  prefs.strategies = Array.from({ length: 8 }, (_, index) => {
+  prefs.strategies = Array.from({ length: MAX_PLAYERS }, (_, index) => {
     const value = prefs.strategies?.[index];
     return validStrategy.has(value) ? value : "auto";
   });
@@ -359,7 +359,7 @@ function renderStrategyInputs(strategiesOverride) {
 
 function readStrategies() {
   const selects = Array.from(document.querySelectorAll(".player-strategy"));
-  return Array.from({ length: 8 }, (_, index) => selects[index]?.value || "auto");
+  return Array.from({ length: MAX_PLAYERS }, (_, index) => selects[index]?.value || "auto");
 }
 
 function setAllStrategies(value) {
@@ -374,7 +374,7 @@ function countValidJobs(lMin, lMax, gMin, gMax) {
   let jobs = 0;
   for (let size = lMin; size <= lMax; size++) {
     for (let players = gMin; players <= gMax; players++) {
-      if (size >= players) jobs++;
+      if (isPlayableSetup(size, players)) jobs++;
     }
   }
   return jobs;
@@ -401,7 +401,8 @@ function makeJobs(config, stepId = "") {
   const jobs = [];
   for (let size = config.lMin; size <= config.lMax; size++) {
     for (let players = config.gMin; players <= config.gMax; players++) {
-      if (size >= players) {
+      if (isPlayableSetup(size, players)) {
+        const deal = computeInitialDeal(size, players);
         const cellId = `${size}x${players}`;
         jobs.push({
           id: stepId ? `${stepId}::${cellId}` : cellId,
@@ -409,6 +410,9 @@ function makeJobs(config, stepId = "") {
           stepId: stepId || null,
           size,
           players,
+          initialHandSize: deal.cardsPerPlayer,
+          initialDrawCount: deal.drawCount,
+          overcrowdedDeal: deal.overcrowded,
           count: config.count,
           seed: stepId
             ? `${config.seed}:${stepId}:${size}:${players}`
@@ -427,7 +431,7 @@ function makeJobs(config, stepId = "") {
 
 function normalizeStepStrategies(raw) {
   const valid = new Set(STRATEGY_KEYS.concat(["auto"]));
-  return Array.from({ length: 8 }, (_, index) => {
+  return Array.from({ length: MAX_PLAYERS }, (_, index) => {
     const value = raw?.[index];
     return valid.has(value) ? value : "auto";
   });
@@ -436,13 +440,13 @@ function normalizeStepStrategies(raw) {
 function stepConfigFromWorkflowStep(step, shared, uiConfig) {
   const lMin = clampNumber(step.lMin, 3, 8, 4);
   const lMax = clampNumber(step.lMax, 3, 8, lMin);
-  const gMin = clampNumber(step.gMin, 1, 8, 2);
-  const gMax = clampNumber(step.gMax, 1, 8, gMin);
+  const gMin = clampNumber(step.gMin, 1, MAX_PLAYERS, 2);
+  const gMax = clampNumber(step.gMax, 1, MAX_PLAYERS, gMin);
   const strategies = step.strategies
     ? normalizeStepStrategies(step.strategies)
-    : Array.from({ length: 8 }, () => (step.strategy && STRATEGY_KEYS.includes(step.strategy) ? step.strategy : "auto"));
+    : Array.from({ length: MAX_PLAYERS }, () => (step.strategy && STRATEGY_KEYS.includes(step.strategy) ? step.strategy : "auto"));
   if (step.strategy && !step.strategies) {
-    for (let i = 0; i < 8; i++) strategies[i] = step.strategy;
+    for (let i = 0; i < MAX_PLAYERS; i++) strategies[i] = step.strategy;
   }
   const config = {
     count: clampNumber(step.count, 1, 100000, 100),
@@ -477,7 +481,7 @@ function initStepState(stepMeta, config) {
     total: jobs.reduce((sum, job) => sum + job.count, 0)
   };
   for (const job of jobs) {
-    stepState.cells.set(job.cellId, emptyStats(job.players));
+    stepState.cells.set(job.cellId, emptyStats(job.players, dealMetaForJob(job)));
     if (!stepState.rowTotals.has(job.size)) stepState.rowTotals.set(job.size, emptyAggregateStats());
     if (!stepState.columnTotals.has(job.players)) {
       stepState.columnTotals.set(job.players, emptyAggregateStats());
@@ -603,22 +607,103 @@ function switchActiveStepUi(state, stepId) {
   setStatus(`Workflow: step «${step.stepLabel}» (${state.workflow.label}).`, "");
 }
 
-function emptyInitialTurnStats() {
+function emptyInitialTurnStats(slotCount = MAX_PLAYERS) {
   return {
-    winsByInitialTurnSlot: Array.from({ length: 8 }, () => 0),
-    playedByInitialTurnSlot: Array.from({ length: 8 }, () => 0),
-    pointsByInitialTurnSlot: Array.from({ length: 8 }, () => 0),
-    dmCloserByInitialTurnSlot: Array.from({ length: 8 }, () => 0),
+    winsByInitialTurnSlot: Array.from({ length: slotCount }, () => 0),
+    playedByInitialTurnSlot: Array.from({ length: slotCount }, () => 0),
+    pointsByInitialTurnSlot: Array.from({ length: slotCount }, () => 0),
+    dmCloserByInitialTurnSlot: Array.from({ length: slotCount }, () => 0),
     starterWins: 0,
     dmClosedCount: 0,
     dmCloserWins: 0
   };
 }
 
-function emptyStats(players) {
+function dealMetaForJob(job) {
+  const deal = computeInitialDeal(job.size, job.players);
+  return {
+    cardsPerPlayer: job.initialHandSize ?? deal.cardsPerPlayer,
+    drawCount: job.initialDrawCount ?? deal.drawCount,
+    overcrowded: job.overcrowdedDeal ?? deal.overcrowded
+  };
+}
+
+function emptyParticipationStats(players) {
+  return {
+    totalPlacementsSum: 0,
+    minPlacementsPerGameSum: 0,
+    gamesWithZeroPlacementPlayer: 0,
+    gamesWithOnePlacementPlayer: 0,
+    gamesEveryoneAtLeastTwoPlacements: 0,
+    zeroPlacementPlayersSum: 0,
+    onePlacementPlayersSum: 0,
+    placementsByPlayerSum: Array.from({ length: players }, () => 0)
+  };
+}
+
+function accumulateParticipation(patch, result) {
+  patch.totalPlacementsSum += result.totalPlacements || 0;
+  patch.minPlacementsPerGameSum += result.minPlacementsPerPlayer || 0;
+  if (result.hasPlayerWithZeroPlacements) patch.gamesWithZeroPlacementPlayer++;
+  if (result.hasPlayerWithOnePlacement) patch.gamesWithOnePlacementPlayer++;
+  if (result.everyonePlacedAtLeastTwo) patch.gamesEveryoneAtLeastTwoPlacements++;
+  patch.zeroPlacementPlayersSum += result.playersWithZeroPlacements || 0;
+  patch.onePlacementPlayersSum += result.playersWithOnePlacement || 0;
+  const byPlayer = result.placementsByPlayer || [];
+  for (let player = 0; player < patch.placementsByPlayerSum.length; player++) {
+    patch.placementsByPlayerSum[player] += byPlayer[player] || 0;
+  }
+}
+
+function mergeParticipationStats(target, patch) {
+  target.totalPlacementsSum += patch.totalPlacementsSum || 0;
+  target.minPlacementsPerGameSum += patch.minPlacementsPerGameSum || 0;
+  target.gamesWithZeroPlacementPlayer += patch.gamesWithZeroPlacementPlayer || 0;
+  target.gamesWithOnePlacementPlayer += patch.gamesWithOnePlacementPlayer || 0;
+  target.gamesEveryoneAtLeastTwoPlacements += patch.gamesEveryoneAtLeastTwoPlacements || 0;
+  target.zeroPlacementPlayersSum += patch.zeroPlacementPlayersSum || 0;
+  target.onePlacementPlayersSum += patch.onePlacementPlayersSum || 0;
+  if (!target.placementsByPlayerSum) {
+    target.placementsByPlayerSum = Array.from({ length: target.players }, () => 0);
+  }
+  const source = patch.placementsByPlayerSum || [];
+  for (let player = 0; player < target.placementsByPlayerSum.length; player++) {
+    target.placementsByPlayerSum[player] += source[player] || 0;
+  }
+}
+
+function participationSummary(stats) {
+  const done = stats.done || 0;
+  const players = stats.players || 1;
+  if (!done) {
+    return {
+      avgCardsPlacedPerPlayer: 0,
+      avgMinPlacementsPerGame: 0,
+      zeroPlacementPlayerGamePct: 0,
+      onePlacementPlayerGamePct: 0,
+      everyoneAtLeastTwoPlacementsPct: 0,
+      avgZeroPlacementPlayersPerGame: 0,
+      avgOnePlacementPlayersPerGame: 0
+    };
+  }
+  return {
+    avgCardsPlacedPerPlayer: (stats.totalPlacementsSum || 0) / done / players,
+    avgMinPlacementsPerGame: (stats.minPlacementsPerGameSum || 0) / done,
+    zeroPlacementPlayerGamePct: (stats.gamesWithZeroPlacementPlayer || 0) / done * 100,
+    onePlacementPlayerGamePct: (stats.gamesWithOnePlacementPlayer || 0) / done * 100,
+    everyoneAtLeastTwoPlacementsPct: (stats.gamesEveryoneAtLeastTwoPlacements || 0) / done * 100,
+    avgZeroPlacementPlayersPerGame: (stats.zeroPlacementPlayersSum || 0) / done,
+    avgOnePlacementPlayersPerGame: (stats.onePlacementPlayersSum || 0) / done
+  };
+}
+
+function emptyStats(players, dealMeta = null) {
   return {
     done: 0,
     players,
+    initialHandSize: dealMeta?.cardsPerPlayer ?? null,
+    initialDrawCount: dealMeta?.drawCount ?? null,
+    overcrowdedDeal: dealMeta?.overcrowded === true,
     winsByPlayer: Array.from({ length: players }, () => 0),
     playedByPlayer: Array.from({ length: players }, () => 0),
     pointsByPlayer: Array.from({ length: players }, () => 0),
@@ -635,12 +720,17 @@ function emptyStats(players) {
     fourCardTurns: 0,
     gamesWithFiveCardTurn: 0,
     fiveCardTurns: 0,
-    ideaOffers: 0
+    ideaOffers: 0,
+    gamesAllPlayersPlaced: 0,
+    playersPlacedSum: 0,
+    gamesLastPlayerPlaced: 0,
+    gamesLastThreeAllPlaced: 0,
+    ...emptyParticipationStats(players)
   };
 }
 
 function emptyAggregateStats() {
-  return emptyStats(8);
+  return emptyStats(MAX_PLAYERS);
 }
 
 function mergeStats(target, patch) {
@@ -654,6 +744,11 @@ function mergeStats(target, patch) {
   target.gamesWithFiveCardTurn += patch.gamesWithFiveCardTurn || 0;
   target.fiveCardTurns += patch.fiveCardTurns || 0;
   target.ideaOffers += patch.ideaOffers || 0;
+  target.gamesAllPlayersPlaced += patch.gamesAllPlayersPlaced || 0;
+  target.playersPlacedSum += patch.playersPlacedSum || 0;
+  target.gamesLastPlayerPlaced += patch.gamesLastPlayerPlaced || 0;
+  target.gamesLastThreeAllPlaced += patch.gamesLastThreeAllPlaced || 0;
+  mergeParticipationStats(target, patch);
   patch.winsByPlayer.forEach((count, index) => {
     target.winsByPlayer[index] += count;
   });
@@ -693,7 +788,7 @@ function mergeStats(target, patch) {
     }
   }
   if (patch.winsByInitialTurnSlot) {
-    if (!target.winsByInitialTurnSlot) Object.assign(target, emptyInitialTurnStats());
+    if (!target.winsByInitialTurnSlot) Object.assign(target, emptyInitialTurnStats(MAX_PLAYERS));
     patch.winsByInitialTurnSlot.forEach((count, index) => {
       target.winsByInitialTurnSlot[index] += count;
     });
@@ -757,7 +852,7 @@ function renderTableSkeleton(table, rows, columns, type, state) {
       td.dataset.type = type;
       td.dataset.size = String(size);
       td.dataset.players = String(players);
-      if (size < players) {
+      if (!isPlayableSetup(size, players)) {
         td.className = "invalid";
         td.textContent = "-";
       } else if (!state.cells.has(`${size}x${players}`)) {
@@ -866,6 +961,19 @@ function renderCellContent(type, stats) {
   if (stats.ideaOffers > 0) {
     box.appendChild(line(`Idea usate: ${pct(stats.fiveCardTurns || 0, stats.ideaOffers)}`));
   }
+  box.appendChild(line(`Tutti posano: ${pct(stats.gamesAllPlayersPlaced || 0, stats.done)}`));
+  const avgPlaced = stats.done ? (stats.playersPlacedSum || 0) / stats.done : 0;
+  box.appendChild(line(`Media posano: ${avgPlaced.toFixed(1)}/${stats.players}`));
+  box.appendChild(line(`Ultimo posa: ${pct(stats.gamesLastPlayerPlaced || 0, stats.done)}`));
+  const part = participationSummary(stats);
+  box.appendChild(line(`Carte posate/gioc (media): ${part.avgCardsPlacedPerPlayer.toFixed(2)}`));
+  box.appendChild(line(`Min posate in partita (media): ${part.avgMinPlacementsPerGame.toFixed(2)}`));
+  box.appendChild(line(`Partita con escluso (0 pose): ${part.zeroPlacementPlayerGamePct.toFixed(1)}%`));
+  box.appendChild(line(`Partita con «1 sola posa»: ${part.onePlacementPlayerGamePct.toFixed(1)}%`));
+  box.appendChild(line(`Tutti ≥2 pose: ${part.everyoneAtLeastTwoPlacementsPct.toFixed(1)}%`));
+  if (stats.overcrowdedDeal && stats.initialHandSize != null) {
+    box.appendChild(line(`Mano iniziale: ${stats.initialHandSize} · pesca: ${stats.initialDrawCount ?? 0}`));
+  }
   return box;
 }
 
@@ -908,12 +1016,27 @@ function cloneStats(stats) {
     fourCardTurns: stats.fourCardTurns || 0,
     gamesWithFiveCardTurn: stats.gamesWithFiveCardTurn || 0,
     fiveCardTurns: stats.fiveCardTurns || 0,
-    ideaOffers: stats.ideaOffers || 0
+    ideaOffers: stats.ideaOffers || 0,
+    gamesAllPlayersPlaced: stats.gamesAllPlayersPlaced || 0,
+    playersPlacedSum: stats.playersPlacedSum || 0,
+    gamesLastPlayerPlaced: stats.gamesLastPlayerPlaced || 0,
+    gamesLastThreeAllPlaced: stats.gamesLastThreeAllPlaced || 0,
+    totalPlacementsSum: stats.totalPlacementsSum || 0,
+    minPlacementsPerGameSum: stats.minPlacementsPerGameSum || 0,
+    gamesWithZeroPlacementPlayer: stats.gamesWithZeroPlacementPlayer || 0,
+    gamesWithOnePlacementPlayer: stats.gamesWithOnePlacementPlayer || 0,
+    gamesEveryoneAtLeastTwoPlacements: stats.gamesEveryoneAtLeastTwoPlacements || 0,
+    zeroPlacementPlayersSum: stats.zeroPlacementPlayersSum || 0,
+    onePlacementPlayersSum: stats.onePlacementPlayersSum || 0,
+    placementsByPlayerSum: (stats.placementsByPlayerSum || []).slice(),
+    initialHandSize: stats.initialHandSize ?? null,
+    initialDrawCount: stats.initialDrawCount ?? null,
+    overcrowdedDeal: stats.overcrowdedDeal === true
   };
 }
 
 function serializeSeatAssignment(config) {
-  const maxPlayers = config.gMax || config.strategies?.length || 8;
+  const maxPlayers = config.gMax || config.strategies?.length || MAX_PLAYERS;
   return Array.from({ length: maxPlayers }, (_, index) => {
     const setting = config.strategies?.[index] || "auto";
     return {
@@ -976,8 +1099,8 @@ function buildSeatStrategyBreakdown(stats, config) {
     });
   }
   rows.sort((a, b) => b.deviationPct - a.deviationPct);
-  const assigned = (config.strategies || []).slice(0, config.gMax || 8);
-  const distinctSeats = new Set(assigned.filter((_, i) => i < (config.gMax || 8)).map((s, i) => `${i}:${s}`));
+  const assigned = (config.strategies || []).slice(0, config.gMax || MAX_PLAYERS);
+  const distinctSeats = new Set(assigned.filter((_, i) => i < (config.gMax || MAX_PLAYERS)).map((s, i) => `${i}:${s}`));
   const fixedPerSeat = assigned.some(s => s !== "auto") && new Set(assigned.filter(s => s !== "auto")).size > 1;
   let interpretation = "Usa posto (G1…Gn) e strategia insieme: se solo una riga per strategia ma più posti, il vantaggio è della strategia; se un posto domina ma la strategia su quel posto è media, conta la posizione.";
   if (config.shuffleStrategiesAmongSeats) {
@@ -1062,9 +1185,12 @@ function buildWorkflowSnapshot(state, meta = {}) {
     initialTurnGuide: state.workflow.initialTurnGuide || null,
     fourCardGuide: state.workflow.fourCardGuide || null,
     ideaGuide: state.workflow.ideaGuide || null,
+    overcrowdGuide: state.workflow.overcrowdGuide || null,
+    playabilityGuide: state.workflow.playabilityGuide || null,
+    participationGuide: state.workflow.participationGuide || null,
     hints: {
       forAnalysis:
-        "Passa questo file intero all'assistente: `analysis.initialTurn` = ruolo 1°/2°/… nel turno iniziale (domanda «primo vs ultimo»); `analysis.positions` = posto G1…Gn; `analysis.summary.fourCardGamePct` = % partite con ≥1 turno da 4; `analysis.summary.fiveCardGamePct` / `ideaConversionPct` = regola Idea. Guide: initialTurnGuide, fourCardGuide, ideaGuide, …"
+        "Passa questo file intero all'assistente: `analysis.summary` (avgCardsPlacedPerPlayer, onePlacementPlayerGamePct, everyoneAtLeastTwoPlacementsPct, avgMinPlacementsPerGame) e cells[\"LxG\"] con totalPlacementsSum, gamesWithOnePlacementPlayer, gamesEveryoneAtLeastTwoPlacements. Guide: participationGuide, playabilityGuide, overcrowdGuide, …"
     }
   };
 }
@@ -1179,7 +1305,7 @@ function analyzeInitialTurnSlots(stats, config, ctx) {
       verdict: "Ruolo nel turno iniziale non calcolabile: troppi stalli o poche partite con vincitore."
     };
   }
-  const maxSlots = config.gMax || stats.players || 8;
+  const maxSlots = config.gMax || stats.players || MAX_PLAYERS;
   const rows = [];
   for (let slot = 0; slot < maxSlots; slot++) {
     const played = stats.playedByInitialTurnSlot?.[slot] || 0;
@@ -1237,7 +1363,7 @@ function analyzeDmCloserSlots(stats, config, ctx) {
       verdict: "Nessuna chiusura Dura Mater nel campione."
     };
   }
-  const maxSlots = config.gMax || stats.players || 8;
+  const maxSlots = config.gMax || stats.players || MAX_PLAYERS;
   const expectedPct = maxSlots > 0 ? 100 / maxSlots : 0;
   const rows = [];
   for (let slot = 0; slot < maxSlots; slot++) {
@@ -1394,13 +1520,15 @@ function analyzeScenarioCompletions(cells) {
   for (const [id, stats] of cells.entries()) {
     if (!stats.done) continue;
     const successes = stats.done - stats.stalls;
+    const part = participationSummary(stats);
     rows.push({
       id,
       done: stats.done,
       successes,
       successPct: successes / stats.done * 100,
       stallPct: stats.stalls / stats.done * 100,
-      avgTurns: stats.turnSum / stats.done
+      avgTurns: stats.turnSum / stats.done,
+      ...part
     });
   }
   rows.sort((a, b) => a.successPct - b.successPct);
@@ -1452,6 +1580,19 @@ function buildAnalysisReport(grandTotal, config, cells) {
   const ideaConversionPct = grandTotal.ideaOffers
     ? (grandTotal.fiveCardTurns || 0) / grandTotal.ideaOffers * 100
     : 0;
+  const allPlayersPlacedPct = grandTotal.done
+    ? (grandTotal.gamesAllPlayersPlaced || 0) / grandTotal.done * 100
+    : 0;
+  const avgPlayersPlaced = grandTotal.done
+    ? (grandTotal.playersPlacedSum || 0) / grandTotal.done
+    : 0;
+  const lastPlayerPlacedPct = grandTotal.done
+    ? (grandTotal.gamesLastPlayerPlaced || 0) / grandTotal.done * 100
+    : 0;
+  const lastThreeAllPlacedPct = grandTotal.done
+    ? (grandTotal.gamesLastThreeAllPlaced || 0) / grandTotal.done * 100
+    : 0;
+  const participation = participationSummary(grandTotal);
 
   const seatStrategy = buildSeatStrategyBreakdown(grandTotal, config);
 
@@ -1480,6 +1621,14 @@ function buildAnalysisReport(grandTotal, config, cells) {
       fiveCardTurns: grandTotal.fiveCardTurns || 0,
       ideaOffers: grandTotal.ideaOffers || 0,
       ideaConversionPct,
+      allPlayersPlacedPct,
+      gamesAllPlayersPlaced: grandTotal.gamesAllPlayersPlaced || 0,
+      avgPlayersPlaced,
+      lastPlayerPlacedPct,
+      gamesLastPlayerPlaced: grandTotal.gamesLastPlayerPlaced || 0,
+      lastThreeAllPlacedPct,
+      gamesLastThreeAllPlaced: grandTotal.gamesLastThreeAllPlaced || 0,
+      ...participation,
       goalLabel: context.durissima ? "Completamento matrice" : "Partite con vincitore",
       scenarioOutcome: scenarioOutcomeLabels(context.durissima),
       options: {
@@ -1510,7 +1659,12 @@ function formatAnalysisPlainText(snapshot) {
     `Partite con almeno un turno da 4 carte: ${analysis.summary.fourCardGamePct.toFixed(1)}% (${analysis.summary.gamesWithFourCardTurn}/${analysis.summary.simulations})`,
     `Turni da 4 carte (totale): ${analysis.summary.fourCardTurns} (media ${analysis.summary.avgFourCardTurnsPerGame.toFixed(2)} per partita)`,
     `Partite con Idea (5ª carta): ${analysis.summary.fiveCardGamePct.toFixed(1)}% (${analysis.summary.gamesWithFiveCardTurn}/${analysis.summary.simulations})`,
-    `Idee offerte: ${analysis.summary.ideaOffers} · realizzate: ${analysis.summary.fiveCardTurns} (conversione ${analysis.summary.ideaConversionPct.toFixed(1)}%)`
+    `Idee offerte: ${analysis.summary.ideaOffers} · realizzate: ${analysis.summary.fiveCardTurns} (conversione ${analysis.summary.ideaConversionPct.toFixed(1)}%)`,
+    `Carte posate per giocatore (media): ${analysis.summary.avgCardsPlacedPerPlayer.toFixed(2)}`,
+    `Min pose in partita (media): ${analysis.summary.avgMinPlacementsPerGame.toFixed(2)}`,
+    `Partite con almeno un escluso (0 pose): ${analysis.summary.zeroPlacementPlayerGamePct.toFixed(1)}%`,
+    `Partite con almeno un «1 sola posa»: ${analysis.summary.onePlacementPlayerGamePct.toFixed(1)}%`,
+    `Partite con tutti ≥2 pose: ${analysis.summary.everyoneAtLeastTwoPlacementsPct.toFixed(1)}%`
   ];
   if (analysis.scenarioCompletions.length) {
     const outcome = analysis.summary.scenarioOutcome;
@@ -1716,6 +1870,51 @@ function renderWorkflowAnalysis(snapshot) {
     els.analysisContent.appendChild(guide);
   }
 
+  if (snapshot.participationGuide) {
+    const guide = document.createElement("div");
+    guide.className = "analysis-block";
+    guide.innerHTML = "<h3>Come leggere (partecipazione)</h3>";
+    const parts = [];
+    if (snapshot.participationGuide.question) parts.push(snapshot.participationGuide.question);
+    if (snapshot.participationGuide.scope) parts.push(snapshot.participationGuide.scope);
+    if (snapshot.participationGuide.read) parts.push(snapshot.participationGuide.read);
+    if (snapshot.participationGuide.metrics) parts.push(snapshot.participationGuide.metrics);
+    if (snapshot.participationGuide.verdict) parts.push(snapshot.participationGuide.verdict);
+    if (snapshot.participationGuide.params) parts.push(snapshot.participationGuide.params);
+    guide.appendChild(renderAnalysisList(parts, text => text));
+    els.analysisContent.appendChild(guide);
+  }
+
+  if (snapshot.playabilityGuide) {
+    const guide = document.createElement("div");
+    guide.className = "analysis-block";
+    guide.innerHTML = "<h3>Come leggere (giocabilità)</h3>";
+    const parts = [];
+    if (snapshot.playabilityGuide.question) parts.push(snapshot.playabilityGuide.question);
+    if (snapshot.playabilityGuide.scope) parts.push(snapshot.playabilityGuide.scope);
+    if (snapshot.playabilityGuide.read) parts.push(snapshot.playabilityGuide.read);
+    if (snapshot.playabilityGuide.metrics) parts.push(snapshot.playabilityGuide.metrics);
+    if (snapshot.playabilityGuide.verdict) parts.push(snapshot.playabilityGuide.verdict);
+    if (snapshot.playabilityGuide.params) parts.push(snapshot.playabilityGuide.params);
+    guide.appendChild(renderAnalysisList(parts, text => text));
+    els.analysisContent.appendChild(guide);
+  }
+
+  if (snapshot.overcrowdGuide) {
+    const guide = document.createElement("div");
+    guide.className = "analysis-block";
+    guide.innerHTML = "<h3>Come leggere (G &gt; L)</h3>";
+    const parts = [];
+    if (snapshot.overcrowdGuide.question) parts.push(snapshot.overcrowdGuide.question);
+    if (snapshot.overcrowdGuide.scope) parts.push(snapshot.overcrowdGuide.scope);
+    if (snapshot.overcrowdGuide.read) parts.push(snapshot.overcrowdGuide.read);
+    if (snapshot.overcrowdGuide.metrics) parts.push(snapshot.overcrowdGuide.metrics);
+    if (snapshot.overcrowdGuide.verdict) parts.push(snapshot.overcrowdGuide.verdict);
+    if (snapshot.overcrowdGuide.params) parts.push(snapshot.overcrowdGuide.params);
+    guide.appendChild(renderAnalysisList(parts, text => text));
+    els.analysisContent.appendChild(guide);
+  }
+
   if (snapshot.ideaGuide) {
     const guide = document.createElement("div");
     guide.className = "analysis-block";
@@ -1822,6 +2021,8 @@ function renderAnalysis(snapshot) {
      <p>Partite con almeno un turno da 4 carte: <strong>${analysis.summary.fourCardGamePct.toFixed(1)}%</strong> (${analysis.summary.gamesWithFourCardTurn}/${analysis.summary.simulations})</p>
      <p>Turni da 4 carte nel campione: <strong>${analysis.summary.fourCardTurns}</strong> (media <strong>${analysis.summary.avgFourCardTurnsPerGame.toFixed(2)}</strong> per partita)</p>
      <p>Idea (5ª carta): <strong>${analysis.summary.fiveCardGamePct.toFixed(1)}%</strong> partite (${analysis.summary.gamesWithFiveCardTurn}/${analysis.summary.simulations}) · offerte <strong>${analysis.summary.ideaOffers}</strong> · realizzate <strong>${analysis.summary.fiveCardTurns}</strong> (conv. <strong>${analysis.summary.ideaConversionPct.toFixed(1)}%</strong>)</p>
+     <p>Carte posate/giocatore (media): <strong>${analysis.summary.avgCardsPlacedPerPlayer.toFixed(2)}</strong> · min pose in partita (media): <strong>${analysis.summary.avgMinPlacementsPerGame.toFixed(2)}</strong></p>
+     <p>Partite con escluso (0 pose): <strong>${analysis.summary.zeroPlacementPlayerGamePct.toFixed(1)}%</strong> · con «1 sola posa»: <strong>${analysis.summary.onePlacementPlayerGamePct.toFixed(1)}%</strong> · tutti ≥2 pose: <strong>${analysis.summary.everyoneAtLeastTwoPlacementsPct.toFixed(1)}%</strong></p>
      <p>Opzioni run: inversione ai limiti DM, ordine iniziale ${analysis.summary.options.randomizeTurnOrder ? "casuale (come partita reale)" : "fisso G1 primo (solo test)"}.</p>`
   );
   els.analysisContent.appendChild(summaryBlock);
@@ -1833,7 +2034,7 @@ function renderAnalysis(snapshot) {
     completionBlock.innerHTML = `<h3>${outcome.sectionTitle}</h3><p>${outcome.sectionHint}</p>`;
     completionBlock.appendChild(renderAnalysisList(
       analysis.scenarioCompletions.slice(0, 12),
-      row => `${row.id}: ${row.successPct.toFixed(1)}% ${outcome.rowVerb} (${row.successes}/${row.done}), stallo ${row.stallPct.toFixed(1)}%, turni medi ${row.avgTurns.toFixed(1)}`
+      row => `${row.id}: ${row.successPct.toFixed(1)}% ${outcome.rowVerb} (${row.successes}/${row.done}), stallo ${row.stallPct.toFixed(1)}%, turni ${row.avgTurns.toFixed(1)}, ≥2 pose ${row.everyoneAtLeastTwoPlacementsPct.toFixed(0)}%`
     ));
     els.analysisContent.appendChild(completionBlock);
   }
@@ -2027,8 +2228,34 @@ function workerSource() {
         fourCardTurns: 0,
         gamesWithFiveCardTurn: 0,
         fiveCardTurns: 0,
-        ideaOffers: 0
+        ideaOffers: 0,
+        gamesAllPlayersPlaced: 0,
+        playersPlacedSum: 0,
+        gamesLastPlayerPlaced: 0,
+        gamesLastThreeAllPlaced: 0,
+        totalPlacementsSum: 0,
+        minPlacementsPerGameSum: 0,
+        gamesWithZeroPlacementPlayer: 0,
+        gamesWithOnePlacementPlayer: 0,
+        gamesEveryoneAtLeastTwoPlacements: 0,
+        zeroPlacementPlayersSum: 0,
+        onePlacementPlayersSum: 0,
+        placementsByPlayerSum: Array.from({ length: players }, () => 0)
       };
+    }
+
+    function accumulateParticipation(patch, result) {
+      patch.totalPlacementsSum += result.totalPlacements || 0;
+      patch.minPlacementsPerGameSum += result.minPlacementsPerPlayer || 0;
+      if (result.hasPlayerWithZeroPlacements) patch.gamesWithZeroPlacementPlayer++;
+      if (result.hasPlayerWithOnePlacement) patch.gamesWithOnePlacementPlayer++;
+      if (result.everyonePlacedAtLeastTwo) patch.gamesEveryoneAtLeastTwoPlacements++;
+      patch.zeroPlacementPlayersSum += result.playersWithZeroPlacements || 0;
+      patch.onePlacementPlayersSum += result.playersWithOnePlacement || 0;
+      const byPlayer = result.placementsByPlayer || [];
+      for (let player = 0; player < patch.placementsByPlayerSum.length; player++) {
+        patch.placementsByPlayerSum[player] += byPlayer[player] || 0;
+      }
     }
 
     self.onmessage = (event) => {
@@ -2063,6 +2290,11 @@ function workerSource() {
         if (result.hadFiveCardTurn) patch.gamesWithFiveCardTurn++;
         patch.fiveCardTurns += result.fiveCardTurns || 0;
         patch.ideaOffers += result.ideaOffers || 0;
+        if (result.allPlayersPlaced) patch.gamesAllPlayersPlaced++;
+        patch.playersPlacedSum += result.playersWhoPlaced || 0;
+        if (result.lastPlayerPlaced) patch.gamesLastPlayerPlaced++;
+        if (result.lastThreeAllPlaced) patch.gamesLastThreeAllPlaced++;
+        accumulateParticipation(patch, result);
         if (result.status === "success") {
           if (result.winner === null) {
             for (let player = 0; player < job.players; player++) {
@@ -2130,7 +2362,7 @@ function runSimulations() {
     stopped: false
   };
   for (const job of jobs) {
-    state.cells.set(job.cellId || job.id, emptyStats(job.players));
+    state.cells.set(job.cellId || job.id, emptyStats(job.players, dealMetaForJob(job)));
     if (!state.rowTotals.has(job.size)) state.rowTotals.set(job.size, emptyAggregateStats());
     if (!state.columnTotals.has(job.players)) state.columnTotals.set(job.players, emptyAggregateStats());
   }
