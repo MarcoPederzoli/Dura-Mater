@@ -630,7 +630,12 @@ function emptyStats(players) {
     stalls: 0,
     turnMin: null,
     turnMax: null,
-    turnSum: 0
+    turnSum: 0,
+    gamesWithFourCardTurn: 0,
+    fourCardTurns: 0,
+    gamesWithFiveCardTurn: 0,
+    fiveCardTurns: 0,
+    ideaOffers: 0
   };
 }
 
@@ -644,6 +649,11 @@ function mergeStats(target, patch) {
   target.turnSum += patch.turnSum;
   target.turnMin = target.turnMin === null ? patch.turnMin : Math.min(target.turnMin, patch.turnMin);
   target.turnMax = target.turnMax === null ? patch.turnMax : Math.max(target.turnMax, patch.turnMax);
+  target.gamesWithFourCardTurn += patch.gamesWithFourCardTurn || 0;
+  target.fourCardTurns += patch.fourCardTurns || 0;
+  target.gamesWithFiveCardTurn += patch.gamesWithFiveCardTurn || 0;
+  target.fiveCardTurns += patch.fiveCardTurns || 0;
+  target.ideaOffers += patch.ideaOffers || 0;
   patch.winsByPlayer.forEach((count, index) => {
     target.winsByPlayer[index] += count;
   });
@@ -851,6 +861,11 @@ function renderCellContent(type, stats) {
   box.appendChild(line(`Min: ${stats.turnMin ?? "-"}`));
   box.appendChild(line(`Media: ${avg.toFixed(1)}`));
   box.appendChild(line(`Max: ${stats.turnMax ?? "-"}`));
+  box.appendChild(line(`≥1 turno da 4: ${pct(stats.gamesWithFourCardTurn || 0, stats.done)}`));
+  box.appendChild(line(`Idea (5ª): ${pct(stats.gamesWithFiveCardTurn || 0, stats.done)}`));
+  if (stats.ideaOffers > 0) {
+    box.appendChild(line(`Idea usate: ${pct(stats.fiveCardTurns || 0, stats.ideaOffers)}`));
+  }
   return box;
 }
 
@@ -888,7 +903,12 @@ function cloneStats(stats) {
     stalls: stats.stalls,
     turnMin: stats.turnMin,
     turnMax: stats.turnMax,
-    turnSum: stats.turnSum
+    turnSum: stats.turnSum,
+    gamesWithFourCardTurn: stats.gamesWithFourCardTurn || 0,
+    fourCardTurns: stats.fourCardTurns || 0,
+    gamesWithFiveCardTurn: stats.gamesWithFiveCardTurn || 0,
+    fiveCardTurns: stats.fiveCardTurns || 0,
+    ideaOffers: stats.ideaOffers || 0
   };
 }
 
@@ -1040,9 +1060,11 @@ function buildWorkflowSnapshot(state, meta = {}) {
     inversionGuide: state.workflow.inversionGuide || null,
     turnOrderGuide: state.workflow.turnOrderGuide || null,
     initialTurnGuide: state.workflow.initialTurnGuide || null,
+    fourCardGuide: state.workflow.fourCardGuide || null,
+    ideaGuide: state.workflow.ideaGuide || null,
     hints: {
       forAnalysis:
-        "Passa questo file intero all'assistente: `analysis.initialTurn` = ruolo 1°/2°/… nel turno iniziale (domanda «primo vs ultimo»); `analysis.positions` = posto G1…Gn. Guide: initialTurnGuide, …"
+        "Passa questo file intero all'assistente: `analysis.initialTurn` = ruolo 1°/2°/… nel turno iniziale (domanda «primo vs ultimo»); `analysis.positions` = posto G1…Gn; `analysis.summary.fourCardGamePct` = % partite con ≥1 turno da 4; `analysis.summary.fiveCardGamePct` / `ideaConversionPct` = regola Idea. Guide: initialTurnGuide, fourCardGuide, ideaGuide, …"
     }
   };
 }
@@ -1418,6 +1440,18 @@ function buildAnalysisReport(grandTotal, config, cells) {
   const scenarioInitialTurn = analyzeScenarioInitialTurn(cells, config, context);
   const scenarioCompletions = analyzeScenarioCompletions(cells);
   const avgTurns = grandTotal.done ? grandTotal.turnSum / grandTotal.done : 0;
+  const fourCardGamePct = grandTotal.done
+    ? (grandTotal.gamesWithFourCardTurn || 0) / grandTotal.done * 100
+    : 0;
+  const avgFourCardTurnsPerGame = grandTotal.done
+    ? (grandTotal.fourCardTurns || 0) / grandTotal.done
+    : 0;
+  const fiveCardGamePct = grandTotal.done
+    ? (grandTotal.gamesWithFiveCardTurn || 0) / grandTotal.done * 100
+    : 0;
+  const ideaConversionPct = grandTotal.ideaOffers
+    ? (grandTotal.fiveCardTurns || 0) / grandTotal.ideaOffers * 100
+    : 0;
 
   const seatStrategy = buildSeatStrategyBreakdown(grandTotal, config);
 
@@ -1437,6 +1471,15 @@ function buildAnalysisReport(grandTotal, config, cells) {
       successPct: context.successPct,
       stallPct: context.stallPct,
       avgTurns,
+      fourCardGamePct,
+      gamesWithFourCardTurn: grandTotal.gamesWithFourCardTurn || 0,
+      fourCardTurns: grandTotal.fourCardTurns || 0,
+      avgFourCardTurnsPerGame,
+      fiveCardGamePct,
+      gamesWithFiveCardTurn: grandTotal.gamesWithFiveCardTurn || 0,
+      fiveCardTurns: grandTotal.fiveCardTurns || 0,
+      ideaOffers: grandTotal.ideaOffers || 0,
+      ideaConversionPct,
       goalLabel: context.durissima ? "Completamento matrice" : "Partite con vincitore",
       scenarioOutcome: scenarioOutcomeLabels(context.durissima),
       options: {
@@ -1463,7 +1506,11 @@ function formatAnalysisPlainText(snapshot) {
       ? "Modalità: Durissima Mater (matrice piena)."
       : "Modalità: competitiva (vince chi finisce le carte).",
     `${analysis.summary.goalLabel}: ${analysis.summary.successPct.toFixed(1)}% · Stallo: ${analysis.summary.stallPct.toFixed(1)}%`,
-    `Turni medi: ${analysis.summary.avgTurns.toFixed(1)}`
+    `Turni medi: ${analysis.summary.avgTurns.toFixed(1)}`,
+    `Partite con almeno un turno da 4 carte: ${analysis.summary.fourCardGamePct.toFixed(1)}% (${analysis.summary.gamesWithFourCardTurn}/${analysis.summary.simulations})`,
+    `Turni da 4 carte (totale): ${analysis.summary.fourCardTurns} (media ${analysis.summary.avgFourCardTurnsPerGame.toFixed(2)} per partita)`,
+    `Partite con Idea (5ª carta): ${analysis.summary.fiveCardGamePct.toFixed(1)}% (${analysis.summary.gamesWithFiveCardTurn}/${analysis.summary.simulations})`,
+    `Idee offerte: ${analysis.summary.ideaOffers} · realizzate: ${analysis.summary.fiveCardTurns} (conversione ${analysis.summary.ideaConversionPct.toFixed(1)}%)`
   ];
   if (analysis.scenarioCompletions.length) {
     const outcome = analysis.summary.scenarioOutcome;
@@ -1561,7 +1608,13 @@ function formatWorkflowStepSummary(step) {
   const turn = step.analysis.initialTurn?.skipped
     ? ""
     : ` · turno: ${step.analysis.initialTurn.verdict}`;
-  return `${step.stepLabel}: ${a.goalLabel} ${a.successPct.toFixed(1)}%, stallo ${a.stallPct.toFixed(1)}%, ${step.simulationsDone} partite${turn}`;
+  const fourCard = a.gamesWithFourCardTurn > 0 || a.fourCardTurns > 0
+    ? ` · ≥1 turno da 4: ${a.fourCardGamePct.toFixed(1)}%`
+    : "";
+  const idea = a.ideaOffers > 0 || a.gamesWithFiveCardTurn > 0
+    ? ` · Idea: ${a.fiveCardGamePct.toFixed(1)}% (${a.ideaConversionPct.toFixed(0)}% conv.)`
+    : "";
+  return `${step.stepLabel}: ${a.goalLabel} ${a.successPct.toFixed(1)}%, stallo ${a.stallPct.toFixed(1)}%, ${step.simulationsDone} partite${fourCard}${idea}${turn}`;
 }
 
 function formatWorkflowPlainText(snapshot) {
@@ -1645,6 +1698,48 @@ function renderWorkflowAnalysis(snapshot) {
     els.analysisContent.appendChild(guide);
   }
 
+  if (snapshot.fourCardGuide) {
+    const guide = document.createElement("div");
+    guide.className = "analysis-block";
+    guide.innerHTML = "<h3>Come leggere (turni da 4 carte)</h3>";
+    const parts = [];
+    if (snapshot.fourCardGuide.question) parts.push(snapshot.fourCardGuide.question);
+    if (snapshot.fourCardGuide.scope) parts.push(snapshot.fourCardGuide.scope);
+    if (snapshot.fourCardGuide.skip) parts.push(snapshot.fourCardGuide.skip);
+    if (snapshot.fourCardGuide.read) parts.push(snapshot.fourCardGuide.read);
+    if (snapshot.fourCardGuide.aggregate) parts.push(snapshot.fourCardGuide.aggregate);
+    if (snapshot.fourCardGuide.compare) parts.push(snapshot.fourCardGuide.compare);
+    if (snapshot.fourCardGuide.verdict) parts.push(snapshot.fourCardGuide.verdict);
+    if (snapshot.fourCardGuide.extra) parts.push(snapshot.fourCardGuide.extra);
+    if (snapshot.fourCardGuide.params) parts.push(snapshot.fourCardGuide.params);
+    guide.appendChild(renderAnalysisList(parts, text => text));
+    els.analysisContent.appendChild(guide);
+  }
+
+  if (snapshot.ideaGuide) {
+    const guide = document.createElement("div");
+    guide.className = "analysis-block";
+    guide.innerHTML = "<h3>Come leggere (regola Idea)</h3>";
+    const parts = [];
+    if (snapshot.ideaGuide.question) parts.push(snapshot.ideaGuide.question);
+    if (snapshot.ideaGuide.scope) parts.push(snapshot.ideaGuide.scope);
+    if (snapshot.ideaGuide.read) parts.push(snapshot.ideaGuide.read);
+    if (snapshot.ideaGuide.metrics) parts.push(snapshot.ideaGuide.metrics);
+    if (snapshot.ideaGuide.verdict) parts.push(snapshot.ideaGuide.verdict);
+    guide.appendChild(renderAnalysisList(parts, text => text));
+    els.analysisContent.appendChild(guide);
+  }
+
+  const lastFourCard = snapshot.steps[snapshot.steps.length - 1]?.analysis?.summary;
+  if (lastFourCard && (lastFourCard.gamesWithFourCardTurn > 0 || lastFourCard.fourCardTurns > 0)) {
+    const block = document.createElement("div");
+    block.className = "analysis-block";
+    block.innerHTML = `<h3>Turni da 4 carte (${snapshot.steps[snapshot.steps.length - 1].stepLabel})</h3>
+      <p>Partite con almeno un turno da 4: <strong>${lastFourCard.fourCardGamePct.toFixed(1)}%</strong> (${lastFourCard.gamesWithFourCardTurn}/${lastFourCard.simulations})</p>
+      <p>Turni da 4 nel campione step: <strong>${lastFourCard.fourCardTurns}</strong> (media <strong>${lastFourCard.avgFourCardTurnsPerGame.toFixed(2)}</strong> per partita)</p>`;
+    els.analysisContent.appendChild(block);
+  }
+
   if (last?.analysis?.seatStrategy?.rows?.length) {
     const seatBlock = document.createElement("div");
     seatBlock.className = "analysis-block";
@@ -1724,6 +1819,9 @@ function renderAnalysis(snapshot) {
     `<p>${modeLine}</p>
      <p>${analysis.summary.goalLabel}: <strong>${analysis.summary.successPct.toFixed(1)}%</strong> · Stallo: <strong>${analysis.summary.stallPct.toFixed(1)}%</strong></p>
      <p>Turni medi: <strong>${analysis.summary.avgTurns.toFixed(1)}</strong></p>
+     <p>Partite con almeno un turno da 4 carte: <strong>${analysis.summary.fourCardGamePct.toFixed(1)}%</strong> (${analysis.summary.gamesWithFourCardTurn}/${analysis.summary.simulations})</p>
+     <p>Turni da 4 carte nel campione: <strong>${analysis.summary.fourCardTurns}</strong> (media <strong>${analysis.summary.avgFourCardTurnsPerGame.toFixed(2)}</strong> per partita)</p>
+     <p>Idea (5ª carta): <strong>${analysis.summary.fiveCardGamePct.toFixed(1)}%</strong> partite (${analysis.summary.gamesWithFiveCardTurn}/${analysis.summary.simulations}) · offerte <strong>${analysis.summary.ideaOffers}</strong> · realizzate <strong>${analysis.summary.fiveCardTurns}</strong> (conv. <strong>${analysis.summary.ideaConversionPct.toFixed(1)}%</strong>)</p>
      <p>Opzioni run: inversione ai limiti DM, ordine iniziale ${analysis.summary.options.randomizeTurnOrder ? "casuale (come partita reale)" : "fisso G1 primo (solo test)"}.</p>`
   );
   els.analysisContent.appendChild(summaryBlock);
@@ -1924,7 +2022,12 @@ function workerSource() {
         stalls: 0,
         turnMin: null,
         turnMax: null,
-        turnSum: 0
+        turnSum: 0,
+        gamesWithFourCardTurn: 0,
+        fourCardTurns: 0,
+        gamesWithFiveCardTurn: 0,
+        fiveCardTurns: 0,
+        ideaOffers: 0
       };
     }
 
@@ -1955,6 +2058,11 @@ function workerSource() {
         patch.turnSum += result.turns;
         patch.turnMin = patch.turnMin === null ? result.turns : Math.min(patch.turnMin, result.turns);
         patch.turnMax = patch.turnMax === null ? result.turns : Math.max(patch.turnMax, result.turns);
+        if (result.hadFourCardTurn) patch.gamesWithFourCardTurn++;
+        patch.fourCardTurns += result.fourCardTurns || 0;
+        if (result.hadFiveCardTurn) patch.gamesWithFiveCardTurn++;
+        patch.fiveCardTurns += result.fiveCardTurns || 0;
+        patch.ideaOffers += result.ideaOffers || 0;
         if (result.status === "success") {
           if (result.winner === null) {
             for (let player = 0; player < job.players; player++) {

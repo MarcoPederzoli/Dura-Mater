@@ -403,4 +403,91 @@ function testMatrixSizesCompetitivePlayability() {
 
 testMatrixSizesCompetitivePlayability();
 
+function testSimulateGameReportsFourCardTurns() {
+  let gamesWithFour = 0;
+  let totalFourCardTurns = 0;
+  const trials = 200;
+  for (let i = 0; i < trials; i++) {
+    const result = core.simulateGame(deck, {
+      size: 4,
+      players: 2,
+      strategies: ["planner", "planner"],
+      random: core.mulberry32(44000 + i),
+      durissimaMater: false,
+      randomizeTurnOrder: true
+    });
+    assert.ok(result.maxPlacementsInTurn >= 0 && result.maxPlacementsInTurn <= 4);
+    assert.equal(result.fourCardTurns >= 0, true);
+    assert.equal(result.hadFourCardTurn, result.maxPlacementsInTurn >= 4);
+    if (result.hadFourCardTurn) gamesWithFour++;
+    totalFourCardTurns += result.fourCardTurns;
+  }
+  assert.ok(
+    gamesWithFour > 0,
+    `expected some games with a 4-card turn, got ${gamesWithFour}/${trials}`
+  );
+  assert.ok(
+    totalFourCardTurns >= gamesWithFour,
+    `four-card turn count should be at least gamesWithFour (${totalFourCardTurns} vs ${gamesWithFour})`
+  );
+}
+
+testSimulateGameReportsFourCardTurns();
+
+function testIdeaFifthCardAfterFourPlacements() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);
+  const state = core.setupGame(deck, { size: 4, players: 2, random: () => 0 });
+  state.board = [
+    { x: 0, y: 0, card: card("118"), playerId: 0 },
+    { x: 1, y: 0, card: card("227"), playerId: 0 },
+    { x: 0, y: 1, card: card("238"), playerId: 0 },
+    { x: 1, y: 1, card: card("247"), playerId: 0 }
+  ];
+  state.currentPlayer = 0;
+  state.turnPlayed = 4;
+  state.hands[0] = [card("428")];
+  const ideaMoves = core.legalPlacements(state, 0, 1);
+  assert.ok(ideaMoves.length > 0, "expected at least one legal idea placement");
+  const move = ideaMoves[0];
+  core.applyPlacement(state, 0, move);
+  assert.equal(state.turnPlayed, 5);
+  assert.equal(state.lastMove.idea, true);
+  assert.equal(state.lastMove.requirement, 1);
+  assert.throws(() => core.validatePlacement(state, 0, move), /limite di pose/);
+}
+
+function testIdeaSkippedEndsTurnAtFour() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);
+  const state = core.setupGame(deck, { size: 4, players: 2, random: () => 0 });
+  state.turnPlayed = 4;
+  state.hands[0] = [card("428")];
+  assert.equal(core.canOfferIdea(state, 0), true);
+  core.endTurn(state);
+  assert.equal(state.turnPlayed, 0);
+  assert.equal(state.currentPlayer, 1);
+}
+
+testIdeaFifthCardAfterFourPlacements();
+testIdeaSkippedEndsTurnAtFour();
+
+function testIdeaOffersCountedOnFourthPlacement() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);
+  const state = core.setupGame(deck, { size: 4, players: 2, random: () => 0 });
+  state.board = [
+    { x: 0, y: 0, card: card("118"), playerId: 0 },
+    { x: 1, y: 0, card: card("227"), playerId: 0 },
+    { x: 0, y: 1, card: card("238"), playerId: 0 },
+    { x: 1, y: 1, card: card("247"), playerId: 0 }
+  ];
+  state.turnPlayed = 3;
+  state.hands[0] = [card("328"), card("428")];
+  const fourth = core.legalPlacements(state, 0, 4)[0];
+  assert.ok(fourth, "expected a legal fourth placement");
+  core.applyPlacement(state, 0, fourth);
+  assert.equal(state.turnPlacementStats.ideaOffers, 1);
+  assert.equal(core.canOfferIdea(state, 0), true);
+}
+
+testIdeaOffersCountedOnFourthPlacement();
+
 console.log("core regression tests passed");

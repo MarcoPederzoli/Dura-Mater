@@ -107,7 +107,7 @@ La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **N×
 ## Turno di gioco
 
 - I giocatori agiscono a turno secondo l'ordine iniziale e la direzione in vigore.
-- Nel proprio turno un giocatore puo' posare da 1 a 4 carte.
+- Nel proprio turno un giocatore puo' posare da 1 a 4 carte, piu' eventualmente una quinta carta tramite l'**Idea** (vedi sotto).
 - Il giocatore puo' scegliere di posare meno di 4 carte anche se avrebbe mosse legali disponibili.
 - Alla fine del proprio turno, prima di passare il turno al giocatore successivo, il giocatore deve pescare una carta se il mazzo di pesca contiene ancora carte.
 - La pesca di fine turno avviene sia se il giocatore ha posato una o piu' carte, sia se ha passato.
@@ -134,6 +134,14 @@ La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **N×
   - terza carta posata nel turno: requisito 3
   - quarta carta posata nel turno: requisito 4
 - La prima carta assoluta della partita e' un'eccezione: puo' essere posata senza adiacenze.
+
+## Idea (quinta carta)
+
+- Se in un turno un giocatore posa **quattro carte legali** e ha ancora almeno una carta in mano, realizza un'**Idea**: puo' posare **una quinta carta** nello stesso turno, subito dopo la quarta, **senza pescare** tra le due pose.
+- La quinta carta segue solo il vincolo fondamentale di compatibilita': deve essere adiacente ortogonalmente ad almeno una carta in gioco e condividere almeno una caratteristica con **ogni** carta adiacente ortogonalmente (equivalente al requisito 1 del turno, non al requisito 4).
+- La quinta carta e' **opzionale**: il giocatore puo' chiudere il turno dopo la quarta posa.
+- Dopo la quinta carta (o dopo aver chiuso il turno senza usarla), il turno termina normalmente (pesca di fine turno inclusa, se prevista).
+- Se la quarta carta svuota la mano (vittoria) o non restano carte in mano, l'Idea non si applica.
 
 ## Matrice di gioco
 

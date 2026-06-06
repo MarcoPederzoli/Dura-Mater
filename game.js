@@ -500,12 +500,15 @@ function isBotTurn() {
 }
 
 function currentRequirement() {
-  return game.state.turnPlayed + 1;
+  if (!game || game.state.turnPlayed >= 5) return null;
+  return core.placementRequirement(game.state);
 }
 
 function currentMoves() {
-  if (!game || game.state.status !== "playing" || currentRequirement() > 4) return [];
-  return core.legalPlacements(game.state, game.state.currentPlayer, currentRequirement());
+  if (!game || game.state.status !== "playing" || game.state.turnPlayed >= 5) return [];
+  const requirement = currentRequirement();
+  if (requirement === null || (requirement > 4 && requirement !== 1)) return [];
+  return core.legalPlacements(game.state, game.state.currentPlayer, requirement);
 }
 
 function suggestionRandom(strategy) {
@@ -526,7 +529,9 @@ function applySuggestedAction(action) {
 
 function actionLabel(action) {
   if (action.type === "move") return `${action.move.card.code} in (${action.move.x}, ${action.move.y})`;
-  return game.state.turnPlayed === 0 ? "Passa" : "Chiude turno";
+  if (game.state.turnPlayed === 0) return "Passa";
+  if (core.canOfferIdea(game.state, game.state.currentPlayer)) return "Chiude (salta idea)";
+  return "Chiude turno";
 }
 
 function actionTitle(action, labels) {
@@ -705,9 +710,12 @@ function playManualMove(move) {
   const baseLabel = `${playerLabel(player)} gioca ${legalMove.card.code} in (${legalMove.x}, ${legalMove.y}).`;
   game.state = gameState.commit(game.session, baseLabel, game.random, nextState => {
     core.applyPlacement(nextState, player, legalMove);
-    if (nextState.status === "playing" && nextState.turnPlayed >= 4) {
+    if (nextState.status === "playing" && nextState.turnPlayed >= 5) {
       core.endTurn(nextState);
       return `${baseLabel} ${playerLabel(player)} chiude il turno.`;
+    }
+    if (nextState.status === "playing" && core.canOfferIdea(nextState, player)) {
+      return `${baseLabel} Idea: puoi posare una quinta carta (requisito base).`;
     }
     return baseLabel;
   });
@@ -1314,6 +1322,7 @@ function renderSummary() {
     ["Strategia", game.modes[player] === "bot" ? core.strategyLabel(game.strategies[player]) : "Manuale"],
     ["Mazzo pesca", state.drawPile.length],
     ["Carte giocate nel turno", state.turnPlayed],
+    ...(core.canOfferIdea(state, player) ? [["Idea", "Quinta carta disponibile"]] : []),
     ["Passaggi consecutivi", state.consecutivePasses]
   ];
   for (const [label, value] of rows) {

@@ -367,11 +367,28 @@ const MPCARDS_CORE_SOURCE = `
     return true;
   }
 
+  function placementRequirement(state) {
+    if (state.turnPlayed >= 4) return 1;
+    return state.turnPlayed + 1;
+  }
+
+  function canOfferIdea(state, playerId) {
+    return (
+      state.status === "playing" &&
+      state.turnPlayed === 4 &&
+      (state.hands[playerId] || []).length > 0
+    );
+  }
+
   function maxChainPlays(sim, playerId, branchLimit, random, budget) {
     if (budget.count >= budget.max) return sim.turnPlayed;
     budget.count++;
-    const requirement = sim.turnPlayed + 1;
-    if (requirement > 4) return sim.turnPlayed;
+    if (sim.turnPlayed >= 5) return sim.turnPlayed;
+    const hand = sim.hands[playerId] || [];
+    const requirement = sim.turnPlayed < 4
+      ? sim.turnPlayed + 1
+      : (sim.turnPlayed === 4 && hand.length ? 1 : 99);
+    if (requirement > 4 && requirement !== 1) return sim.turnPlayed;
     const moves = legalPlacements(sim, playerId, requirement);
     if (!moves.length) return sim.turnPlayed;
     let best = sim.turnPlayed;
@@ -382,19 +399,24 @@ const MPCARDS_CORE_SOURCE = `
       if (!applyPlacementSim(next, playerId, move)) continue;
       const depth = maxChainPlays(next, playerId, branchLimit, random, budget);
       if (depth > best) best = depth;
-      if (best >= 4) return 4;
+      if (best >= 5) return 5;
     }
     return best;
   }
 
   function quickFollowUpScore(sim, playerId) {
-    const requirement = sim.turnPlayed + 1;
-    if (requirement > 4) return 0;
+    if (sim.turnPlayed >= 5) return 0;
+    const hand = sim.hands[playerId] || [];
+    const requirement = sim.turnPlayed < 4
+      ? sim.turnPlayed + 1
+      : (sim.turnPlayed === 4 && hand.length ? 1 : 99);
+    if (requirement > 4 && requirement !== 1) return 0;
     return legalPlacements(sim, playerId, requirement).length;
   }
 
   function canExtendChain(state, playerId, random) {
-    const requirement = state.turnPlayed + 1;
+    const requirement = placementRequirement(state);
+    if (state.turnPlayed >= 4 && requirement > 4) return false;
     const moves = legalPlacements(state, playerId, requirement);
     if (!moves.length) return false;
     const sample = moves.length > 10 ? shuffle(moves, random).slice(0, 10) : moves;
@@ -476,12 +498,25 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   function chooseAction(state, playerId, strategy, random) {
-    const requirement = state.turnPlayed + 1;
-    if (requirement > 4) return { type: "stop" };
-    if (strategy === "draw-random-finish-random" && state.turnPlayed > 0 && state.drawPile.length > 0) {
+    if (state.turnPlayed >= 5) return { type: "stop" };
+    const requirement = placementRequirement(state);
+    if (state.turnPlayed >= 4 && requirement > 4) return { type: "stop" };
+    if (state.turnPlayed < 4 && requirement > 4) return { type: "stop" };
+    if (
+      strategy === "draw-random-finish-random" &&
+      state.turnPlayed > 0 &&
+      state.turnPlayed < 4 &&
+      state.drawPile.length > 0
+    ) {
       return { type: "stop" };
     }
-    if (strategy === "prudent" && state.turnPlayed > 0 && state.drawPile.length > 0 && !canExtendChain(state, playerId, random)) {
+    if (
+      strategy === "prudent" &&
+      state.turnPlayed > 0 &&
+      state.turnPlayed < 4 &&
+      state.drawPile.length > 0 &&
+      !canExtendChain(state, playerId, random)
+    ) {
       return { type: "stop" };
     }
     const effectiveStrategy = strategy === "draw-random-finish-random" ? "random" : strategy;
@@ -493,8 +528,14 @@ const MPCARDS_CORE_SOURCE = `
   function validatePlacement(state, playerId, move) {
     if (!state || state.status !== "playing") throw new Error("Partita non in corso.");
     if (playerId !== state.currentPlayer) throw new Error("Non e' il turno del giocatore.");
-    const requirement = state.turnPlayed + 1;
-    if (requirement > 4) throw new Error("Il turno ha gia' raggiunto il limite di pose.");
+    if (state.turnPlayed >= 5) throw new Error("Il turno ha gia' raggiunto il limite di pose.");
+    const requirement = placementRequirement(state);
+    if (state.turnPlayed < 4 && requirement > 4) {
+      throw new Error("Il turno ha gia' raggiunto il limite di pose.");
+    }
+    if (state.turnPlayed === 4 && !(state.hands[playerId] || []).length) {
+      throw new Error("Nessuna carta in mano per realizzare l'idea.");
+    }
     const legalMove = legalPlacements(state, playerId, requirement).find(candidate =>
       candidate.cardUid === move.cardUid &&
       candidate.x === move.x &&
@@ -539,14 +580,31 @@ const MPCARDS_CORE_SOURCE = `
     };
     state.board.push({ x: legalMove.x, y: legalMove.y, card, playerId });
     state.consecutivePasses = 0;
+    const ideaPlacement = state.turnPlayed === 4;
     state.turnPlayed++;
-    state.lastMove = { playerId, card, x: legalMove.x, y: legalMove.y, matches: legalMove.matches, requirement: state.turnPlayed };
+    state.lastMove = {
+      playerId,
+      card,
+      x: legalMove.x,
+      y: legalMove.y,
+      matches: legalMove.matches,
+      requirement: ideaPlacement ? 1 : state.turnPlayed,
+      idea: ideaPlacement
+    };
     handleTurnOrderAfterPlacement(state, playerId, milestoneBefore);
     if (isDurissimaMater(state)) {
       maybeCompleteDurissima(state);
     } else if (hand.length === 0) {
       state.status = "success";
       state.winner = playerId;
+    }
+    if (
+      state.turnPlayed === 4 &&
+      hand.length > 0 &&
+      state.status === "playing" &&
+      state.turnPlacementStats
+    ) {
+      state.turnPlacementStats.ideaOffers++;
     }
   }
 
@@ -566,7 +624,21 @@ const MPCARDS_CORE_SOURCE = `
     return true;
   }
 
+  function emptyTurnPlacementStats() {
+    return { byCount: [0, 0, 0, 0, 0, 0], maxInTurn: 0, ideaOffers: 0 };
+  }
+
+  function recordTurnPlacements(state) {
+    const stats = state.turnPlacementStats;
+    if (!stats) return;
+    const played = state.turnPlayed;
+    if (played < 0 || played > 5) return;
+    stats.byCount[played]++;
+    if (played > stats.maxInTurn) stats.maxInTurn = played;
+  }
+
   function endTurn(state) {
+    recordTurnPlacements(state);
     const playerId = state.currentPlayer;
     const handEmpty = (state.hands[playerId] || []).length === 0;
     if (
@@ -621,7 +693,8 @@ const MPCARDS_CORE_SOURCE = `
       turnDirection: 1,
       durissimaMater: options.durissimaMater === true,
       randomizeTurnOrder,
-      turnOrder: initialTurnOrder.slice()
+      turnOrder: initialTurnOrder.slice(),
+      turnPlacementStats: emptyTurnPlacementStats()
     };
   }
 
@@ -650,7 +723,7 @@ const MPCARDS_CORE_SOURCE = `
     const move = action.move;
     applyPlacement(state, playerId, move);
     if (state.status !== "playing") return { played: true, move };
-    if (state.turnPlayed >= 4) endTurn(state);
+    if (state.turnPlayed >= 5) endTurn(state);
     return { played: true, move };
   }
 
@@ -719,6 +792,8 @@ const MPCARDS_CORE_SOURCE = `
       steps++;
     }
     if (state.status === "playing") state.status = "stalled";
+    if (state.turnPlayed > 0) recordTurnPlacements(state);
+    const placementStats = state.turnPlacementStats || emptyTurnPlacementStats();
     const winnerInitialTurnSlot = state.winner === null
       ? null
       : state.initialTurnOrder.indexOf(state.winner);
@@ -740,7 +815,13 @@ const MPCARDS_CORE_SOURCE = `
       heightAxisFixed: state.heightAxisFixed === true,
       turnDirection: state.turnDirection,
       durissimaMater: state.durissimaMater === true,
-      boardComplete: isBoardComplete(state)
+      boardComplete: isBoardComplete(state),
+      maxPlacementsInTurn: placementStats.maxInTurn,
+      fourCardTurns: placementStats.byCount[4],
+      hadFourCardTurn: placementStats.maxInTurn >= 4,
+      ideaOffers: placementStats.ideaOffers || 0,
+      fiveCardTurns: placementStats.byCount[5],
+      hadFiveCardTurn: placementStats.maxInTurn >= 5
     };
   }
 
@@ -786,6 +867,8 @@ const MPCARDS_CORE_SOURCE = `
     choosePlacement,
     chooseAction,
     validatePlacement,
+    placementRequirement,
+    canOfferIdea,
     applyPlacement,
     isDurissimaMater,
     isBoardComplete,
