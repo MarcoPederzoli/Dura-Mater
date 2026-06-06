@@ -33,6 +33,8 @@ const els = {
   deckCodes: document.querySelector("#deck-codes"),
   run: document.querySelector("#run"),
   stop: document.querySelector("#stop"),
+  newSimulation: document.querySelector("#new-simulation"),
+  newSimulationAnalysis: document.querySelector("#new-simulation-analysis"),
   resetPrefs: document.querySelector("#reset-prefs"),
   presetSelect: document.querySelector("#preset-select"),
   applyPreset: document.querySelector("#apply-preset"),
@@ -2116,6 +2118,15 @@ function finishRun(state) {
   setStatus(`${wf} ${state.total} simulazioni. Esporta JSON per l'analisi.`, "good");
 }
 
+function prepareNewSimulation() {
+  if (activeRun) stopSimulations();
+  savePrefsNow();
+  setStatus("Pronto per una nuova simulazione.", "good");
+  const paramsSection = document.querySelector("main > section");
+  paramsSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (els.count) els.count.focus();
+}
+
 function stopSimulations() {
   if (!activeRun) return;
   const state = activeRun;
@@ -2246,6 +2257,8 @@ els.run.addEventListener("click", () => {
   runSimulations();
 });
 els.stop.addEventListener("click", stopSimulations);
+if (els.newSimulation) els.newSimulation.addEventListener("click", prepareNewSimulation);
+if (els.newSimulationAnalysis) els.newSimulationAnalysis.addEventListener("click", prepareNewSimulation);
 if (els.exportResults) els.exportResults.addEventListener("click", exportResultsJson);
 if (els.copyAnalysis) els.copyAnalysis.addEventListener("click", copyAnalysisText);
 clearAnalysisUi();
