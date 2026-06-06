@@ -1,0 +1,1063 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dura Mater — Simulazione singolo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f4ef;
+      --panel: #ffffff;
+      --ink: #202124;
+      --muted: #61656d;
+      --line: #d9d3c8;
+      --accent: #0f766e;
+      --accent-dark: #0b5f59;
+      --warn: #b45309;
+      --good: #15803d;
+      --bad: #b91c1c;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    main {
+      width: min(1400px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 24px 0 40px;
+    }
+
+    header.page-head nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: center;
+      justify-content: flex-end;
+      font-size: 14px;
+    }
+
+    header.page-head nav a {
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    header.page-head nav a[aria-current="page"] {
+      color: var(--ink);
+      pointer-events: none;
+    }
+
+    .page-head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    a { color: var(--accent); }
+
+    section, aside {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(25, 28, 33, 0.05);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+
+    label {
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    input, select, textarea, button {
+      font: inherit;
+    }
+
+    input, select, textarea {
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 8px 10px;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 76px;
+      font: 13px/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      resize: vertical;
+    }
+
+    button {
+      min-height: 40px;
+      border: 0;
+      border-radius: 7px;
+      padding: 10px 13px;
+      color: #fff;
+      background: var(--accent);
+      cursor: pointer;
+    }
+
+    button:hover { background: var(--accent-dark); }
+    button.secondary { background: #374151; }
+    button.secondary:hover { background: #1f2937; }
+    button.warn { background: var(--warn); }
+    button:disabled { opacity: 0.55; cursor: default; }
+
+    .setup {
+      margin-bottom: 18px;
+    }
+
+    .prefs-hint {
+      margin: 0;
+      padding: 0 16px 14px;
+      font-size: 12px;
+      line-height: 1.4;
+      color: var(--muted);
+    }
+
+    body.playing .setup {
+      display: none;
+    }
+
+    .controls,
+    .players {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .players {
+      display: grid;
+      grid-template-columns: 1fr;
+      align-items: stretch;
+    }
+
+    .players.hidden {
+      display: none;
+    }
+
+    .player-row {
+      display: grid;
+      grid-template-columns: minmax(108px, 140px) minmax(120px, 180px) minmax(180px, 260px);
+      gap: 8px;
+      align-items: end;
+      max-width: 560px;
+      padding: 8px 0;
+      border-bottom: 1px solid #ece7df;
+    }
+
+    .player-row:last-child {
+      border-bottom: 0;
+    }
+
+    .setup.started .player-row select,
+    .setup.started #players,
+    .setup.started #size,
+    .setup.started #seed {
+      background: #f3f0ea;
+      color: var(--muted);
+    }
+
+    .game-shell[hidden] {
+      display: none;
+    }
+
+    .gamebar {
+      margin-bottom: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .gamebar #new-game-play {
+      margin-left: auto;
+    }
+
+    .gamebar .pill {
+      flex: 1 1 260px;
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 8px 10px;
+      background: var(--panel);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 13px;
+    }
+
+    .gamebar .speed-control {
+      min-width: 190px;
+    }
+
+    .play-feedback {
+      flex: 1 1 100%;
+      margin: 0;
+      padding: 6px 10px;
+      border-radius: 7px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: var(--bad);
+      font-size: 14px;
+      font-weight: 600;
+      min-height: 2rem;
+    }
+
+    .play-feedback:empty {
+      display: none;
+    }
+
+    .play-area {
+      display: grid;
+      gap: 18px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .play-column {
+      display: grid;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .hand-dock-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(25, 28, 33, 0.05);
+      overflow: hidden;
+    }
+
+    .hand-dock {
+      padding: 14px 16px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      justify-content: center;
+      align-items: flex-end;
+      min-height: 0;
+      overflow-x: auto;
+    }
+
+    .hand-dock-entry {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+      max-width: 200px;
+    }
+
+    .hand-dock .hand-card {
+      padding: 5px;
+      flex: 0 0 auto;
+    }
+
+    .hand-dock .card-name {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.25;
+      text-align: center;
+      color: var(--ink);
+      max-width: 192px;
+    }
+
+    .hand-dock .card-tile {
+      width: 192px;
+      height: 192px;
+      aspect-ratio: 1;
+      border-radius: 12px;
+      font-size: 18px;
+    }
+
+    .hand-dock .card-tile small {
+      font-size: 11px;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 13px;
+      text-align: right;
+    }
+
+    .status.good { color: var(--good); }
+    .status.bad { color: var(--bad); }
+
+    .board-wrap {
+      padding: 16px;
+      overflow: auto;
+    }
+
+    .board {
+      display: grid;
+      gap: 5px;
+      width: max-content;
+    }
+
+    .board .cell {
+      width: 93px;
+      height: 93px;
+      border: 1px dashed #d8d0c3;
+      border-radius: 8px;
+      background: #fffdf9;
+      display: grid;
+      place-items: center;
+      position: relative;
+    }
+
+    .board .cell.target {
+      border: 2px solid var(--accent);
+      background: #e8f5f2;
+      cursor: pointer;
+    }
+
+    .board .cell.target::after {
+      content: none;
+    }
+
+    .board .target-score {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .card-tile {
+      aspect-ratio: 1;
+      border: 1px solid rgba(0, 0, 0, 0.18);
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      color: var(--card-ink, #fff);
+      background: var(--card-bg, #444);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+      user-select: none;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .board .card-tile {
+      width: 83px;
+      height: 83px;
+      border-radius: 8px;
+    }
+
+    .card-tile.has-art {
+      background: #ece7df;
+      padding: 0;
+    }
+
+    .card-tile.has-art img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center;
+      display: block;
+    }
+
+    .card-tile.has-art .card-fallback {
+      display: none;
+    }
+
+    .board .card-tile small {
+      display: none;
+    }
+
+    .card-tile small {
+      display: block;
+      font-size: 10px;
+      font-weight: 700;
+      opacity: 0.85;
+    }
+
+    aside.turn-flow-panel {
+      overflow: visible;
+      min-width: 0;
+    }
+
+    .turn-flow-panel {
+      display: grid;
+    }
+
+    .turn-flow-panel > .panel-head {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 6px;
+    }
+
+    .turn-flow-panel > .panel-head .status {
+      text-align: left;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .turn-flow {
+      padding: 14px 12px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 8px 10px;
+      font-size: 17px;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+
+    .turn-flow-player {
+      min-width: 0;
+      max-width: 100%;
+      flex: 0 1 auto;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 2px solid var(--line);
+      background: #fffdf9;
+      text-align: center;
+      overflow-wrap: anywhere;
+    }
+
+    .turn-flow-player.current {
+      border-color: var(--accent);
+      background: #e8f5f2;
+      color: var(--accent-dark);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+    }
+
+    .turn-flow-arrow {
+      font-size: 22px;
+      line-height: 1;
+      color: var(--muted);
+      user-select: none;
+      flex: 0 0 auto;
+    }
+
+    .inversion-alert {
+      margin: 0 16px 16px;
+      padding: 10px 12px;
+      border-radius: 7px;
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      color: #9a3412;
+      font-size: 13px;
+      line-height: 1.45;
+      display: grid;
+      gap: 6px;
+    }
+
+    .inversion-alert:empty,
+    .inversion-alert[hidden] {
+      display: none;
+    }
+
+    .inversion-alert p {
+      margin: 0;
+      color: inherit;
+    }
+
+    .inversion-alert strong {
+      color: #c2410c;
+    }
+
+    .hand-card {
+      border: 2px solid transparent;
+      border-radius: 9px;
+      padding: 4px;
+      background: #f4efe7;
+      cursor: default;
+      position: relative;
+    }
+
+    .hand-card.playable {
+      border-color: var(--accent);
+      cursor: pointer;
+    }
+
+    /* Click: solo la carta scelta (le altre restano verdi/teal) */
+    .hand-card.selected {
+      border: 4px solid var(--bad) !important;
+      background: #fef2f2 !important;
+      outline: 3px solid var(--bad);
+      outline-offset: 2px;
+      box-shadow: 0 0 0 5px rgba(185, 28, 28, 0.4);
+      cursor: pointer;
+      z-index: 2;
+    }
+
+    .hand-card.selected .card-tile {
+      box-shadow: inset 0 0 0 3px var(--bad), 0 0 0 2px var(--bad);
+    }
+
+    .hand-card .card-tile img {
+      -webkit-user-drag: none;
+      user-drag: none;
+      pointer-events: none;
+    }
+
+    .hand-card-selected-badge {
+      position: absolute;
+      top: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 3;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: var(--bad);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      pointer-events: none;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    }
+
+    .actions,
+    .strategy-hints,
+    .summary,
+    .log {
+      padding: 14px 16px;
+    }
+
+    .actions {
+      display: grid;
+      gap: 10px;
+    }
+
+    .strategy-panel-intro {
+      padding: 12px 16px 0;
+      display: grid;
+      gap: 6px;
+    }
+
+    .strategy-panel-intro p {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+
+    .strategy-assignments {
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.4;
+      color: var(--ink);
+    }
+
+    .strategy-hints {
+      display: flex;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      gap: 10px;
+      overflow-x: auto;
+      padding: 12px 16px 16px;
+      scroll-snap-type: x proximity;
+    }
+
+    .strategy-hints[hidden],
+    .strategy-panel[hidden] {
+      display: none;
+    }
+
+    .strategy-hint {
+      flex: 0 0 min(280px, 88vw);
+      scroll-snap-align: start;
+      min-height: 72px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 10px 12px;
+      background: #fffdf9;
+      color: var(--ink);
+      display: grid;
+      gap: 6px;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .strategy-hint:hover,
+    .strategy-hint:focus-visible {
+      border-color: var(--accent);
+      background: #e8f5f2;
+      outline: none;
+    }
+
+    .strategy-hint:disabled {
+      opacity: 0.55;
+      cursor: default;
+    }
+
+    .strategy-hint:disabled:hover {
+      border-color: var(--line);
+      background: #fffdf9;
+    }
+
+    .strategy-hint-desc {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.35;
+      color: var(--ink);
+    }
+
+    .strategy-hint-move {
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.35;
+      color: var(--muted);
+    }
+
+    .hand-card.preview:not(.selected) {
+      border-color: var(--warn);
+      background: #fff7ed;
+      box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.18);
+    }
+
+    .summary {
+      display: grid;
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    .summary div {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      border-bottom: 1px solid #ece7df;
+      padding-bottom: 6px;
+    }
+
+    .summary div:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .log {
+      min-height: 160px;
+      max-height: 260px;
+      overflow: auto;
+      margin: 0;
+      white-space: pre-wrap;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      color: #3f4652;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      background: rgba(32, 33, 36, 0.44);
+      display: grid;
+      place-items: center;
+      padding: 16px;
+    }
+
+    .modal[hidden] {
+      display: none;
+    }
+
+    .modal-panel {
+      width: min(720px, 100%);
+      max-height: min(720px, calc(100vh - 32px));
+      overflow: auto;
+      background: var(--panel);
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    .modal-tabs {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .modal-content {
+      padding: 0;
+    }
+
+    .modal-content > div[hidden] {
+      display: none;
+    }
+
+    @media (max-width: 980px) {
+      header,
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 700px) {
+      main {
+        width: min(100vw - 14px, 1400px);
+        padding: 12px 0 28px;
+      }
+
+      .page-head {
+        grid-template-columns: 1fr;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      h1 {
+        font-size: 23px;
+      }
+
+      .panel-head {
+        padding: 12px;
+        align-items: start;
+        flex-direction: column;
+      }
+
+      .status {
+        text-align: left;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        padding: 12px;
+      }
+
+      input, select, button {
+        width: 100%;
+      }
+
+      .players {
+        padding: 12px;
+      }
+
+      .player-row {
+        grid-template-columns: 1fr;
+        max-width: none;
+        gap: 6px;
+      }
+
+      .layout,
+      .play-column {
+        gap: 12px;
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .turn-flow-panel {
+        order: -1;
+      }
+
+      .gamebar {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .gamebar .pill {
+        grid-column: span 2;
+      }
+
+      .board-wrap {
+        padding: 10px;
+        max-height: 58vh;
+      }
+
+      .board {
+        gap: 3px;
+      }
+
+      .board .cell {
+        width: 74px;
+        height: 74px;
+        border-radius: 7px;
+      }
+
+      .board .card-tile {
+        width: 67px;
+        height: 67px;
+        border-radius: 7px;
+      }
+
+      .board .target-score {
+        width: 32px;
+        height: 32px;
+        font-size: 13px;
+      }
+
+      .turn-flow {
+        padding: 14px 12px;
+        font-size: 20px;
+        gap: 10px;
+      }
+
+      .hand-card {
+        padding: 3px;
+      }
+
+      .hand-dock {
+        padding: 12px;
+        gap: 10px;
+        min-height: 168px;
+      }
+
+      .hand-dock .card-tile {
+        width: 144px;
+        height: 144px;
+      }
+
+      .hand-dock .card-name {
+        font-size: 12px;
+        max-width: 144px;
+      }
+
+      .actions,
+      .strategy-hints,
+      .summary,
+      .log {
+        padding: 12px;
+      }
+
+      .actions {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 420px) {
+      .controls,
+      .actions,
+      .gamebar {
+        grid-template-columns: 1fr;
+      }
+
+      .gamebar .pill {
+        grid-column: auto;
+      }
+
+      .board .cell {
+        width: 64px;
+        height: 64px;
+      }
+
+      .board .card-tile {
+        width: 58px;
+        height: 58px;
+      }
+
+      .board .target-score {
+        width: 29px;
+        height: 29px;
+        font-size: 11px;
+      }
+    }
+
+    .app-version {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="page-head">
+      <div>
+        <h1>Dura Mater</h1>
+        <p>Simulazione di partita singola: mano visibile, confronto strategie bot.</p>
+      </div>
+      <nav>
+        <a href="gioco.html">Gioco</a>
+        <a href="simulazione-singolo.html" aria-current="page">Simulazione singolo</a>
+        <a href="simulatore-massivo.html">Simulatore massivo</a>
+      </nav>
+    </header>
+
+    <section id="setup-section" class="setup">
+      <div class="panel-head">
+        <h2>Impostazioni</h2>
+        <div id="status" class="status">Configura e avvia una partita.</div>
+      </div>
+      <div class="controls">
+        <label>
+          Giocatori
+          <input id="players" type="number" min="1" max="8" value="3">
+        </label>
+        <label>
+          Nome giocatore 1
+          <input id="player-one-name" type="text" maxlength="32" placeholder="Giocatore 1" autocomplete="nickname">
+        </label>
+        <label>
+          Lato matrice
+          <input id="size" type="number" min="3" max="8" value="5">
+        </label>
+        <label>
+          Velocita' computer
+          <select id="speed">
+            <option value="step">Step by step</option>
+            <option value="5000">Una azione ogni 5s</option>
+            <option value="1000" selected>Una azione ogni 1s</option>
+            <option value="500">Una azione ogni 0.5s</option>
+          </select>
+        </label>
+        <label>
+          Seed
+          <input id="seed" type="text" placeholder="casuale">
+        </label>
+        <button id="new-game">Avvia partita</button>
+        <button id="load-game-setup" class="secondary" type="button">Carica partita</button>
+        <button id="reset-prefs" class="secondary" type="button">Ripristina opzioni default</button>
+      </div>
+      <p class="prefs-hint">Le impostazioni si salvano in questo browser (nome G1, giocatori, matrice, velocità, seed e configurazione). G2…G8: Dotto, Brontolo, Gongolo, Pisolo, Mammolo, Eolo, Cucciolo.</p>
+      <div id="player-config" class="players"></div>
+    </section>
+
+    <div id="game-shell" class="game-shell" hidden>
+      <div class="gamebar">
+        <p id="play-feedback" class="play-feedback" aria-live="polite"></p>
+        <div class="pill"><span id="active-player">-</span><strong id="draw-count">Pesca: 0</strong></div>
+        <label class="speed-control" aria-label="Velocita' computer">
+          <select id="speed-live">
+            <option value="step">Step by step</option>
+            <option value="5000">Una azione ogni 5s</option>
+            <option value="1000" selected>Una azione ogni 1s</option>
+            <option value="500">Una azione ogni 0.5s</option>
+          </select>
+        </label>
+        <button id="pass" class="secondary">Passa</button>
+        <button id="bot-step" class="secondary">Step computer</button>
+        <button id="undo" class="secondary" type="button">Undo</button>
+        <button id="redo" class="secondary" type="button">Redo</button>
+        <button id="save-game" class="secondary" type="button">Salva</button>
+        <button id="load-game" class="secondary" type="button">Carica</button>
+        <button id="open-players" class="secondary" type="button">Giocatori</button>
+        <button id="open-info" class="secondary" type="button">Info</button>
+        <button id="new-game-play" class="secondary" type="button">Nuova partita</button>
+      </div>
+
+    <div class="play-area">
+      <div class="layout">
+        <div class="play-column">
+          <section>
+            <div class="panel-head">
+              <h2>Tabellone</h2>
+              <div id="board-status" class="status"></div>
+            </div>
+            <div class="board-wrap">
+              <div id="board" class="board"></div>
+            </div>
+          </section>
+
+          <section class="hand-dock-panel" aria-label="Mano grafica del giocatore attivo">
+            <div class="panel-head">
+              <h2 id="hand-dock-title">Mano del giocatore</h2>
+              <div id="hand-dock-status" class="status"></div>
+            </div>
+            <div id="hand-dock" class="hand-dock"></div>
+          </section>
+
+          <section id="strategy-hints-panel" class="strategy-panel hand-dock-panel" hidden>
+            <div class="panel-head">
+              <h2>Confronto strategie bot</h2>
+              <div class="status">Solo turno manuale</div>
+            </div>
+            <div class="strategy-panel-intro">
+              <p id="strategy-hints-intro"></p>
+              <p id="strategy-assignments" class="strategy-assignments"></p>
+            </div>
+            <div id="strategy-hints" class="strategy-hints"></div>
+          </section>
+        </div>
+
+        <aside class="turn-flow-panel">
+          <div class="panel-head">
+            <h2>Ordine turni</h2>
+            <div id="turn-flow-caption" class="status"></div>
+          </div>
+          <div id="turn-flow" class="turn-flow" aria-live="polite"></div>
+          <div id="inversion-alert" class="inversion-alert" hidden></div>
+        </aside>
+      </div>
+    </div>
+    </div>
+
+    <div id="modal" class="modal" hidden>
+      <div class="modal-panel">
+        <div class="panel-head">
+          <h2 id="modal-title">Dettagli</h2>
+          <button id="close-modal" class="secondary" type="button">Chiudi</button>
+        </div>
+        <div class="modal-tabs">
+          <button id="tab-players" class="secondary" type="button">Giocatori</button>
+          <button id="tab-info" class="secondary" type="button">Stato / log</button>
+        </div>
+        <div class="modal-content">
+          <div id="modal-players"></div>
+          <div id="modal-info" hidden>
+            <div id="summary" class="summary"></div>
+            <pre id="log" class="log"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="app-version" class="app-version">v0.1.2 · UI layout mano 2026-06-05</div>
+  </main>
+
+  <input id="load-game-file" type="file" accept="application/json,.json" hidden>
+
+  <script src="version.js"></script>
+  <script src="mpcards-core.js"></script>
+  <script src="card-art.js"></script>
+  <script src="card-names.js"></script>
+  <script src="game-state.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

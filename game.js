@@ -1,7 +1,11 @@
 "use strict";
 
 /** Etichetta build UI — se non la vedi in fondo alla pagina, non stai aprendo questo file. */
-const DM_UI_BUILD = "UI layout mano 2026-06-05";
+const DM_UI_BUILD = document.body.dataset.gameMode === "real"
+  ? "Gioco reale 2026-06-05"
+  : "UI layout mano 2026-06-05";
+
+const GAME_MODE = document.body.dataset.gameMode === "real" ? "real" : "simulation";
 
 const core = MPCardsCore;
 const gameState = MPCardsGameState;
@@ -25,24 +29,70 @@ const COLOR_BY_INDEX = core.COLORS.map(color => COLOR_HEX[color]);
 const INK_BY_INDEX = core.COLORS.map(color => COLOR_INK[color] || "#ffffff");
 const SHAPE_SYMBOLS = ["●", "♥", "▲", "■", "★", "⬢", "⚡", "✚"];
 const CANONICAL_DECK_CODES = core.deckCodesText();
-const GAME_PREFS_STORAGE_KEY = "dura-mater-game-v1";
+const GAME_PREFS_STORAGE_KEY = document.body.dataset.prefsKey
+  || (GAME_MODE === "real" ? "dura-mater-gioco-v1" : "dura-mater-game-v1");
 const SPEED_VALUES = new Set(["step", "5000", "1000", "500"]);
+const OPPONENT_NAMES = Object.freeze([
+  "Dotto",
+  "Brontolo",
+  "Gongolo",
+  "Pisolo",
+  "Mammolo",
+  "Eolo",
+  "Cucciolo"
+]);
+
 const DEFAULT_GAME_PREFS = {
   version: 1,
   players: 3,
   size: 5,
   speed: "1000",
   seed: "",
+  playerOneName: "Giocatore 1",
   modes: ["manual", "bot", "bot", "bot", "bot", "bot", "bot", "bot"],
   strategies: Array.from({ length: 8 }, () => "auto")
 };
 
+function readPlayerOneName() {
+  const raw = els.playerOneName?.value?.trim();
+  return raw || DEFAULT_GAME_PREFS.playerOneName;
+}
+
+function playerOneNameValue() {
+  if (game?.playerOneName) return game.playerOneName;
+  return readPlayerOneName();
+}
+
 function playerLabel(playerIndex) {
-  return `Giocatore ${playerIndex + 1}`;
+  if (playerIndex === 0) return playerOneNameValue();
+  return OPPONENT_NAMES[playerIndex - 1] || `Giocatore ${playerIndex + 1}`;
 }
 
 function playerShortLabel(playerIndex) {
-  return `G${playerIndex + 1}`;
+  return playerLabel(playerIndex);
+}
+
+function isRealGame() {
+  return GAME_MODE === "real";
+}
+
+function handViewPlayer() {
+  if (!game) return 0;
+  const state = game.state;
+  if (!isRealGame()) return state.currentPlayer;
+  if (game.modes[state.currentPlayer] === "manual") return state.currentPlayer;
+  const firstManual = game.modes.indexOf("manual");
+  return firstManual >= 0 ? firstManual : state.currentPlayer;
+}
+
+function isHumanPlayerTurn() {
+  if (!game || !isRealGame() || game.state.status !== "playing") return false;
+  return game.modes[game.state.currentPlayer] === "manual";
+}
+
+function activeHandStatusElement() {
+  if (isRealGame() && isHumanPlayerTurn() && els.sidebarHandStatus) return els.sidebarHandStatus;
+  return els.handDockStatus;
 }
 
 function formatTurnOrder(state) {
@@ -57,6 +107,7 @@ const els = {
   speed: document.querySelector("#speed"),
   speedLive: document.querySelector("#speed-live"),
   seed: document.querySelector("#seed"),
+  playerOneName: document.querySelector("#player-one-name"),
   setupSection: document.querySelector("#setup-section"),
   newGame: document.querySelector("#new-game"),
   newGamePlay: document.querySelector("#new-game-play"),
@@ -81,9 +132,16 @@ const els = {
   turnFlowCaption: document.querySelector("#turn-flow-caption"),
   inversionAlert: document.querySelector("#inversion-alert"),
   board: document.querySelector("#board"),
+  handDockPanel: document.querySelector("#hand-dock-panel"),
   handDock: document.querySelector("#hand-dock"),
   handDockTitle: document.querySelector("#hand-dock-title"),
   handDockStatus: document.querySelector("#hand-dock-status"),
+  playerHandsPanel: document.querySelector("#player-hands-panel"),
+  sidebarHandPanel: document.querySelector("#sidebar-hand-panel"),
+  sidebarHand: document.querySelector("#sidebar-hand"),
+  sidebarHandTitle: document.querySelector("#sidebar-hand-title"),
+  sidebarHandStatus: document.querySelector("#sidebar-hand-status"),
+  handCountsList: document.querySelector("#hand-counts-list"),
   pass: document.querySelector("#pass"),
   botStep: document.querySelector("#bot-step"),
   undo: document.querySelector("#undo"),
@@ -95,6 +153,7 @@ const els = {
   strategyHintsIntro: document.querySelector("#strategy-hints-intro"),
   strategyAssignments: document.querySelector("#strategy-assignments"),
   strategyHints: document.querySelector("#strategy-hints"),
+  playerHandsList: document.querySelector("#player-hands-list"),
   summary: document.querySelector("#summary"),
   log: document.querySelector("#log"),
   playFeedback: document.querySelector("#play-feedback")
@@ -147,19 +206,20 @@ function setPlayFeedback(text) {
 }
 
 function updateHandSelectionStatus(handLength, player, modeLabel) {
-  if (!els.handDockStatus) return;
+  const statusEl = activeHandStatusElement();
+  if (!statusEl) return;
   if (selectedCardUid && game) {
     const hand = game.state.hands[player] || [];
     const card = hand.find(entry => entry.uid === selectedCardUid);
     const name = card && globalThis.MPCardsNames
       ? MPCardsNames.formatCardName(card)
       : card?.code || "carta";
-    els.handDockStatus.textContent = `${handLength} carte · Selezionata: ${name} — clicca una casella evidenziata`;
-    els.handDockStatus.className = "status bad";
+    statusEl.textContent = `${handLength} carte · Selezionata: ${name} — clicca una casella evidenziata`;
+    statusEl.className = "status bad";
     return;
   }
-  els.handDockStatus.className = "status";
-  els.handDockStatus.textContent = `${handLength} carte · ${modeLabel}`;
+  statusEl.className = "status";
+  statusEl.textContent = `${handLength} carte · ${modeLabel}`;
 }
 
 function syncSpeedControls(source) {
@@ -178,6 +238,10 @@ function normalizeGamePrefs(prefs) {
   normalized.size = clampNumber(normalized.size, 3, 8, DEFAULT_GAME_PREFS.size);
   normalized.speed = SPEED_VALUES.has(normalized.speed) ? normalized.speed : DEFAULT_GAME_PREFS.speed;
   normalized.seed = typeof normalized.seed === "string" ? normalized.seed : DEFAULT_GAME_PREFS.seed;
+  normalized.playerOneName = typeof normalized.playerOneName === "string"
+    ? normalized.playerOneName.trim().slice(0, 32)
+    : DEFAULT_GAME_PREFS.playerOneName;
+  if (!normalized.playerOneName) normalized.playerOneName = DEFAULT_GAME_PREFS.playerOneName;
   const validModes = new Set(["manual", "bot"]);
   const validStrategy = new Set(core.STRATEGY_KEYS.concat(["auto"]));
   normalized.modes = Array.from({ length: 8 }, (_, index) => {
@@ -201,6 +265,7 @@ function collectGamePrefs() {
     size: els.size.value,
     speed: els.speed.value,
     seed: els.seed.value,
+    playerOneName: readPlayerOneName(),
     modes: config.modes.concat(DEFAULT_GAME_PREFS.modes).slice(0, 8),
     strategies: config.strategies.concat(DEFAULT_GAME_PREFS.strategies).slice(0, 8)
   });
@@ -213,6 +278,7 @@ function applyGamePrefs(prefs) {
   els.speed.value = normalized.speed;
   els.speedLive.value = normalized.speed;
   els.seed.value = normalized.seed;
+  if (els.playerOneName) els.playerOneName.value = normalized.playerOneName;
   loadedPlayerPrefs = {
     modes: normalized.modes,
     strategies: normalized.strategies
@@ -256,7 +322,7 @@ function resetGamePrefsToDefaults() {
 }
 
 function bindGamePrefsPersistence() {
-  const fields = [els.players, els.size, els.speed, els.seed];
+  const fields = [els.players, els.size, els.speed, els.seed, els.playerOneName];
   for (const field of fields) {
     if (!field) continue;
     field.addEventListener("input", scheduleSaveGamePrefs);
@@ -264,6 +330,24 @@ function bindGamePrefsPersistence() {
   }
   if (els.playerConfig) {
     els.playerConfig.addEventListener("change", onPlayerConfigChange);
+  }
+  if (els.playerOneName) {
+    els.playerOneName.addEventListener("input", onPlayerOneNameInput);
+  }
+}
+
+function onPlayerOneNameInput() {
+  scheduleSaveGamePrefs();
+  if (game) {
+    game.playerOneName = readPlayerOneName();
+    render();
+    return;
+  }
+  const firstRow = els.playerConfig.querySelector(".player-row strong");
+  if (firstRow) {
+    const count = firstRow.querySelector(".hand-count");
+    const countText = count?.textContent || "";
+    firstRow.innerHTML = `${playerLabel(0)}<span class="hand-count">${countText}</span>`;
   }
 }
 
@@ -334,6 +418,7 @@ function startGame() {
     return;
   }
   const strategies = core.resolveStrategies(config.strategies, players, random);
+  const playerOneName = readPlayerOneName();
   const session = gameState.createSession({
     seed,
     deckCodes: CANONICAL_DECK_CODES,
@@ -341,7 +426,8 @@ function startGame() {
     size,
     modes: config.modes,
     strategySettings: config.strategies,
-    strategies
+    strategies,
+    playerOneName
   }, state, random);
   game = {
     session,
@@ -350,7 +436,8 @@ function startGame() {
     modes: config.modes,
     strategySettings: config.strategies,
     strategies,
-    seed
+    seed,
+    playerOneName
   };
   enterPlayingMode();
   resetTransientUi();
@@ -366,6 +453,7 @@ function enterPlayingMode() {
   els.players.disabled = true;
   els.size.disabled = true;
   els.seed.disabled = true;
+  if (els.playerOneName) els.playerOneName.disabled = true;
 }
 
 function exitPlayingMode() {
@@ -377,6 +465,7 @@ function exitPlayingMode() {
   els.players.disabled = false;
   els.size.disabled = false;
   els.seed.disabled = false;
+  if (els.playerOneName) els.playerOneName.disabled = false;
   resetTransientUi();
   render();
 }
@@ -523,7 +612,8 @@ function saveGame() {
     size: game.state.size,
     modes: game.modes,
     strategySettings: game.strategySettings,
-    strategies: game.strategies
+    strategies: game.strategies,
+    playerOneName: game.playerOneName || readPlayerOneName()
   });
   gameState.setCurrentState(game.session, game.state, game.random);
   const payload = JSON.stringify(gameState.exportSession(game.session), null, 2);
@@ -554,7 +644,8 @@ function applyLoadedSession(session) {
     modes: config.modes || [],
     strategySettings: config.strategySettings || [],
     strategies: config.strategies || [],
-    seed
+    seed,
+    playerOneName: config.playerOneName || DEFAULT_GAME_PREFS.playerOneName
   };
   gameState.restoreRandom(game.session, game.random);
   if (!game.strategies.length) {
@@ -563,6 +654,9 @@ function applyLoadedSession(session) {
   els.players.value = String(config.players || game.state.players);
   els.size.value = String(config.size || game.state.size);
   els.seed.value = seed;
+  if (els.playerOneName) {
+    els.playerOneName.value = game.playerOneName;
+  }
   enterPlayingMode();
   resetInversionUiFlags(game.state);
   renderPlayerConfig();
@@ -625,7 +719,7 @@ function playManualMove(move) {
 function selectCard(cardUid) {
   if (!game) return;
   if (isBotTurn()) {
-    setPlayFeedback("È il turno del computer: attendi, oppure imposta Giocatore 1 su Manuale.");
+    setPlayFeedback(`È il turno del computer: attendi, oppure imposta ${playerLabel(0)} su Manuale.`);
     return;
   }
   const hand = game.state.hands[game.state.currentPlayer] || [];
@@ -684,6 +778,24 @@ function clearSuggestionHover() {
     : [];
   renderBoard();
   renderHand();
+}
+
+function cardBackTile() {
+  const tile = document.createElement("div");
+  tile.className = "card-back";
+  const backSrc = globalThis.MPCardsArt && MPCardsArt.back;
+  if (backSrc) {
+    const img = document.createElement("img");
+    img.src = backSrc;
+    img.alt = "Retro carta";
+    img.draggable = false;
+    img.loading = "lazy";
+    img.decoding = "async";
+    tile.appendChild(img);
+  } else {
+    tile.textContent = "?";
+  }
+  return tile;
 }
 
 function cardTile(card) {
@@ -818,15 +930,17 @@ function renderInversionAlert(state) {
 
 function render() {
   renderBoard();
-  renderHand();
   renderTurnFlow();
+  renderRealGameSidebar();
+  renderHandCountsBar();
+  renderHand();
   renderStrategyHints();
   renderSummary();
   renderActions();
   updatePlayerHandCounts();
   renderLog();
   if (selectedCardUid && game && game.state.status === "playing") {
-    const player = game.state.currentPlayer;
+    const player = handViewPlayer();
     const hand = game.state.hands[player] || [];
     const modeLabel = game.modes[player] === "bot"
       ? core.strategyShortLabel(game.strategies[player])
@@ -898,9 +1012,9 @@ function renderBoard() {
 }
 
 function boardCellSize() {
-  if (window.matchMedia("(max-width: 420px)").matches) return 40;
-  if (window.matchMedia("(max-width: 700px)").matches) return 46;
-  return 58;
+  if (window.matchMedia("(max-width: 420px)").matches) return 64;
+  if (window.matchMedia("(max-width: 700px)").matches) return 74;
+  return 93;
 }
 
 function boardViewBounds(state, moves) {
@@ -929,28 +1043,22 @@ function boardViewBounds(state, moves) {
   return { minX, maxX, minY, maxY, width: maxX - minX + 1, height: maxY - minY + 1 };
 }
 
-function renderHand() {
-  if (!els.handDock) return;
-  els.handDock.innerHTML = "";
-  if (!game) {
-    if (els.handDockStatus) els.handDockStatus.textContent = "";
-    return;
+function renderRealGameSidebar() {
+  if (!isRealGame()) return;
+  const humanTurn = isHumanPlayerTurn();
+  if (els.playerHandsPanel) els.playerHandsPanel.hidden = humanTurn;
+  if (els.sidebarHandPanel) els.sidebarHandPanel.hidden = !humanTurn;
+  if (humanTurn) {
+    renderSidebarHand();
+  } else {
+    renderPlayerHandStacks();
   }
-  const state = game.state;
-  const player = state.currentPlayer;
-  const hand = state.hands[player] || [];
+}
+
+function appendHandCards(container, layout, player, hand, interactive) {
   const moves = currentMoves();
   const playable = new Set(moves.map(move => move.cardUid));
-  const interactive = !isBotTurn();
-
-  if (els.handDockTitle) {
-    els.handDockTitle.textContent = `Mano — ${playerLabel(player)}`;
-  }
-  const modeLabel = game.modes[player] === "bot"
-    ? core.strategyLabel(game.strategies[player])
-    : "Manuale";
-  updateHandSelectionStatus(hand.length, player, modeLabel);
-
+  const useSidebarLayout = layout === "sidebar";
   for (const card of hand) {
     const item = document.createElement("div");
     const isSelected = selectedCardUid === card.uid;
@@ -968,7 +1076,7 @@ function renderHand() {
       item.appendChild(badge);
     }
     const entry = document.createElement("div");
-    entry.className = "hand-dock-entry";
+    entry.className = useSidebarLayout ? "sidebar-hand-entry" : "hand-dock-entry";
     if (canPlay) {
       item.addEventListener("mouseenter", () => hoverCard(card.uid));
       item.addEventListener("mouseleave", clearHover);
@@ -981,8 +1089,129 @@ function renderHand() {
       ? MPCardsNames.formatCardName(card)
       : card.code;
     entry.appendChild(name);
-    els.handDock.appendChild(entry);
+    container.appendChild(entry);
   }
+}
+
+function renderHandCountsBar() {
+  if (!els.handCountsList || !isRealGame()) return;
+  els.handCountsList.innerHTML = "";
+  if (!game) return;
+  const state = game.state;
+  for (let player = 0; player < state.players; player++) {
+    const count = (state.hands[player] || []).length;
+    const chip = document.createElement("div");
+    chip.className = "hand-count-chip";
+    if (state.status === "success" && player === state.winner) {
+      chip.classList.add("winner");
+    } else if (state.status === "playing" && player === state.currentPlayer) {
+      chip.classList.add("current");
+    }
+    if (player === handViewPlayer()) chip.classList.add("you");
+    const name = document.createElement("strong");
+    name.textContent = playerShortLabel(player);
+    const detail = document.createElement("span");
+    if (state.status === "success" && player === state.winner && count === 0) {
+      detail.textContent = "Vince";
+    } else {
+      detail.textContent = String(count);
+      chip.title = count === 1 ? "1 carta in mano" : `${count} carte in mano`;
+    }
+    chip.appendChild(name);
+    chip.appendChild(detail);
+    els.handCountsList.appendChild(chip);
+  }
+}
+
+function renderSidebarHand() {
+  if (!els.sidebarHand) return;
+  els.sidebarHand.innerHTML = "";
+  if (!game) return;
+  const state = game.state;
+  const player = state.currentPlayer;
+  const hand = state.hands[player] || [];
+  const interactive = isHumanPlayerTurn();
+  if (els.sidebarHandTitle) {
+    els.sidebarHandTitle.textContent = `La tua mano — ${playerShortLabel(player)}`;
+  }
+  updateHandSelectionStatus(hand.length, player, "Manuale");
+  appendHandCards(els.sidebarHand, "sidebar", player, hand, interactive);
+}
+
+function renderPlayerHandStacks() {
+  if (!els.playerHandsList || !isRealGame()) return;
+  els.playerHandsList.innerHTML = "";
+  if (!game) return;
+  const state = game.state;
+  for (let player = 0; player < state.players; player++) {
+    const hand = state.hands[player] || [];
+    const row = document.createElement("div");
+    row.className = "player-hand-row";
+    if (state.status === "success" && player === state.winner) {
+      row.classList.add("winner");
+    } else if (state.status === "playing" && player === state.currentPlayer) {
+      row.classList.add("current");
+    }
+    const head = document.createElement("div");
+    head.className = "player-hand-row-head";
+    const title = document.createElement("strong");
+    title.textContent = playerShortLabel(player);
+    const meta = document.createElement("span");
+    meta.textContent = game.modes[player] === "bot"
+      ? "Computer"
+      : player === handViewPlayer()
+        ? "Tu"
+        : "Manuale";
+    head.appendChild(title);
+    head.appendChild(meta);
+    row.appendChild(head);
+
+    const backs = document.createElement("div");
+    backs.className = "player-hand-backs";
+    backs.setAttribute("aria-label", `${hand.length} carte`);
+    if (hand.length === 0) {
+      const empty = document.createElement("p");
+      const isWinner = state.status === "success" && player === state.winner;
+      empty.className = isWinner ? "player-hand-empty winner-label" : "player-hand-empty";
+      empty.textContent = isWinner ? "Vince" : "Nessuna carta";
+      backs.appendChild(empty);
+    } else {
+      for (let index = 0; index < hand.length; index++) {
+        backs.appendChild(cardBackTile());
+      }
+    }
+    row.appendChild(backs);
+    els.playerHandsList.appendChild(row);
+  }
+}
+
+function renderHand() {
+  if (isRealGame()) {
+    if (!game) {
+      if (els.sidebarHandStatus) els.sidebarHandStatus.textContent = "";
+      return;
+    }
+    if (isHumanPlayerTurn()) renderSidebarHand();
+    return;
+  }
+  if (!els.handDock) return;
+  els.handDock.innerHTML = "";
+  if (!game) {
+    if (els.handDockStatus) els.handDockStatus.textContent = "";
+    return;
+  }
+  const state = game.state;
+  const player = handViewPlayer();
+  const hand = state.hands[player] || [];
+  const interactive = !isBotTurn() && state.currentPlayer === player;
+  if (els.handDockTitle) {
+    els.handDockTitle.textContent = `Mano — ${playerLabel(player)}`;
+  }
+  const modeLabel = game.modes[player] === "bot"
+    ? core.strategyLabel(game.strategies[player])
+    : "Manuale";
+  updateHandSelectionStatus(hand.length, player, modeLabel);
+  appendHandCards(els.handDock, "dock", player, hand, interactive);
 }
 
 function playerAssignmentLabel(playerIndex) {
@@ -1000,14 +1229,15 @@ function formatPlayerAssignments() {
 }
 
 function renderStrategyHints() {
+  if (!els.strategyHints) return;
   els.strategyHints.innerHTML = "";
-  if (!game || game.state.status !== "playing" || isBotTurn()) {
-    els.strategyHintsPanel.hidden = true;
+  if (isRealGame() || !game || game.state.status !== "playing" || isBotTurn()) {
+    if (els.strategyHintsPanel) els.strategyHintsPanel.hidden = true;
     if (els.strategyHintsIntro) els.strategyHintsIntro.textContent = "";
     if (els.strategyAssignments) els.strategyAssignments.textContent = "";
     return;
   }
-  els.strategyHintsPanel.hidden = false;
+  if (els.strategyHintsPanel) els.strategyHintsPanel.hidden = false;
   const player = game.state.currentPlayer;
   if (els.strategyHintsIntro) {
     els.strategyHintsIntro.textContent =
