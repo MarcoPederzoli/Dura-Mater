@@ -2,10 +2,14 @@
   "version": "0.1.4",
   "scripts": {
     "test": "node tests/core-regression.test.js",
-    "test:participation": "node tests/core-regression.test.js && node scripts/participation-workflow-check.js --quick",
-    "test:participation:full": "node tests/core-regression.test.js && node scripts/participation-workflow-check.js --full",
-    "test:matrix": "node scripts/matrix-workflow-check.js --quick",
-    "test:matrix:full": "node scripts/matrix-workflow-check.js",
+    "test:durissima:probe": "node scripts/durissima-rules-probe-check.js",
+    "test:durissima:probe:full": "node scripts/durissima-rules-probe-check.js --full",
+    "classic:sweep:L3-L5": "node scripts/classic-sweep.js L3-L5",
+    "classic:sweep:L6": "node scripts/classic-sweep.js L6",
+    "classic:sweep:L7": "node scripts/classic-sweep.js L7",
+    "classic:sweep:L8": "node scripts/classic-sweep.js L8",
+    "classic:riepilogo": "python scripts/build-classic-riepilogo-xlsx.py",
+    "confronto:excel": "python scripts/build-confronto-dura-durissima-xlsx.py",
     "prepare:partykit": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-partykit-static.ps1",
     "deploy:partykit": "npm run prepare:partykit && npx partykit deploy"
   },

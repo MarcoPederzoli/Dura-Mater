@@ -24,13 +24,15 @@ const MPCARDS_CORE_SOURCE = `
     ["hand-planner", "H - Mano ampia: pianifica, altrimenti M", "H"],
     ["prudent", "U - Pianifica ma chiude se la sequenza si blocca", "U"],
     ["chain-max", "F - Massimizza carte giocate nel turno", "F"],
+    ["durissima-planner", "G - Durissima: chiude la griglia", "G"],
     ["random", "R - Casuale legale", "R"],
     ["auto", "Auto a partita", "Auto"]
   ];
   const STRATEGY_KEYS = [
     "random", "greedy", "adjacent", "draw-random-finish-random", "low-value", "high-value", "compatibility",
-    "planner", "hand-planner", "prudent", "chain-max"
+    "planner", "hand-planner", "prudent", "chain-max", "durissima-planner"
   ];
+  const DURISSIMA_SCARCE_VALUES = new Set(["1", "2", "3"]);
   const PLANNER_BRANCH_LIMIT = 10;
   const PLANNER_MAX_NODES = 280;
   const POSITIONAL_COUNTS = [1, 3, 5, 7, 9, 11, 13, 15];
@@ -430,9 +432,337 @@ const MPCARDS_CORE_SOURCE = `
     return false;
   }
 
+  function canPlaceCardAt(sim, card, x, y, requirement) {
+    const map = boardMap(sim.board);
+    if (map.has(coordKey(x, y))) return false;
+    const bounds = boardBounds(sim.board, [{ x, y }]);
+    if (bounds.width > sim.size || bounds.height > sim.size) return false;
+    const score = placementScore(sim, card, x, y);
+    return sim.board.length === 0 || (score.neighbors >= requirement && score.compatibleNeighbors === score.neighbors);
+  }
+
+  /** Pool informativo Durissima: mani (tutte in coop) + mazzo di pesca noto (ordine ignoto). */
+  function durissimaAllKnownCards(state, playerId, excludeUid) {
+    const cards = [];
+    if (!state || state.players <= 1) {
+      for (const card of (state.hands[playerId] || [])) {
+        if (!excludeUid || card.uid !== excludeUid) cards.push(card);
+      }
+    } else {
+      for (let p = 0; p < state.players; p++) {
+        for (const card of (state.hands[p] || [])) {
+          if (p === playerId && excludeUid && card.uid === excludeUid) continue;
+          cards.push(card);
+        }
+      }
+    }
+    for (const card of (state.drawPile || [])) cards.push(card);
+    return cards;
+  }
+
+  function cardsForDurissimaOutlook(state, playerId) {
+    return durissimaAllKnownCards(state, playerId, null);
+  }
+
+  function durissimaClosureOutlook(state, playerId, excludeUid) {
+    return durissimaAllKnownCards(state, playerId, excludeUid);
+  }
+
+  function durissimaTwoByTwoPockets(board) {
+    const map = boardMap(board);
+    const pockets = [];
+    const seen = new Set();
+    for (const entry of board) {
+      for (let ox = 0; ox <= 1; ox++) {
+        for (let oy = 0; oy <= 1; oy++) {
+          const x0 = entry.x - ox;
+          const y0 = entry.y - oy;
+          const blockKey = coordKey(x0, y0);
+          if (seen.has(blockKey)) continue;
+          const cells = [
+            { x: x0, y: y0 },
+            { x: x0 + 1, y: y0 },
+            { x: x0, y: y0 + 1 },
+            { x: x0 + 1, y: y0 + 1 }
+          ];
+          let filled = 0;
+          let empty = null;
+          for (const cell of cells) {
+            if (map.has(coordKey(cell.x, cell.y))) filled++;
+            else empty = cell;
+          }
+          if (filled === 3 && empty) {
+            seen.add(blockKey);
+            pockets.push({ x: empty.x, y: empty.y, blockKey });
+          }
+        }
+      }
+    }
+    return pockets;
+  }
+
+  function durissimaPocketKey(pocket) {
+    return coordKey(pocket.x, pocket.y);
+  }
+
+  function durissimaClosureCandidates(sim, pocket, outlookCards) {
+    let count = 0;
+    let bestRigidity = 0;
+    for (const card of outlookCards) {
+      if (!canPlaceCardAt(sim, card, pocket.x, pocket.y, 1)) continue;
+      count++;
+      bestRigidity = Math.max(bestRigidity, durissimaCardRigidity(card));
+    }
+    return { count, bestRigidity };
+  }
+
+  function durissimaMoveCompletesSquare(sim, move) {
+    const map = boardMap(sim.board);
+    for (let ox = 0; ox <= 1; ox++) {
+      for (let oy = 0; oy <= 1; oy++) {
+        const x0 = move.x - ox;
+        const y0 = move.y - oy;
+        const cells = [
+          { x: x0, y: y0 },
+          { x: x0 + 1, y: y0 },
+          { x: x0, y: y0 + 1 },
+          { x: x0 + 1, y: y0 + 1 }
+        ];
+        if (cells.every(cell => map.has(coordKey(cell.x, cell.y)))) return true;
+      }
+    }
+    return false;
+  }
+
+  function durissimaCompactnessBonus(sim) {
+    if (sim.board.length <= 2) return 0;
+    const bounds = boardBounds(sim.board, []);
+    const area = bounds.width * bounds.height;
+    if (area <= 0) return 0;
+    const fill = sim.board.length / area;
+    const aspect = Math.max(bounds.width, bounds.height) / Math.min(bounds.width, bounds.height);
+    return fill * 24 - Math.max(0, aspect - 1.15) * 10;
+  }
+
+  function durissimaLineExtensionPenalty(sim, x, y) {
+    const map = boardMap(sim.board);
+    function axisLength(dx, dy) {
+      let len = 1;
+      for (const sign of [-1, 1]) {
+        let cx = x + dx * sign;
+        let cy = y + dy * sign;
+        while (map.has(coordKey(cx, cy))) {
+          len++;
+          cx += dx * sign;
+          cy += dy * sign;
+        }
+      }
+      return len;
+    }
+    const longest = Math.max(axisLength(1, 0), axisLength(0, 1));
+    if (longest >= 5) return (longest - 4) * 16;
+    if (longest === 4) return 10;
+    if (longest === 3) return 4;
+    return 0;
+  }
+
+  function durissimaIslandAdjust(state, sim, playerId, move, requirement) {
+    const beforeKeys = new Set(durissimaTwoByTwoPockets(state.board).map(durissimaPocketKey));
+    const afterPockets = durissimaTwoByTwoPockets(sim.board);
+    const outlook = durissimaClosureOutlook(state, playerId, move.cardUid);
+    const islandWeight = requirement === 3 ? 1.4 : (state.turnPlayed === 2 ? 1.25 : 1);
+    let score = 0;
+
+    if (durissimaMoveCompletesSquare(sim, move)) {
+      score += 36 + durissimaCardRigidity(move.card) * 0.9;
+    }
+
+    for (const pocket of afterPockets) {
+      const key = durissimaPocketKey(pocket);
+      const isNew = !beforeKeys.has(key);
+      const closure = durissimaClosureCandidates(sim, pocket, outlook);
+      if (isNew) {
+        if (closure.count === 0) {
+          score -= 140 * islandWeight;
+        } else {
+          score += (26 + closure.bestRigidity * 0.95) * islandWeight;
+          if (closure.bestRigidity >= 20) score += 18 * islandWeight;
+        }
+      } else if (closure.count === 0) {
+        score -= 24;
+      }
+    }
+
+    return score;
+  }
+
+  function countValueInAllHands(state, value) {
+    let count = 0;
+    for (let p = 0; p < state.players; p++) {
+      for (const card of (state.hands[p] || [])) {
+        if (card.value === value) count++;
+      }
+    }
+    for (const card of (state.drawPile || [])) {
+      if (card.value === value) count++;
+    }
+    return count;
+  }
+
+  function durissimaBoardNeighborsAt(sim, x, y) {
+    const map = boardMap(sim.board);
+    const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
+    let n = 0;
+    for (const dir of dirs) {
+      if (map.has(coordKey(x + dir.x, y + dir.y))) n++;
+    }
+    return n;
+  }
+
+  /** Grado finale atteso nella matrice N×N: angolo 2, bordo 3, interno 4. */
+  function durissimaExpectedFinalDegree(sim, x, y) {
+    if (sim.board.length === 0) return 2;
+    const bounds = boardBounds(sim.board, [{ x, y }]);
+    const size = sim.size;
+    const relX = x - bounds.minX;
+    const relY = y - bounds.minY;
+    const w = bounds.width;
+    const h = bounds.height;
+    const onCorner = (relX === 0 || relX === w - 1) && (relY === 0 || relY === h - 1);
+    const onEdge = relX === 0 || relX === w - 1 || relY === 0 || relY === h - 1;
+    if (w >= size && h >= size) {
+      if (onCorner) return 2;
+      if (onEdge) return 3;
+      return 4;
+    }
+    const neighbors = durissimaBoardNeighborsAt(sim, x, y);
+    if (neighbors <= 1) return onCorner ? 2 : 2.5;
+    if (neighbors === 2) return onEdge ? 3 : 3.5;
+    if (onEdge) return 3;
+    return 4;
+  }
+
+  function durissimaCardRigidity(card) {
+    return 34 - compatibilityScore(card) + (DURISSIMA_SCARCE_VALUES.has(card.value) ? 6 : 0);
+  }
+
+  function durissimaCornerEdgeFitBonus(card, expectedDegree) {
+    const slotLowDegree = Math.max(0, 4 - expectedDegree);
+    if (slotLowDegree <= 0) return 0;
+    return slotLowDegree * durissimaCardRigidity(card) * 1.15;
+  }
+
+  function durissimaCoopPlacementAdjust(state, playerId, move, requirement) {
+    if (!state || state.players <= 1) return 0;
+    let othersLegal = 0;
+    let othersMoreFlexible = 0;
+    let bestOtherFlex = Infinity;
+    for (let p = 0; p < state.players; p++) {
+      if (p === playerId) continue;
+      for (const card of (state.hands[p] || [])) {
+        if (!canPlaceCardAt(state, card, move.x, move.y, requirement)) continue;
+        othersLegal++;
+        const flex = compatibilityScore(card);
+        bestOtherFlex = Math.min(bestOtherFlex, flex);
+        if (flex < compatibilityScore(move.card)) othersMoreFlexible++;
+      }
+    }
+    if (othersLegal === 0) return 14;
+    if (othersMoreFlexible > 0) return -11;
+    if (bestOtherFlex < compatibilityScore(move.card) - 4) return -6;
+    return 2;
+  }
+
+  function durissimaGlobalScarcityPenalty(state, card, expectedDegree) {
+    if (expectedDegree < 3.5) return 0;
+    let penalty = 0;
+    for (const value of DURISSIMA_SCARCE_VALUES) {
+      if (card.value !== value) continue;
+      const left = countValueInAllHands(state, value);
+      if (left <= 1) penalty += 16;
+      else if (left === 2) penalty += 7;
+    }
+    return penalty;
+  }
+
+  function durissimaUnreachableFrontier(sim, outlookCards) {
+    const cells = candidateCells(sim);
+    if (!cells.length) return 0;
+    let blocked = 0;
+    for (const cell of cells) {
+      let reachable = false;
+      for (const card of outlookCards) {
+        if (canPlaceCardAt(sim, card, cell.x, cell.y, 1)) {
+          reachable = true;
+          break;
+        }
+      }
+      if (!reachable) blocked++;
+    }
+    return blocked;
+  }
+
+  function durissimaFlexibilityReserveCost(card, fillRatio) {
+    if (fillRatio >= 0.72) return 0;
+    return compatibilityScore(card) * (0.85 - fillRatio * 0.6);
+  }
+
+  function durissimaScarceValueCost(card, fillRatio) {
+    if (!DURISSIMA_SCARCE_VALUES.has(card.value)) return 0;
+    return (1 - fillRatio) * 11;
+  }
+
+  function durissimaMoveScore(state, playerId, move, random, branchLimit, requirement) {
+    const sim = cloneSimState(state, playerId);
+    if (!applyPlacementSim(sim, playerId, move)) return -Infinity;
+    const totalCells = state.size * state.size;
+    const fillRatio = sim.board.length / totalCells;
+    const frontier = candidateCells(sim).length;
+    const outlookCards = cardsForDurissimaOutlook(state, playerId);
+    const blocked = durissimaUnreachableFrontier(sim, outlookCards);
+    const expectedDegree = durissimaExpectedFinalDegree(sim, move.x, move.y);
+    const budget = { count: 0, max: PLANNER_MAX_NODES };
+    const chainDepth = maxChainPlays(sim, playerId, branchLimit, random, budget);
+    const followUp = quickFollowUpScore(sim, playerId);
+    return (
+      frontier * 14 +
+      chainDepth * 22 +
+      followUp * 4 +
+      move.matches * 2 +
+      durissimaCornerEdgeFitBonus(move.card, expectedDegree) +
+      durissimaCoopPlacementAdjust(state, playerId, move, requirement) +
+      durissimaIslandAdjust(state, sim, playerId, move, requirement) +
+      durissimaCompactnessBonus(sim) -
+      durissimaLineExtensionPenalty(sim, move.x, move.y) -
+      blocked * 48 -
+      durissimaFlexibilityReserveCost(move.card, fillRatio) -
+      durissimaScarceValueCost(move.card, fillRatio) -
+      durissimaGlobalScarcityPenalty(state, move.card, expectedDegree)
+    );
+  }
+
+  function choosePlacementDurissima(state, playerId, requirement, random, branchLimit) {
+    const moves = legalPlacements(state, playerId, requirement);
+    if (!moves.length) return null;
+    const sample = moves.length > branchLimit ? shuffle(moves, random).slice(0, branchLimit) : moves;
+    let bestScore = -Infinity;
+    let bestMoves = [];
+    for (const move of sample) {
+      const score = durissimaMoveScore(state, playerId, move, random, branchLimit, requirement);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMoves = [move];
+      } else if (score === bestScore) {
+        bestMoves.push(move);
+      }
+    }
+    if (!bestMoves.length) return moves[Math.floor(random() * moves.length)];
+    return bestMoves[Math.floor(random() * bestMoves.length)];
+  }
+
   function placementStrategyForTurn(state, playerId, strategy) {
     const handSize = (state.hands[playerId] || []).length;
-    if (strategy === "planner" || strategy === "chain-max") return strategy;
+    if (strategy === "planner" || strategy === "chain-max" || strategy === "durissima-planner") return strategy;
     if (strategy === "hand-planner") {
       return handSize + state.turnPlayed >= 4 ? "planner" : "compatibility";
     }
@@ -471,6 +801,9 @@ const MPCARDS_CORE_SOURCE = `
     const moves = legalPlacements(state, playerId, requirement);
     if (moves.length === 0) return null;
     const placementStrategy = placementStrategyForTurn(state, playerId, strategy);
+    if (placementStrategy === "durissima-planner") {
+      return choosePlacementDurissima(state, playerId, requirement, random, PLANNER_BRANCH_LIMIT + 2);
+    }
     if (placementStrategy === "planner" || placementStrategy === "chain-max") {
       const limit = placementStrategy === "chain-max" ? PLANNER_BRANCH_LIMIT + 4 : PLANNER_BRANCH_LIMIT;
       return choosePlacementPlanner(state, playerId, requirement, random, limit);
@@ -562,12 +895,48 @@ const MPCARDS_CORE_SOURCE = `
     return true;
   }
 
-  function maybeDrawDurissimaEmptyHand(state) {
-    if (!isDurissimaMater(state) || state.status !== "playing") return false;
-    const playerId = state.currentPlayer;
-    if ((state.hands[playerId] || []).length > 0) return false;
-    if (state.drawPile.length === 0) return false;
-    return drawForPlayer(state, playerId);
+  function durissimaEmergencyBudgetOpen(state) {
+    if (state.durissimaEmergencyDrawsLeft === null || state.durissimaEmergencyDrawsLeft === undefined) {
+      return true;
+    }
+    return state.durissimaEmergencyDrawsLeft > 0;
+  }
+
+  function durissimaAfterPlayBudgetOpen(state) {
+    if (state.durissimaAfterPlayDrawsLeft === null || state.durissimaAfterPlayDrawsLeft === undefined) {
+      return true;
+    }
+    return state.durissimaAfterPlayDrawsLeft > 0;
+  }
+
+  function tryDurissimaEmergencyDraw(state, playerId) {
+    if (!isDurissimaMater(state) || state.players !== 1 || state.drawPile.length === 0) return false;
+    if (!durissimaEmergencyBudgetOpen(state)) return false;
+    if (!drawForPlayer(state, playerId)) return false;
+    if (state.durissimaEmergencyDrawsLeft !== null && state.durissimaEmergencyDrawsLeft !== undefined) {
+      state.durissimaEmergencyDrawsLeft--;
+    }
+    state.durissimaEmergencyDrawsUsed = (state.durissimaEmergencyDrawsUsed || 0) + 1;
+    return true;
+  }
+
+  function tryDurissimaAfterPlayDraw(state, playerId) {
+    if (!isDurissimaMater(state) || state.drawPile.length === 0) return false;
+    if (!durissimaAfterPlayBudgetOpen(state)) return false;
+    if (!drawForPlayer(state, playerId)) return false;
+    if (state.durissimaAfterPlayDrawsLeft !== null && state.durissimaAfterPlayDrawsLeft !== undefined) {
+      state.durissimaAfterPlayDrawsLeft--;
+    }
+    state.durissimaAfterPlayDrawsUsed = (state.durissimaAfterPlayDrawsUsed || 0) + 1;
+    return true;
+  }
+
+  function defaultDurissimaEmergencyBudget(size, players, options) {
+    if (options.durissimaMater !== true) return null;
+    if (options.durissimaEmergencyDrawBudget !== undefined) {
+      return normalizeDurissimaDrawBudget(options.durissimaEmergencyDrawBudget);
+    }
+    return players === 1 ? size : 0;
   }
 
   function applyPlacement(state, playerId, move) {
@@ -610,7 +979,30 @@ const MPCARDS_CORE_SOURCE = `
     }
   }
 
+  /** Solitario Durissima: pass vietato (buffer o sconfitta). Multi: regole normali. */
+  function canPassTurnVoluntarily(state) {
+    if (!state || state.status !== "playing") return false;
+    if (isDurissimaMater(state) && state.players === 1 && state.turnPlayed === 0) return false;
+    return true;
+  }
+
+  function durissimaWhenStuckWithoutPlay(state) {
+    if (state.players === 1) {
+      const drew = tryDurissimaEmergencyDraw(state, state.currentPlayer);
+      if (drew) return "drew";
+      state.status = "stalled";
+      return "lost";
+    }
+    passTurn(state);
+    return "passed";
+  }
+
   function passTurn(state) {
+    if (isDurissimaMater(state) && state.turnPlayed === 0 && state.players === 1) {
+      throw new Error(
+        "Durissima Mater solitario: passare senza pescare dal buffer perde la partita."
+      );
+    }
     const drew = drawForPlayer(state, state.currentPlayer);
     state.consecutivePasses++;
     const canStall = !isDurissimaMater(state) || !isBoardComplete(state);
@@ -643,12 +1035,12 @@ const MPCARDS_CORE_SOURCE = `
     recordTurnPlacements(state);
     const playerId = state.currentPlayer;
     const handEmpty = (state.hands[playerId] || []).length === 0;
-    if (
-      state.status === "playing" &&
-      state.turnPlayed > 0 &&
-      !(isDurissimaMater(state) && handEmpty)
-    ) {
-      drawForPlayer(state, playerId);
+    if (state.status === "playing" && state.turnPlayed > 0 && !handEmpty) {
+      if (isDurissimaMater(state) && state.players === 1) {
+        tryDurissimaAfterPlayDraw(state, playerId);
+      } else {
+        drawForPlayer(state, playerId);
+      }
     }
     state.turns++;
     state.currentPlayer = nextPlayerId(state);
@@ -735,6 +1127,12 @@ const MPCARDS_CORE_SOURCE = `
       firstAxisInversionDone: false,
       turnDirection: 1,
       durissimaMater: options.durissimaMater === true,
+      durissimaEmergencyDrawsLeft: defaultDurissimaEmergencyBudget(size, players, options),
+      durissimaAfterPlayDrawsLeft: options.durissimaMater === true
+        ? normalizeDurissimaDrawBudget(options.durissimaAfterPlayDrawBudget)
+        : null,
+      durissimaEmergencyDrawsUsed: 0,
+      durissimaAfterPlayDrawsUsed: 0,
       randomizeTurnOrder,
       turnOrder: initialTurnOrder.slice(),
       turnPlacementStats: emptyTurnPlacementStats(),
@@ -742,6 +1140,14 @@ const MPCARDS_CORE_SOURCE = `
       initialDrawCount: deal.drawCount,
       overcrowdedDeal: deal.overcrowded
     };
+  }
+
+  /** null/undefined = illimitato; intero >= 0 = tetto per partita. */
+  function normalizeDurissimaDrawBudget(value) {
+    if (value === null || value === undefined) return null;
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.floor(n);
   }
 
   function resolveStrategies(settings, players, random) {
@@ -754,12 +1160,20 @@ const MPCARDS_CORE_SOURCE = `
 
   function botStep(state, strategies, random) {
     if (state.status !== "playing") return { played: false, passed: false };
-    maybeDrawDurissimaEmptyHand(state);
     const playerId = state.currentPlayer;
     const playerStrategy = Array.isArray(strategies) ? strategies[playerId] : strategies;
     const action = chooseAction(state, playerId, playerStrategy, random);
     if (action.type === "stop") {
       if (state.turnPlayed === 0) {
+        if (isDurissimaMater(state)) {
+          const stuck = durissimaWhenStuckWithoutPlay(state);
+          return {
+            played: false,
+            passed: stuck === "passed",
+            drew: stuck === "drew",
+            lost: stuck === "lost"
+          };
+        }
         passTurn(state);
         return { played: false, passed: true };
       }
@@ -917,6 +1331,8 @@ const MPCARDS_CORE_SOURCE = `
       heightAxisFixed: state.heightAxisFixed === true,
       turnDirection: state.turnDirection,
       durissimaMater: state.durissimaMater === true,
+      durissimaEmergencyDrawsUsed: state.durissimaEmergencyDrawsUsed || 0,
+      durissimaAfterPlayDrawsUsed: state.durissimaAfterPlayDrawsUsed || 0,
       boardComplete: isBoardComplete(state),
       maxPlacementsInTurn: placementStats.maxInTurn,
       fourCardTurns: placementStats.byCount[4],
@@ -985,7 +1401,9 @@ const MPCARDS_CORE_SOURCE = `
     isDurissimaMater,
     isBoardComplete,
     maybeCompleteDurissima,
-    maybeDrawDurissimaEmptyHand,
+    tryDurissimaEmergencyDraw,
+    tryDurissimaAfterPlayDraw,
+    canPassTurnVoluntarily,
     passTurn,
     drawForPlayer,
     endTurn,

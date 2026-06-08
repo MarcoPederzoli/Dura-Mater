@@ -420,6 +420,8 @@ function makeJobs(config, stepId = "") {
           deckCodes: config.deckCodes,
           strategies: config.strategies.slice(0, players),
           durissimaMater: config.durissimaMater,
+          durissimaEmergencyDrawBudget: config.durissimaEmergencyDrawBudget,
+          durissimaAfterPlayDrawBudget: config.durissimaAfterPlayDrawBudget,
           randomizeTurnOrder: config.randomizeTurnOrder !== false,
           shuffleStrategiesAmongSeats: config.shuffleStrategiesAmongSeats === true
         });
@@ -457,13 +459,15 @@ function stepConfigFromWorkflowStep(step, shared, uiConfig) {
     workers: uiConfig.workers,
     seed: uiConfig.seed,
     durissimaMater: step.durissimaMater ?? shared?.durissimaMater ?? false,
+    durissimaEmergencyDrawBudget: step.durissimaEmergencyDrawBudget ?? shared?.durissimaEmergencyDrawBudget,
+    durissimaAfterPlayDrawBudget: step.durissimaAfterPlayDrawBudget ?? shared?.durissimaAfterPlayDrawBudget,
     randomizeTurnOrder: !(step.fixedTurnOrder ?? shared?.fixedTurnOrder ?? false),
     shuffleStrategiesAmongSeats: step.shuffleStrategiesAmongSeats === true
       || shared?.shuffleStrategiesAmongSeats === true,
     deckCodes: uiConfig.deckCodes,
     strategies
   };
-  return clampConfigForDurissima(config);
+  return config;
 }
 
 function initStepState(stepMeta, config) {
@@ -1188,9 +1192,10 @@ function buildWorkflowSnapshot(state, meta = {}) {
     overcrowdGuide: state.workflow.overcrowdGuide || null,
     playabilityGuide: state.workflow.playabilityGuide || null,
     participationGuide: state.workflow.participationGuide || null,
+    durissimaGuide: state.workflow.durissimaGuide || null,
     hints: {
       forAnalysis:
-        "Passa questo file intero all'assistente: `analysis.summary` (avgCardsPlacedPerPlayer, onePlacementPlayerGamePct, everyoneAtLeastTwoPlacementsPct, avgMinPlacementsPerGame) e cells[\"LxG\"] con totalPlacementsSum, gamesWithOnePlacementPlayer, gamesEveryoneAtLeastTwoPlacements. Guide: participationGuide, playabilityGuide, overcrowdGuide, …"
+        "Passa questo file intero all'assistente: `analysis.summary` (successPct in Durissima, avgCardsPlacedPerPlayer in competitiva, …) e cells[\"LxG\"]. Guide: durissimaGuide, participationGuide, playabilityGuide, overcrowdGuide, …"
     }
   };
 }
@@ -1870,6 +1875,21 @@ function renderWorkflowAnalysis(snapshot) {
     els.analysisContent.appendChild(guide);
   }
 
+  if (snapshot.durissimaGuide) {
+    const guide = document.createElement("div");
+    guide.className = "analysis-block";
+    guide.innerHTML = "<h3>Come leggere (Durissima Mater)</h3>";
+    const parts = [];
+    if (snapshot.durissimaGuide.question) parts.push(snapshot.durissimaGuide.question);
+    if (snapshot.durissimaGuide.scope) parts.push(snapshot.durissimaGuide.scope);
+    if (snapshot.durissimaGuide.read) parts.push(snapshot.durissimaGuide.read);
+    if (snapshot.durissimaGuide.metrics) parts.push(snapshot.durissimaGuide.metrics);
+    if (snapshot.durissimaGuide.verdict) parts.push(snapshot.durissimaGuide.verdict);
+    if (snapshot.durissimaGuide.params) parts.push(snapshot.durissimaGuide.params);
+    guide.appendChild(renderAnalysisList(parts, text => text));
+    els.analysisContent.appendChild(guide);
+  }
+
   if (snapshot.participationGuide) {
     const guide = document.createElement("div");
     guide.className = "analysis-block";
@@ -2272,6 +2292,8 @@ function workerSource() {
           strategies: job.strategies,
           random,
           durissimaMater: job.durissimaMater === true,
+          durissimaEmergencyDrawBudget: job.durissimaEmergencyDrawBudget,
+          durissimaAfterPlayDrawBudget: job.durissimaAfterPlayDrawBudget,
           randomizeTurnOrder: job.randomizeTurnOrder !== false,
           shuffleStrategiesAmongSeats: job.shuffleStrategiesAmongSeats === true
         });
@@ -2505,7 +2527,12 @@ function setDeckEditVisible(visible) {
   syncDeckInfo();
 }
 
-loadSavedPrefs();
+try {
+  loadSavedPrefs();
+} catch (error) {
+  console.error("loadSavedPrefs:", error);
+  applyPrefs(DEFAULT_PREFS);
+}
 bindPrefsPersistence();
 els.gMin.addEventListener("input", () => {
   renderStrategyInputs();
@@ -2591,12 +2618,16 @@ if (els.applyPreset) {
     applySimulationPreset(key);
   });
 }
-populateWorkflowSelect();
-els.run.addEventListener("click", () => {
+try {
+  populateWorkflowSelect();
+} catch (error) {
+  console.error("populateWorkflowSelect:", error);
+}
+if (els.run) els.run.addEventListener("click", () => {
   savePrefsNow();
   runSimulations();
 });
-els.stop.addEventListener("click", stopSimulations);
+if (els.stop) els.stop.addEventListener("click", stopSimulations);
 if (els.newSimulation) els.newSimulation.addEventListener("click", prepareNewSimulation);
 if (els.newSimulationAnalysis) els.newSimulationAnalysis.addEventListener("click", prepareNewSimulation);
 if (els.exportResults) els.exportResults.addEventListener("click", exportResultsJson);

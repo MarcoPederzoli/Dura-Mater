@@ -247,6 +247,74 @@ function testDurissimaCompletesWhenBoardFull() {
 testDurissimaEmptyHandDoesNotEndGameEarly();
 testDurissimaCompletesWhenBoardFull();
 
+function testDurissimaPassOnlyAfterAtLeastOnePlacement() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const solo = core.setupGame(deck, { size: 3, players: 1, random: () => 0, durissimaMater: true });
+  assert.equal(core.canPassTurnVoluntarily(solo), false);
+  assert.throws(() => core.passTurn(solo), /buffer/);
+  solo.turnPlayed = 1;
+  const beforeSolo = solo.hands[0].length;
+  core.endTurn(solo);
+  assert.ok(solo.hands[0].length >= beforeSolo || solo.drawPile.length === 0);
+
+  const multi = core.setupGame(deck, { size: 3, players: 2, random: () => 0, durissimaMater: true });
+  assert.equal(core.canPassTurnVoluntarily(multi), true);
+  const pid = multi.currentPlayer;
+  const handBefore = multi.hands[pid].length;
+  const pileBefore = multi.drawPile.length;
+  core.passTurn(multi);
+  if (pileBefore > 0) {
+    assert.equal(multi.hands[pid].length, handBefore + 1);
+  } else {
+    assert.equal(multi.hands[pid].length, handBefore);
+  }
+  assert.equal(multi.turnPlayed, 0);
+}
+
+function testDurissimaPlannerPlaysLegalMove() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, { size: 3, players: 1, random: () => 0.5, durissimaMater: true });
+  const random = core.mulberry32(99);
+  const result = core.botStep(state, ["durissima-planner"], random);
+  assert.equal(result.played || result.drew || result.passed || result.ended, true);
+}
+
+testDurissimaPlannerPlaysLegalMove();
+
+testDurissimaPassOnlyAfterAtLeastOnePlacement();
+
+function testDurissimaSolitaireBufferDefaultN() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
+  const state = core.setupGame(deck, { size: 5, players: 1, random: () => 0, durissimaMater: true });
+  assert.equal(state.durissimaEmergencyDrawsLeft, 5);
+  assert.equal(state.durissimaAfterPlayDrawsLeft, null);
+}
+
+function testDurissimaMultiNoEmergencyBuffer() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
+  const state = core.setupGame(deck, { size: 5, players: 3, random: () => 0, durissimaMater: true });
+  assert.equal(state.durissimaEmergencyDrawsLeft, 0);
+  assert.equal(core.tryDurissimaEmergencyDraw(state, 0), false);
+}
+
+function testDurissimaSolitaireBufferExhaustedIsLoss() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 1,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaEmergencyDrawBudget: 0
+  });
+  state.hands[0] = [];
+  const result = core.botStep(state, ["planner"], () => 0);
+  assert.equal(result.lost || state.status === "stalled", true);
+}
+
+testDurissimaSolitaireBufferDefaultN();
+testDurissimaMultiNoEmergencyBuffer();
+testDurissimaSolitaireBufferExhaustedIsLoss();
+
 function testPlannerPlaysWhenLegalMovesExist() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
   const state = core.setupGame(deck, { size: 3, players: 2, random: () => 0.5 });

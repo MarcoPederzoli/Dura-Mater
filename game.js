@@ -565,7 +565,10 @@ function applySuggestedAction(action) {
 
 function actionLabel(action) {
   if (action.type === "move") return `${action.move.card.code} in (${action.move.x}, ${action.move.y})`;
-  if (game.state.turnPlayed === 0) return "Passa";
+  if (game.state.turnPlayed === 0) {
+    if (core.isDurissimaMater(game.state) && game.state.players === 1) return "Pesca buffer";
+    return "Passa";
+  }
   if (core.canOfferIdea(game.state, game.state.currentPlayer)) return "Chiude (salta idea)";
   return "Chiude turno";
 }
@@ -585,7 +588,13 @@ function passOrEndTurn() {
     : `${playerLabel(player)} chiude il turno.`;
   game.state = gameState.commit(game.session, label, game.random, nextState => {
     if (nextState.turnPlayed === 0) {
-      core.passTurn(nextState);
+      if (core.isDurissimaMater(nextState) && nextState.players === 1) {
+        if (!core.tryDurissimaEmergencyDraw(nextState, nextState.currentPlayer)) {
+          nextState.status = "stalled";
+        }
+      } else {
+        core.passTurn(nextState);
+      }
     } else {
       core.endTurn(nextState);
     }
@@ -1442,9 +1451,12 @@ function renderActions() {
     return;
   }
   const moves = currentMoves();
+  const durissima = core.isDurissimaMater(game.state);
+  const durissimaSolo = durissima && game.state.players === 1 && game.state.turnPlayed === 0;
+  const soloBufferDraw = durissimaSolo && moves.length === 0;
   els.pass.style.display = isBotTurn() ? "none" : "inline-grid";
   els.botStep.style.display = isBotTurn() ? "inline-grid" : "none";
-  els.pass.disabled = isBotTurn();
+  els.pass.disabled = isBotTurn() || (durissimaSolo && !soloBufferDraw);
   els.pass.className = moves.length === 0 || game.state.turnPlayed > 0 ? "warn" : "secondary";
   els.botStep.disabled = !isBotTurn() || els.speed.value !== "step";
 }

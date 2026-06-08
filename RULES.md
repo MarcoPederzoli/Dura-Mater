@@ -121,7 +121,8 @@ La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **N×
 - Alla fine del proprio turno, prima di passare il turno al giocatore successivo, il giocatore deve pescare una carta se il mazzo di pesca contiene ancora carte.
 - La pesca di fine turno avviene sia se il giocatore ha posato una o piu' carte, sia se ha passato.
 - Se il mazzo di pesca e' vuoto, il giocatore non pesca a fine turno.
-- Se un giocatore non ha mosse legali, o non vuole giocare, passa.
+- Se un giocatore non ha mosse legali, passa (e pesca se il mazzo non e' vuoto).
+- In partita **competitiva**, un giocatore umano distratto puo' passare anche con mosse disponibili: non e' consentito dalle regole di buon gioco (va contro l'obiettivo di svuotare la mano), ma il motore non lo impedisce.
 - La partita va in stallo quando il mazzo di pesca e' vuoto e tutti i giocatori passano consecutivamente senza che nessuno posi una carta.
 
 ## Posa delle carte
@@ -187,11 +188,24 @@ La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **N×
 4. Se una terza carta viene posata orizzontalmente, completando una sequenza continua di 3 carte, quelle tre carte occupano necessariamente una riga intera della matrice 3x3.
 5. A quel punto non e' ancora noto se le altre due righe della matrice saranno entrambe sopra, entrambe sotto, oppure una sopra e una sotto quella riga.
 
-## Obiettivo
+## Obiettivo (partita competitiva)
 
 - Lo scopo del gioco e' finire le carte in mano.
 - Vince il primo giocatore che resta senza carte in mano.
 - La vittoria viene assegnata immediatamente dopo la posa che svuota la mano, prima della pesca di fine turno. Quindi la presenza di carte nel mazzo di pesca non impedisce la vittoria.
+
+## Durissima Mater
+
+Variante in cui l'obiettivo e' **completare la matrice N×N** (tutte le carte posate). Non conta chi finisce le carte per primo; la partita finisce quando la griglia e' piena.
+
+- Al tavolo la Durissima e' **collaborativa** (un solo obiettivo comune). In solitario equivale a tenere tutte le carte insieme.
+- **Due o piu' giocatori**: turno e pesca come nel **gioco normale** (si pesca passando/chiudendo il turno se c'e' mazzo). La collaborazione al tavolo compensa la mancanza di un bot «globale». Se un giro completo passa senza che **nessuno** posi, la partita va a **monte**.
+- **Informazione condivisa (cooperativo):** tutti i giocatori conoscono **l'intero contenuto** delle mani di tutti e del **mazzo di pesca** ancora da distribuire. Si sa **quali** carte restano in gioco, non **in che ordine** verranno pescate dal mazzo. Al tavolo si possono coordinare mosse e chiusure di «isole» (es. completare un 2×2) sapendo se la carta necessaria e' in una mano o ancora nel mazzo. Il bot cooperativo (`durissima-planner`) usa lo stesso pool informativo per valutare isole e frontiera; per «chi puo' posare adesso» in una cella considera solo le carte gia' in mano.
+- **Un solo giocatore (solitario)**: a fine turno si pesca **solo se nel turno si e' posata almeno una carta** (se il mazzo non e' vuoto). Se non si puo' posare, si usano fino a **N pescate extra per partita** dal mazzo (**buffer di emergenza**, `N` = lato della griglia). Sono pescate aggiuntive da fermo, non sostituiscono la pesca dopo una posa. Su griglie piccole il buffer e' rilevante (3×3: 3 pescate su 6 nel mazzo; 5×5: 5 su 20). Buffer esaurito e ancora bloccati → partita persa.
+- **Posare meno carte del massimo** nello stesso turno resta lecito e spesso strategico: dopo la prima posa si puo' **chiudere il turno** anche se si potevano posare altre carte.
+- Mano vuota **non** termina la partita: si continua finche' la matrice non e' completa o la partita non va a monte.
+
+*Nota (bilanciamento provvisorio):* le regole sopra sono quelle concordate; il completamento reale della griglia va verificato in simulazione (solitario e multi‑giocatore). Se le percentuali di successo fossero troppo basse, le regole potrebbero essere riviste.
 
 ## Timeline locale
 
