@@ -113,7 +113,7 @@ Un solo step: planner, ordine iniziale casuale, inversione ai limiti DM. Matrici
 | Cosa guardare | Competitiva (`L*-comp`) | Durissima (`L*-duri`, solo G=1) |
 |---------------|-------------------------|----------------------------------|
 | **success%** | Partite con **vincitore** | **Matrice L×L piena** |
-| **stall%** | Nessun vincitore | Griglia non completata |
+| **stall%** | Nessun vincitore (monte: G pass senza posate, anche con tallone) | Griglia non completata (stesso criterio monte in multi) |
 | **G=2…L−1** | Deve restare giocabile (non ~100% stalli su L piccole) | — |
 | **G=L** | Spesso pochi stalli in realtà (vittoria rapida) | — |
 

@@ -100,6 +100,11 @@ npm test
 
 - **Tornei a punteggio** — formalizzazione regolamento (prossimo task).
 
+## Da sistemare (regole)
+
+- **Pesca / monte (2026-06):** competitiva — pesca anche su pass; monte dopo G pass senza posate (anche con tallone pieno). Durissima coop — pesca solo dopo posata; stesso monte. Implementato in `mpcards-core.js` + `RULES.md`.
+- **Durissima solitario:** regola monte / stallo senza compagni da rivalutare (quasi impossibile?); non in torneo, rinviato.
+
 ## Task tipici ancora aperti (opzionali)
 
 - Retro `Back.jpg` in pesca / carte coperte.

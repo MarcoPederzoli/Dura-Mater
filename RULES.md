@@ -118,12 +118,11 @@ La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **N×
 - I giocatori agiscono a turno secondo l'ordine iniziale e la direzione in vigore.
 - Nel proprio turno un giocatore puo' posare da 1 a 4 carte, piu' eventualmente una quinta carta tramite l'**Idea** (vedi sotto).
 - Il giocatore puo' scegliere di posare meno di 4 carte anche se avrebbe mosse legali disponibili.
-- Alla fine del proprio turno, prima di passare il turno al giocatore successivo, il giocatore deve pescare una carta se il mazzo di pesca contiene ancora carte.
-- La pesca di fine turno avviene sia se il giocatore ha posato una o piu' carte, sia se ha passato.
+- **Pesca in partita competitiva:** alla fine del proprio turno, se il mazzo non e' vuoto, si pesca **sempre** — sia dopo aver posato una o piu' carte, sia dopo un **passo** (turno chiuso senza posate). Passare senza posare e' una scelta strategica: si pesca ugualmente, ma le carte restano in mano (nel torneo a punteggio sono punti negativi se la partita finisce).
+- **Monte (competitiva e Durissima multi):** se **G turni consecutivi** passano senza che **nessuno** posi una carta, la partita va a **monte** (stallo), **anche se il tallone non e' vuoto**. Ogni posa azzera il contatore dei pass consecutivi.
 - Se il mazzo di pesca e' vuoto, il giocatore non pesca a fine turno.
-- Se un giocatore non ha mosse legali, passa (e pesca se il mazzo non e' vuoto).
-- In partita **competitiva**, un giocatore umano distratto puo' passare anche con mosse disponibili: non e' consentito dalle regole di buon gioco (va contro l'obiettivo di svuotare la mano), ma il motore non lo impedisce.
-- La partita va in stallo quando il mazzo di pesca e' vuoto e tutti i giocatori passano consecutivamente senza che nessuno posi una carta.
+- Se un giocatore non ha mosse legali, passa (e in competitiva pesca se il mazzo non e' vuoto).
+- In partita **competitiva**, un giocatore umano distratto puo' passare anche con mosse disponibili: non e' consentito dalle regole di buon gioco (va contro l'obiettivo di svuotare la mano), ma il motore non lo impedisce. La scelta di passare con mosse disponibili resta lecita (es. per tentare pescate utili accettando il rischio di carte in mano).
 
 ## Posa delle carte
 
@@ -199,10 +198,11 @@ La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **N×
 Variante in cui l'obiettivo e' **completare la matrice N×N** (tutte le carte posate). Non conta chi finisce le carte per primo; la partita finisce quando la griglia e' piena.
 
 - Al tavolo la Durissima e' **collaborativa** (un solo obiettivo comune). In solitario equivale a tenere tutte le carte insieme.
-- **Due o piu' giocatori**: turno e pesca come nel **gioco normale** (si pesca passando/chiudendo il turno se c'e' mazzo). Se un giro completo passa senza che **nessuno** posi, la partita va a **monte**.
-- **Pesca:** nessun buffer emergenza, nessuna vita extra, nessun reshuffle di mano. Si pesca solo secondo le regole normali (in solitario: **solo dopo aver posato** almeno una carta nel turno).
+- **Due o piu' giocatori (cooperativo):** unica differenza di pesca rispetto alla competitiva — si pesca **solo se nel turno si e' posata almeno una carta** (a fine turno, se il mazzo non e' vuoto). **Passare senza posare non fa pescare:** evita di accumulare carte «gratis» mentre si aspetta (nel coop piu' carte in mano sono un vantaggio, non uno svantaggio come in torneo). Passare senza posare resta lecito come scelta tattica (es. lasciare che un altro giocatore apra la strada per una carta difficile al turno successivo).
+- **Monte:** come in competitiva — **G pass consecutivi** senza posate → monte, **anche con tallone pieno** (vedi sopra).
+- **Pesca:** nessun buffer emergenza, nessuna vita extra, nessun reshuffle di mano.
 - **Informazione condivisa (cooperativo):** al tavolo mani e mazzo restano **coperti**. Con la **scheda di riferimento delle 64 carte** e il dialogo i giocatori costruiscono l'**universo noto**: si sa **quali** carte esistono ancora in partita (in qualche mano o nel mazzo), non **in che ordine** verranno pescate. Chi e' al turno puo' chiedere aiuto per le mosse; gli altri contribuiscono con la memoria condivisa dell'universo, ma **solo il giocatore attivo** puo' posare dalla propria mano. La simulazione coop usa `durissima-team-planner`: stesso universo noto, con bonus per mosse che **sbloccano** carte difficili nei turni successivi degli altri giocatori.
-- **Un solo giocatore (solitario)**: a fine turno si pesca **solo se nel turno si e' posata almeno una carta** (se il mazzo non e' vuoto). Bloccati senza mosse legali all'inizio del turno → partita **persa** (nessun passo, nessun aiuto reattivo).
+- **Un solo giocatore (solitario):** a fine turno si pesca **solo se nel turno si e' posata almeno una carta** (se il mazzo non e' vuoto). Bloccati senza mosse legali all'inizio del turno → partita **persa** (nessun passo, nessun aiuto reattivo). *Da rivedere:* regola «monte» e blocco senza compagni — fuori dal torneo per ora (`promemoria.md`).
 - **Posare meno carte del massimo** nello stesso turno resta lecito e spesso strategico: dopo la prima posa si puo' **chiudere il turno** anche se si potevano posare altre carte.
 - Mano vuota **non** termina la partita: si continua finche' la matrice non e' completa o la partita non va a monte.
 

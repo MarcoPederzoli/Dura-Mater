@@ -269,12 +269,28 @@ function testDurissimaPassOnlyAfterAtLeastOnePlacement() {
   const handBefore = multi.hands[pid].length;
   const pileBefore = multi.drawPile.length;
   core.passTurn(multi);
-  if (pileBefore > 0) {
-    assert.equal(multi.hands[pid].length, handBefore + 1);
-  } else {
-    assert.equal(multi.hands[pid].length, handBefore);
-  }
+  assert.equal(multi.hands[pid].length, handBefore);
   assert.equal(multi.turnPlayed, 0);
+}
+
+function testMonteAfterFullRoundPassesEvenWithDrawPile() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, { size: 3, players: 2, random: () => 0 });
+  assert.ok(state.drawPile.length > 0);
+  core.passTurn(state);
+  assert.equal(state.status, "playing");
+  core.passTurn(state);
+  assert.equal(state.status, "stalled");
+}
+
+function testDurissimaCoopPassDoesNotDrawWithPile() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, { size: 3, players: 2, random: () => 0, durissimaMater: true });
+  assert.ok(state.drawPile.length > 0);
+  const pid = state.currentPlayer;
+  const handBefore = state.hands[pid].length;
+  core.passTurn(state);
+  assert.equal(state.hands[pid].length, handBefore);
 }
 
 function testDurissimaPlannerPlaysLegalMove() {
@@ -288,6 +304,8 @@ function testDurissimaPlannerPlaysLegalMove() {
 testDurissimaPlannerPlaysLegalMove();
 
 testDurissimaPassOnlyAfterAtLeastOnePlacement();
+testMonteAfterFullRoundPassesEvenWithDrawPile();
+testDurissimaCoopPassDoesNotDrawWithPile();
 
 function testDurissimaDefaultSimpleRulesNoReactiveAids() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);

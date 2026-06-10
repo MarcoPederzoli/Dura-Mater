@@ -1197,16 +1197,23 @@ const MPCARDS_CORE_SOURCE = `
     return resolveDurissimaStuck(state, random, options);
   }
 
+  function shouldDrawOnPass(state) {
+    if (isDurissimaMater(state) && state.players > 1) return false;
+    return true;
+  }
+
   function passTurn(state) {
     if (isDurissimaMater(state) && state.turnPlayed === 0 && state.players === 1) {
       throw new Error(
         "Durissima Mater solitario: senza mosse legali e senza vita extra la partita e' persa."
       );
     }
-    const drew = drawForPlayer(state, state.currentPlayer);
+    if (shouldDrawOnPass(state)) {
+      drawForPlayer(state, state.currentPlayer);
+    }
     state.consecutivePasses++;
     const canStall = !isDurissimaMater(state) || !isBoardComplete(state);
-    if (canStall && state.consecutivePasses >= state.players && !drew && state.drawPile.length === 0) {
+    if (canStall && state.consecutivePasses >= state.players) {
       state.status = "stalled";
     }
     endTurn(state);
