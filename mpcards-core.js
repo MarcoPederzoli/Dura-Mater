@@ -73,9 +73,9 @@ const MPCARDS_CORE_SOURCE = `
 
   function decodeCardCode(code, index) {
     const text = String(code).padStart(3, "0");
-    const valueIndex = Number(text[0]) - 1; // 1a cifra: VALORE (1–8)
-    const shapeIndex = Number(text[1]) - 1; // 2a cifra: FORMA (1–8)
-    const colorIndex = Number(text[2]) - 1; // 3a cifra: COLORE (1–8)
+    const valueIndex = Number(text[0]) - 1; // 1a cifra: VALORE (1-8)
+    const shapeIndex = Number(text[1]) - 1; // 2a cifra: FORMA (1-8)
+    const colorIndex = Number(text[2]) - 1; // 3a cifra: COLORE (1-8)
     if (
       !Number.isInteger(valueIndex) || valueIndex < 0 || valueIndex >= VALUES.length ||
       !Number.isInteger(shapeIndex) || shapeIndex < 0 || shapeIndex >= SHAPES.length ||
@@ -813,7 +813,7 @@ const MPCARDS_CORE_SOURCE = `
     return n;
   }
 
-  /** Grado finale atteso nella matrice N×N: angolo 2, bordo 3, interno 4. */
+  /** Grado finale atteso nella matrice NxN: angolo 2, bordo 3, interno 4. */
   function durissimaExpectedFinalDegree(sim, x, y) {
     if (sim.board.length === 0) return 2;
     const bounds = boardBounds(sim.board, [{ x, y }]);
@@ -1362,6 +1362,7 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   function shouldDrawOnPass(state) {
+    if (state.drawOnlyAfterPlacement === true) return false;
     if (isDurissimaMater(state) && state.players > 1) return false;
     return true;
   }
@@ -1446,8 +1447,27 @@ const MPCARDS_CORE_SOURCE = `
     return size;
   }
 
+  /**
+   * Minimo giocatori consigliato (sotto-G): in genere ceil(N/2), eccezione 7x7 -> 3.
+   * Vedi RULES.md «Formati consigliati».
+   */
+  function recommendedMinPlayers(size) {
+    if (!Number.isInteger(size) || size < 3 || size > 8) return 0;
+    if (size === 7) return 3;
+    return Math.max(2, Math.ceil(size / 2));
+  }
+
   function isRecommendedSetup(size, players) {
-    return isPlayableSetup(size, players) && players <= recommendedMaxPlayers(size);
+    return (
+      isPlayableSetup(size, players) &&
+      players >= recommendedMinPlayers(size) &&
+      players <= recommendedMaxPlayers(size)
+    );
+  }
+
+  /** Sweep/audit di default: legale e G >= G_min (esclude sotto-G sconsigliato). */
+  function isDefaultSweepSetup(size, players) {
+    return isPlayableSetup(size, players) && players >= recommendedMinPlayers(size);
   }
 
   function isPlayableSetup(size, players) {
@@ -1463,7 +1483,7 @@ const MPCARDS_CORE_SOURCE = `
     const deal = computeInitialDeal(size, players);
     if (deal.cardsPerPlayer < MIN_INITIAL_HAND) {
       throw new Error(
-        "Troppi giocatori per " + size + "×" + size + ": servono almeno " + MIN_INITIAL_HAND + " carte a testa."
+        "Troppi giocatori per " + size + " x " + size + ": servono almeno " + MIN_INITIAL_HAND + " carte a testa."
       );
     }
     const gameDeck = deck
@@ -1507,6 +1527,7 @@ const MPCARDS_CORE_SOURCE = `
       firstAxisInversionDone: false,
       turnDirection: 1,
       durissimaMater: options.durissimaMater === true,
+      drawOnlyAfterPlacement: options.drawOnlyAfterPlacement === true,
       tournamentMode,
       tournamentScores: tournamentMode ? Array.from({ length: players }, () => 0) : null,
       tournamentHandScores: tournamentMode ? Array.from({ length: players }, () => 0) : null,
@@ -1902,7 +1923,9 @@ const MPCARDS_CORE_SOURCE = `
     computeInitialDeal,
     maxPlayersForSize,
     recommendedMaxPlayers,
+    recommendedMinPlayers,
     isRecommendedSetup,
+    isDefaultSweepSetup,
     isPlayableSetup,
     setupGame,
     resolveStrategies,

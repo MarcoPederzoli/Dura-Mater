@@ -10,9 +10,9 @@ Ogni carta e' identificata da un codice numerico di **tre cifre** (es. `118`, `5
 
 | Posizione | Proprieta' | Cifre |
 |-----------|------------|-------|
-| **1a** | `VALORE` | 1–8 |
-| **2a** | `FORMA` | 1–8 |
-| **3a** | `COLORE` | 1–8 |
+| **1a** | `VALORE` | 1-8 |
+| **2a** | `FORMA` | 1-8 |
+| **3a** | `COLORE` | 1-8 |
 
 Esempio: `586` → valore **5**, forma **8** (Croci), colore **6** (Blu) → «Cinque di Croci Blu».  
 Esempio: `577` → valore **5**, forma **7** (Lampi), colore **7** (Viola) → «Cinque di Lampi Viola».  
@@ -76,9 +76,59 @@ Il nome leggibile in italiano (es. «Cinque di Croci Gialle») e' generato da `c
   - `N <= 8`
 - Per la partita si usano solo le carte con `VALORE <= N`.
 - Dato il vincolo di composizione del mazzo, il filtro `VALORE <= N` produce sempre `N * N` carte.
-- Ogni giocatore deve ricevere **almeno 3 carte** in mano all'inizio (come nel gioco normale: la griglia minima 3×3 con 1–3 giocatori parte sempre da 3 carte a testa).
-- Numero massimo **ammesso**: `G <= 2N`. Esempi: 3×3 → **6**; 5×5 → **10**; 8×8 → **16**. La partita si avvia solo se la distribuzione rispetta anche il minimo di 3 carte a testa.
+- Ogni giocatore deve ricevere **almeno 3 carte** in mano all'inizio (come nel gioco normale: la griglia minima 3x3 con 1-3 giocatori parte sempre da 3 carte a testa).
+- Numero massimo **ammesso**: `G <= 2N`. Esempi: 3x3 -> **6**; 5x5 -> **10**; 8x8 -> **16**. La partita si avvia solo se la distribuzione rispetta anche il minimo di 3 carte a testa.
 - Formato **consigliato**: `G = N`. In quel caso non c'e' mazzo di pesca e la fortuna e' gia' tutta nelle mani iniziali. Con `G > N` (overcrowd) la partita resta legale fino a `2N`, ma le carte in mano sono meno e le carte non distribuite formano il mazzo di pesca.
+
+## Formati consigliati (schema)
+
+Tre fasce per il numero di giocatori `G` su una griglia `NxN`:
+
+| Fascia | Condizione | Ruolo |
+|--------|------------|--------|
+| **Ideale** | `G = N` | Formato di riferimento: nessun tallone, torneo simmetrico (`N` mani), Durissima coop sulle griglie previste |
+| **Sotto-G** | `G_min <= G < N` | Variante «under»; legale e a volte utile, ma meno equa (soprattutto in torneo) |
+| **Overcrowd** | `N < G <= 2N` | Variante con tallone; legale, spesso lunga e quasi tutta a monte in torneo |
+| **Extra / sconsigliato** | `G < G_min` | Ancora **legale** in competitiva se restano >= 3 carte a testa (es. duello 7x2) — da evitare in torneo |
+| **Non prodotto** | `G = 1` | **Solitario Dura abbandonato** (giugno 2026): il motore puo' ancora simulare `1xN` con `--all-legal`, ma non e' una modalita' del gioco. Il solitario resta solo in **Durissima** (griglia piena), da definire con quella modalita' |
+
+### Minimo consigliato sotto-G (`G_min`)
+
+In generale, per non scendere negli under «disastro» (duelli sbilanciati su griglie grandi):
+
+```
+G_min = ceil(N/2)   (arrotondamento per eccesso)
+```
+
+**Eccezione:** su **7x7** il minimo consigliato e' **3**, non 4. Con 4 giocatori il torneo e' equo ma quasi tutto a monte; con 3 giocatori resta equo ed e' molto piu' giocabile. Il vero problema su 7x7 e' il duello **7x2**, non il trio **7x3**.
+
+Implementazione: `recommendedMinPlayers(N)` in `mpcards-core.js` (speculare a `maxPlayersForSize` / `recommendedMaxPlayers`).
+
+### Tabella riepilogativa
+
+| Griglia | `G` ideale | `G_min` consigliato | `G` max consigliato | `G` max ammesso | Note |
+|---------|------------|---------------------|---------------------|-----------------|------|
+| 3x3 | 3 | 2 | 3 | 6 | 3x2 ammesso come duello breve |
+| 4x4 | 4 | 2 | 4 | 8 | 4x2 ammesso come duello |
+| 5x5 | 5 | 3 | 5 | 10 | sotto 3 -> duello sbilanciato in torneo |
+| 6x6 | 6 | 3 | 6 | 12 | |
+| 7x7 | 7 | **3** | 7 | 14 | **eccezione** a ceil(N/2) |
+| 8x8 | 8 | 4 | 8 | 16 | |
+
+- **Consigliato (banda utile):** `G_min <= G <= N` — include il formato ideale `G = N`.
+- **Ammesso (motore / simulatori):** `1 <= G <= 2N` con almeno 3 carte a testa (salvo combinazioni che violano il minimo carte).
+- **UI gioco** (`gioco.html`, `simulazione-singolo.html`): il selettore giocatori **non scende sotto `G_min`** (sempre **>= 2** su Dura; `G = 1` non selezionabile).
+- **Sweep / audit** (`classic-sweep`, `tournament-audit`, workflow simulator): per default solo `G >= G_min`; flag **`--all-legal`** se serve il campione completo delle combinazioni legali.
+- **Torneo:** formato ideale `G = N`; sotto `G_min` non selezionabile in UI; overcrowd possibile ma variante.
+
+### Per modalità
+
+| Modalità | Cosa promuovere |
+|----------|-----------------|
+| **Dura competitiva** | `G = N`; banda `G_min … N` per under leggeri; overcrowd come variante; **nessun solitario** (`G >= G_min`, minimo 2 giocatori) |
+| **Torneo** | **`G = N`**; evitare `G < G_min`; overcrowd opzionale, non core |
+| **Durissima coop** | solo **`G = N`** sulle griglie previste; tutto il resto è extra estremo |
+| **Durissima solitario** | `G = 1` — unica modalita' solitario del prodotto; regole e bilanciamento **in preparazione** (non in UI Dura) |
 
 ## Preparazione
 
@@ -92,16 +142,16 @@ Il nome leggibile in italiano (es. «Cinque di Croci Gialle») e' generato da `c
 6. La distribuzione e' valida solo se ogni giocatore riceve almeno **3** carte (altrimenti la configurazione non si puo' avviare).
 7. Le carte non distribuite formano il mazzo di pesca.
 
-Esempio: griglia **5×5** (25 carte) con **7** giocatori → 3 carte ciascuno (21 in mano), **4** carte nel mazzo di pesca.
+Esempio: griglia **5x5** (25 carte) con **7** giocatori -> 3 carte ciascuno (21 in mano), **4** carte nel mazzo di pesca.
 
-Controesempio: **3×3** con **4** giocatori → `floor(9/4) = 2` carte a testa → **non ammesso** (sotto il minimo di 3).
+Controesempio: **3x3** con **4** giocatori -> `floor(9/4) = 2` carte a testa -> **non ammesso** (sotto il minimo di 3).
 
 ## Inversione del turno (limiti della Dura Mater)
 
-La **Dura Mater** e' l'intera griglia di gioco (la matrice **N×N** che si costruisce in partita). Avviene un'**inversione** dell'ordine di gioco alla chiusura di **ciascun limite** della Dura Mater:
+La **Dura Mater** e' l'intera griglia di gioco (la matrice **NxN** che si costruisce in partita). Avviene un'**inversione** dell'ordine di gioco alla chiusura di **ciascun limite** della Dura Mater:
 
 1. **Primo limite** — con una posa, per la prima volta in partita, una sequenza continua di **N** carte in orizzontale **oppure** in verticale fissa un lato della griglia (larghezza o altezza della Dura Mater).
-2. **Secondo limite** — con una posa che porta l'ingombro delle carte al formato **N×N** (Dura Mater chiusa).
+2. **Secondo limite** — con una posa che porta l'ingombro delle carte al formato **NxN** (Dura Mater chiusa).
 
 Dopo ogni inversione, chi aveva il turno passa al giocatore precedente nell'ordine ciclico iniziale (es. dopo A → B → C si prosegue C → B → A). L'elenco dei giocatori non cambia: cambia solo la **direzione** (avanti o indietro). Non si ottiene un turno aggiuntivo per chi ha chiuso un limite.
 
@@ -111,7 +161,7 @@ Ogni inversione e' verificata **al momento della posa** di una carta.
 
 ## Dura Mater chiusa
 
-La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **N×N** (larghezza e altezza relative entrambe pari a **N**). La chiusura avviene con la posa che porta l'ingombro al limite (ed e' il **secondo limite** che provoca inversione, salvo annullamento come sopra).
+La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **NxN** (larghezza e altezza relative entrambe pari a **N**). La chiusura avviene con la posa che porta l'ingombro al limite (ed e' il **secondo limite** che provoca inversione, salvo annullamento come sopra).
 
 ## Turno di gioco
 
@@ -195,7 +245,7 @@ La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **N×
 
 ## Durissima Mater
 
-Variante in cui l'obiettivo e' **completare la matrice N×N** (tutte le carte posate). Non conta chi finisce le carte per primo; la partita finisce quando la griglia e' piena.
+Variante in cui l'obiettivo e' **completare la matrice NxN** (tutte le carte posate). Non conta chi finisce le carte per primo; la partita finisce quando la griglia e' piena.
 
 - Al tavolo la Durissima e' **collaborativa** (un solo obiettivo comune). In solitario equivale a tenere tutte le carte insieme.
 - **Due o piu' giocatori (cooperativo):** unica differenza di pesca rispetto alla competitiva — si pesca **solo se nel turno si e' posata almeno una carta** (a fine turno, se il mazzo non e' vuoto). **Passare senza posare non fa pescare:** evita di accumulare carte «gratis» mentre si aspetta (nel coop piu' carte in mano sono un vantaggio, non uno svantaggio come in torneo). Passare senza posare resta lecito come scelta tattica (es. lasciare che un altro giocatore apra la strada per una carta difficile al turno successivo).
@@ -210,25 +260,25 @@ Variante in cui l'obiettivo e' **completare la matrice N×N** (tutte le carte po
 
 Classificazione per il prodotto e per l'UI. I test di bilanciamento Durissima sono in **pausa** (dati conservati in `tests/` e `scripts/BILANCIAMENTO-PAUSA.md`); le soglie sotto restano valide fino a nuova campagna di simulazione.
 
-### Partita competitiva (normale)
+### Dura — partita competitiva (normale)
 
-- **Ambito:** tutte le configurazioni **legali** con `1 <= G <= 2N` e almeno 3 carte a testa.
-- **Giudizio:** **giocabile** in tutte le combinazioni ammesse. Nei sweep automatici (bot `planner`, 58 celle L 3–8) ogni cella conclude con un vincitore nel **74–100%** delle partite; nessuna cella a stallo totale.
-- L'overcrowd (`G > N`) e il solitario restano parte del gioco standard, non «extra».
+- **Ambito prodotto:** `G_min <= G <= 2N` (minimo **2** giocatori). Obiettivo: **mano vuota** prima degli avversari.
+- **Giudizio:** **giocabile** in tutte le combinazioni promosse. Nei sweep (`classic-sweep`, bot `planner`, celle con `G >= G_min`) ogni cella conclude con un vincitore nel **74-100%** delle partite; nessuna cella a stallo totale.
+- L'**overcrowd** (`G > N`) resta variante legale; il **solitario Dura** (`G = 1`) e' stato **escluso** (sfida debole o banale a seconda di `N`, senza avversari). Vedi nota sotto su Durissima solitario.
 
 ### Durissima Mater — formato consigliato `G = N` (cooperativo)
 
-| Livello | Griglia `N×N` | Etichetta | Note (simulazione, regole semplici attuali) |
+| Livello | Griglia `NxN` | Etichetta | Note (simulazione, regole semplici attuali) |
 |---------|---------------|-----------|---------------------------------------------|
-| **Core** | 3×3, 4×4 | Giocabile | Completamento griglia ripetibile con pianificazione coordinata |
-| **Difficile** | 5×5 | Molto difficile | Sfida seria; successo raro anche con gioco ottimo |
-| **Estremo** | 6×6 | Quasi impossibile | Non previsto come modalita' standard |
-| **Epico** | 7×7, 8×8 | Non standard / impossibile | Solo come sfida dichiarata, non come core |
+| **Core** | 3x3, 4x4 | Giocabile | Completamento griglia ripetibile con pianificazione coordinata |
+| **Difficile** | 5x5 | Molto difficile | Sfida seria; successo raro anche con gioco ottimo |
+| **Estremo** | 6x6 | Quasi impossibile | Non previsto come modalita' standard |
+| **Epico** | 7x7, 8x8 | Non standard / impossibile | Solo come sfida dichiarata, non come core |
 
 ### Durissima — altre configurazioni
 
-- **Solitario** (`G = 1`), **sotto-G** (`G < N`) e **overcrowd** (`N < G <= 2N`): **extra estremo** o impossibile a seconda del caso; non fanno parte del formato consigliato.
-- In UI e in torneo si possono offrire come varianti opzionali, con etichetta esplicita di difficolta'.
+- **Solitario** (`G = 1`): unica modalita' solitario del gioco (obiettivo **griglia piena**); bilanciamento in pausa (`scripts/BILANCIAMENTO-PAUSA.md`), non ancora in UI Dura.
+- **Sotto-G** (`G < N`) e **overcrowd** (`N < G <= 2N`) in Durissima: **extra estremo**; non fanno parte del formato consigliato coop.
 
 ## Torneo a punteggio (solo partita competitiva)
 

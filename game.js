@@ -140,6 +140,7 @@ const els = {
   modalPlayers: document.querySelector("#modal-players"),
   modalInfo: document.querySelector("#modal-info"),
   formatTierHint: document.querySelector("#format-tier-hint"),
+  playersRangeHint: document.querySelector("#players-range-hint"),
   status: document.querySelector("#status"),
   boardStatus: document.querySelector("#board-status"),
   turnFlow: document.querySelector("#turn-flow"),
@@ -258,10 +259,51 @@ function strategyOptions() {
   return core.STRATEGIES.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
 }
 
+function playerCountBounds(size) {
+  const grid = clampNumber(size, 3, 8, DEFAULT_GAME_PREFS.size);
+  return {
+    min: Math.max(2, core.recommendedMinPlayers(grid)),
+    max: core.maxPlayersForSize(grid)
+  };
+}
+
+function clampPlayersToGrid(players, size) {
+  const { min, max } = playerCountBounds(size);
+  return clampNumber(players, min, max, min);
+}
+
+function playersRangeHintText(size) {
+  const grid = clampNumber(size, 3, 8, DEFAULT_GAME_PREFS.size);
+  const { min, max } = playerCountBounds(grid);
+  const rule =
+    grid === 7
+      ? "minimo 3 su 7x7 (eccezione a ceil(N/2))"
+      : `minimo ceil(N/2) = ${min}`;
+  return `${rule} · massimo 2N = ${max} · Dura: minimo 2 giocatori (no solitario)`;
+}
+
+function syncPlayersInputBounds(options = {}) {
+  if (!els.players || !els.size) return DEFAULT_GAME_PREFS.players;
+  const size = clampNumber(els.size.value, 3, 8, DEFAULT_GAME_PREFS.size);
+  const { min, max } = playerCountBounds(size);
+  const cappedMax = Math.min(MPCardsCore.MAX_PLAYERS, max);
+  els.players.min = String(min);
+  els.players.max = String(cappedMax);
+  const current = clampPlayersToGrid(els.players.value, size);
+  if (String(current) !== els.players.value) {
+    els.players.value = String(current);
+    if (options.renderConfig) renderPlayerConfig();
+  }
+  if (els.playersRangeHint) {
+    els.playersRangeHint.textContent = playersRangeHintText(size);
+  }
+  return current;
+}
+
 function normalizeGamePrefs(prefs) {
   const normalized = { ...DEFAULT_GAME_PREFS, ...prefs };
-  normalized.players = clampNumber(normalized.players, 1, MPCardsCore.MAX_PLAYERS, DEFAULT_GAME_PREFS.players);
   normalized.size = clampNumber(normalized.size, 3, 8, DEFAULT_GAME_PREFS.size);
+  normalized.players = clampPlayersToGrid(normalized.players, normalized.size);
   normalized.speed = SPEED_VALUES.has(normalized.speed) ? normalized.speed : DEFAULT_GAME_PREFS.speed;
   normalized.seed = typeof normalized.seed === "string" ? normalized.seed : DEFAULT_GAME_PREFS.seed;
   normalized.tournamentMode = normalized.tournamentMode === true;
@@ -284,12 +326,13 @@ function normalizeGamePrefs(prefs) {
 }
 
 function collectGamePrefs() {
-  const players = clampNumber(els.players.value, 1, MPCardsCore.MAX_PLAYERS, DEFAULT_GAME_PREFS.players);
+  const size = clampNumber(els.size.value, 3, 8, DEFAULT_GAME_PREFS.size);
+  const players = clampPlayersToGrid(els.players.value, size);
   const config = readPlayersConfig(players);
   return normalizeGamePrefs({
     version: 1,
     players,
-    size: els.size.value,
+    size,
     speed: els.speed.value,
     seed: els.seed.value,
     playerOneName: readPlayerOneName(),
@@ -301,8 +344,9 @@ function collectGamePrefs() {
 
 function applyGamePrefs(prefs) {
   const normalized = normalizeGamePrefs(prefs);
-  els.players.value = String(normalized.players);
   els.size.value = String(normalized.size);
+  els.players.value = String(normalized.players);
+  syncPlayersInputBounds();
   els.speed.value = normalized.speed;
   els.speedLive.value = normalized.speed;
   els.seed.value = normalized.seed;
@@ -514,15 +558,28 @@ function renderTournamentRanking() {
 
 function describeFormatTier(size, players) {
   const tournament = isTournamentEnabled();
-  if (tournament && players < 2) {
-    return { level: "invalid", text: "Torneo: servono almeno 2 giocatori (competitiva)." };
+  const gMin = core.recommendedMinPlayers(size);
+  if (players < 2) {
+    return {
+      level: "invalid",
+      text:
+        "Dura non ha modalità solitario (minimo 2 giocatori). " +
+        "Il solitario è previsto solo in Durissima (griglia piena), in preparazione."
+    };
+  }
+  if (players < gMin) {
+    const rule =
+      size === 7
+        ? `minimo ${gMin} giocatori su 7x7 (eccezione a ceil(N/2))`
+        : `minimo ${gMin} giocatori (ceil(N/2) su ${size}x${size})`;
+    return { level: "invalid", text: `Configurazione non ammessa: ${rule}.` };
   }
   if (!core.isPlayableSetup(size, players)) {
     const maxG = core.maxPlayersForSize(size);
     if (players > maxG) {
       return {
         level: "invalid",
-        text: `Configurazione non ammessa: massimo ${maxG} giocatori con griglia ${size}×${size}.`
+        text: `Configurazione non ammessa: massimo ${maxG} giocatori con griglia ${size}x${size}.`
       };
     }
     return {
@@ -534,27 +591,35 @@ function describeFormatTier(size, players) {
     ? `Torneo competitivo: ${players} mani automatiche, classifica a punteggio.`
     : "Competitiva: giocabile (tutte le combinazioni legali).";
   if (!tournament && players === size) {
-    const tier = durissimaGnTierLabel(size);
-    text += ` Durissima con G=N (${size}×${size}): ${tier.text}.`;
-    return { level: tier.level, text };
+    return {
+      level: "core",
+      text: `${text} Formato ideale G=N (${size}x${size}, nessun tallone iniziale).`
+    };
   }
-  if (!tournament && players === 1) {
-    return { level: "extra", text: `${text} Durissima solitario: extra estremo.` };
-  }
+
   if (!tournament && players < size) {
-    return { level: "extra", text: `${text} Durissima sotto-G: extra estremo.` };
+    return { level: "extra", text: `${text} Variante sotto-G (under).` };
   }
   if (!tournament) {
-    return { level: "extra", text: `${text} Durissima overcrowd: extra estremo.` };
+    return { level: "extra", text: `${text} Variante overcrowd.` };
   }
-  if (players === size) return { level: "core", text };
-  return { level: "extra", text: `${text} Variante overcrowd/sotto-G.` };
+  const gMax = core.recommendedMaxPlayers(size);
+  if (players < size) {
+    return {
+      level: players === size - 1 && players >= gMin ? "core" : "extra",
+      text: `${text} Sotto-G consigliato: ${gMin}-${gMax} giocatori.`
+    };
+  }
+  if (players > size) {
+    return { level: "extra", text: `${text} Variante overcrowd (consigliato fino a ${gMax}).` };
+  }
+  return { level: "core", text };
 }
 
 function updateFormatTierHint() {
   if (!els.formatTierHint) return;
   const size = clampNumber(els.size.value, 3, 8, 5);
-  const players = clampNumber(els.players.value, 1, MPCardsCore.MAX_PLAYERS, 3);
+  const players = clampPlayersToGrid(els.players.value, size);
   const tier = describeFormatTier(size, players);
   els.formatTierHint.textContent = tier.text;
   els.formatTierHint.dataset.tier = tier.level;
@@ -563,25 +628,38 @@ function updateFormatTierHint() {
 function startGame() {
   stopTimer();
   saveGamePrefsNow();
-  const players = clampNumber(els.players.value, 1, MPCardsCore.MAX_PLAYERS, 3);
   const size = clampNumber(els.size.value, 3, 8, 5);
+  const players = clampPlayersToGrid(els.players.value, size);
+  els.players.value = String(players);
+  if (players < 2) {
+    setStatus(
+      "Dura non ha modalità solitario (minimo 2 giocatori). Il solitario è solo in Durissima.",
+      "bad"
+    );
+    return;
+  }
+  const gMin = core.recommendedMinPlayers(size);
+  if (players < gMin) {
+    const rule =
+      size === 7
+        ? `minimo ${gMin} su 7x7 (eccezione a ceil(N/2))`
+        : `minimo ${gMin} (ceil(N/2))`;
+    setStatus(`Con ${size}x${size} servono almeno ${rule}.`, "bad");
+    return;
+  }
   if (!core.isPlayableSetup(size, players)) {
     const maxG = core.maxPlayersForSize(size);
     if (players > maxG) {
-      setStatus(`Con ${size}×${size} il massimo è ${maxG} giocatori (G ≤ 2N).`, "bad");
+      setStatus(`Con ${size}x${size} il massimo è ${maxG} giocatori (G <= 2N).`, "bad");
     } else {
       setStatus(
-        `Con ${size}×${size} e ${players} giocatori servono almeno ${core.MIN_INITIAL_HAND} carte a testa.`,
+        `Con ${size}x${size} e ${players} giocatori servono almeno ${core.MIN_INITIAL_HAND} carte a testa.`,
         "bad"
       );
     }
     return;
   }
   const tournamentMode = isTournamentEnabled();
-  if (tournamentMode && players < 2) {
-    setStatus("Il torneo richiede almeno 2 giocatori.", "bad");
-    return;
-  }
   const seed = els.seed.value.trim() || String(Date.now());
   const random = gameState.createRandom(seed);
   const config = readPlayersConfig(players);
@@ -1165,7 +1243,7 @@ function renderInversionAlert(state) {
   }
   if (dmJustClosed) {
     messages.push(
-      "<p><strong>Dura Mater chiusa.</strong> L'ingombro ha raggiunto N×N: seconda inversione dell'ordine di gioco.</p>"
+      "<p><strong>Dura Mater chiusa.</strong> L'ingombro ha raggiunto NxN: seconda inversione dell'ordine di gioco.</p>"
     );
   }
   if (axisJustClosed && dmJustClosed) {
@@ -1278,7 +1356,7 @@ function renderBoard() {
   const closed = state.duraMaterClosed
     ? ` · Dura Mater chiusa (${playerLabel(state.closedByPlayer)})`
     : footprint.atAreaLimit
-      ? " · ingombro al limite N×N"
+      ? " · ingombro al limite NxN"
       : footprint.atWidthLimit
         ? " · larghezza al limite N"
         : footprint.atHeightLimit
@@ -1829,12 +1907,13 @@ if (els.tournamentMode) {
   });
 }
 els.players.addEventListener("input", () => {
-  renderPlayerConfig();
+  syncPlayersInputBounds({ renderConfig: true });
   updateFormatTierHint();
   scheduleSaveGamePrefs();
 });
 if (els.size) {
   els.size.addEventListener("input", () => {
+    syncPlayersInputBounds({ renderConfig: true });
     updateFormatTierHint();
     scheduleSaveGamePrefs();
   });
@@ -1868,5 +1947,6 @@ els.speedLive.addEventListener("change", () => {
 window.addEventListener("resize", renderBoard);
 
 loadSavedGamePrefs();
+syncPlayersInputBounds({ renderConfig: true });
 updateFormatTierHint();
 bindGamePrefsPersistence();

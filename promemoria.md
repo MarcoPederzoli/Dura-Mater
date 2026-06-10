@@ -34,11 +34,11 @@ Ogni carta ha un codice `XYZ`:
 
 | Cifra | Campo |
 |-------|--------|
-| **1ª** | VALORE (1–8) → Asso … Otto in UI |
-| **2ª** | FORMA (1–8) → Cerchi, Cuori, Triangoli, Quadrati, Stelle, Esagoni, **Lampi**, **Croci** |
-| **3ª** | COLORE (1–8) → **1=Rosso, 2=Arancio, 3=Giallo, 4=Verde, 5=Azzurro, 6=Blu, 7=Viola, 8=Bianco** |
+| **1ª** | VALORE (1-8) → Asso … Otto in UI |
+| **2ª** | FORMA (1-8) → Cerchi, Cuori, Triangoli, Quadrati, Stelle, Esagoni, **Lampi**, **Croci** |
+| **3ª** | COLORE (1-8) → **1=Rosso, 2=Arancio, 3=Giallo, 4=Verde, 5=Azzurro, 6=Blu, 7=Viola, 8=Bianco** |
 
-⚠️ I colori **non** sono 1=Bianco … 8=Rosso (errore vecchio di Claude). La 3ª cifra segue la scala Rosso→Bianco sopra.
+[!] ️ I colori **non** sono 1=Bianco … 8=Rosso (errore vecchio di Claude). La 3ª cifra segue la scala Rosso→Bianco sopra.
 
 Nomi leggibili (es. «Cinque di Lampi Viola»): `card-names.js` — regole di declinazione italiana (forma femminile Stelle/Croci, Viola/Blu/Arancio invariati, Verde→Verdi al plurale, ecc.).
 
@@ -54,13 +54,13 @@ Nomi leggibili (es. «Cinque di Lampi Viola»): `card-names.js` — regole di de
 
 - Regole operative: `RULES.md` (in evoluzione — il codice serve a **testare e modificare** le regole).
 - Stato partita serializzabile; turni, mosse legali, bot, `simulateGame`.
-- **Dura Mater chiusa:** quando l’**ingombro** delle carte posate raggiunge **N×N** (stesso criterio del limite posa: `boardBounds` larghezza e altezza entrambe = `N`). **Non** è “colonna/riga piena di N carte”.
-- Inversione turno alla chiusura di ciascun **limite** della Dura Mater (primo asse fissato con fila/colonna di N carte, poi griglia N×N). Direzione `turnDirection` ±1 sull'ordine ciclico iniziale; due limiti nello stesso turno → effetto netto nullo.
+- **Dura Mater chiusa:** quando l’**ingombro** delle carte posate raggiunge **NxN** (stesso criterio del limite posa: `boardBounds` larghezza e altezza entrambe = `N`). **Non** è “colonna/riga piena di N carte”.
+- Inversione turno alla chiusura di ciascun **limite** della Dura Mater (primo asse fissato con fila/colonna di N carte, poi griglia NxN). Direzione `turnDirection` ±1 sull'ordine ciclico iniziale; due limiti nello stesso turno → effetto netto nullo.
 - Funzioni utili: `boardFootprint`, `isDuraMaterDelimited`, `maybeCloseDuraMater`, `nextPlayerId`.
 
 ## UI gioco (`game.js` + `index.html`)
 
-- Mano a destra (compatta) + **fascia in basso** con carte **grafiche grandi** (192×192 px) e **nome** sotto (`MPCardsNames.formatCardName`).
+- Mano a destra (compatta) + **fascia in basso** con carte **grafiche grandi** (1992 px) e **nome** sotto (`MPCardsNames.formatCardName`).
 - Giocatori etichettati **Giocatore 1**, non G1.
 - Tabellone: messaggi ingombro / chiusura in `#board-status`; riepilogo in modal Info.
 
@@ -81,7 +81,7 @@ npm test
 2. Mazzo finale utente (64 codici); rimossi mazzi `default`/`bis`/`pepe`.
 3. Grafica: mappatura da `Carte.xlsx` (fix 28 carte sbagliate con mappatura per indice).
 4. Nomi carte e ordine colori corretti (3ª cifra).
-5. Regola **Dura Mater chiusa** + inversione turni; criterio chiusura corretto su **ingombro N×N**.
+5. Regola **Dura Mater chiusa** + inversione turni; criterio chiusura corretto su **ingombro NxN**.
 
 ## Come riprendere
 
@@ -91,20 +91,21 @@ npm test
 
 ## Giocabilità (provvisoria, giugno 2026)
 
-- **Competitiva (normale):** tutte le combinazioni legali `G = 1 … 2N` — giocabili (sweep 58 celle, vittoria 74–100%).
-- **Durissima core:** solo `G = N` su **3×3 e 4×4**; **5×5** molto difficile; **6×6+** estremo/epico; altre G = extra.
-- Dettaglio in `RULES.md` (sezione «Giocabilità») e `scripts/BILANCIAMENTO-PAUSA.md`.
-- **Test bilanciamento Durissima in pausa** — non eliminare i JSON in `tests/`.
+- **Dura (competitiva + torneo):** chiusa come prodotto — `G_min … 2N`, **nessun solitario** (`G = 1` escluso da UI e regole prodotto). Sweep `G >= G_min`: vittoria 74-100%.
+- **Solitario:** solo **Durissima** (`G = 1`, griglia piena); **Dura solitario abbandonato** (giugno 2026) — troppo breve / fortunoso a N basso, banale a N alto.
+- **Durissima coop:** solo `G = N` su **3x3 e 4x4** core; **5x5** molto difficile; **6x6+** estremo/epico.
+- Dettaglio in `RULES.md` e `scripts/BILANCIAMENTO-PAUSA.md`. JSON probe Durissima: non eliminare.
 
 ## Focus attuale
 
-- **Tornei a punteggio** — regolamento in `RULES.md` (sezione «Torneo a punteggio»). Prossimo: implementazione motore/UI.
-- **Da definire:** punteggio bersaglio per G molto alto (es. 16). Monte torneo: G pass senza posate; penalità mano + tallone (per giocatore ancora in gioco).
+- **Dura:** competitiva + torneo — regole e UI complete per questa modalità.
+- **Prossimo:** **Durissima** (coop `G = N`, poi solitario quando si riprende il bilanciamento).
+- **Da definire (torneo):** punteggio bersaglio per G molto alto (es. 16).
 
 ## Da sistemare (regole)
 
 - **Pesca / monte (2026-06):** competitiva — pesca anche su pass; monte dopo G pass senza posate (anche con tallone pieno). Durissima coop — pesca solo dopo posata; stesso monte. Implementato in `mpcards-core.js` + `RULES.md`.
-- **Durissima solitario:** regola monte / stallo senza compagni da rivalutare (quasi impossibile?); non in torneo, rinviato.
+- **Durissima solitario:** da rivedere con la modalità Durissima (monte / stallo, bilanciamento); non in Dura.
 
 ## Task tipici ancora aperti (opzionali)
 
