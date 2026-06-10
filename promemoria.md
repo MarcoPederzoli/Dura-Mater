@@ -89,10 +89,20 @@ npm test
 2. Nuova chat: «Leggi `promemoria.md` e `RULES.md`; poi [task].»
 3. Modificare solo file in questa cartella; aggiornare `RULES.md` se cambiano le regole.
 
+## Giocabilità (provvisoria, giugno 2026)
+
+- **Competitiva (normale):** tutte le combinazioni legali `G = 1 … 2N` — giocabili (sweep 58 celle, vittoria 74–100%).
+- **Durissima core:** solo `G = N` su **3×3 e 4×4**; **5×5** molto difficile; **6×6+** estremo/epico; altre G = extra.
+- Dettaglio in `RULES.md` (sezione «Giocabilità») e `scripts/BILANCIAMENTO-PAUSA.md`.
+- **Test bilanciamento Durissima in pausa** — non eliminare i JSON in `tests/`.
+
+## Focus attuale
+
+- **Tornei a punteggio** — formalizzazione regolamento (prossimo task).
+
 ## Task tipici ancora aperti (opzionali)
 
 - Retro `Back.jpg` in pesca / carte coperte.
-- ~~Allineare simulatore UI al mazzo fisso~~ — fatto: mazzo ufficiale, variante opzionale, tabella Dura Mater chiusa.
 - Affinare regole matrice in `RULES.md` vs implementazione (fissazione assi, confini).
 - Multiplayer PartyKit (bozza in `party/server.js`).
 

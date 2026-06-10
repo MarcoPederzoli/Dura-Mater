@@ -2,6 +2,7 @@
 
 /**
  * Durissima Mater: probe completamento griglia con le regole attuali (solo + multi).
+ * Campagna bilanciamento in PAUSA (giu 2026) — vedi scripts/BILANCIAMENTO-PAUSA.md.
  */
 (function registerDurissimaWorkflows() {
   const catalog = window.SIMULATOR_WORKFLOWS || {};
@@ -16,14 +17,14 @@
     question:
       "Con le regole Durissima formalizzate, quante partite completano la matrice (solitario e multi)?",
     scope:
-      "Solitario: buffer emergenza = N, pesca fine turno solo dopo posa. " +
-      "Multi: pesca come gioco normale. Monte se giro senza posate. Strategia G (durissima-planner).",
+      "Regole semplici: niente vite extra, reshuffle o buffer. Pesca solo dopo posa (solitario). " +
+      "Multi: pesca come gioco normale. Monte se giro senza posate. Bot coop: durissima-team-planner.",
     read: "cells[\"LxG\"]: successPct = (done - stalls) / done. Confronta G=1 vs G=N vs overcrowd.",
     metrics:
       "Se successPct resta sotto ~1–5% ovunque, le regole vanno ripensate. Solitario 3×1 è il caso più facile.",
     verdict:
       "Esporta JSON e analizza con python scripts/analyze-durissima-rules-probe.py",
-    params: "G (durissima-planner), ordine casuale, regole engine default."
+    params: "T (durissima-team-planner) in coop, G in solitario; ordine casuale; nessun aiuto reattivo."
   };
 
   const rulesProbeCount = 300;
@@ -35,14 +36,15 @@
     rulesProbePartite += rulesProbeCount;
     rulesProbeSteps.push({
       id: `durissima-rules-probe-solo-L${L}`,
-      label: `${L}×1 · solitario · buffer N`,
+      label: `${L}×1 · solitario`,
       count: rulesProbeCount,
       lMin: L,
       lMax: L,
       gMin: 1,
       gMax: 1,
       strategy: "durissima-planner",
-      durissimaMater: true
+      durissimaMater: true,
+      durissimaVitaExtraEnabled: false
     });
   }
 
@@ -67,14 +69,15 @@
       lMax: L,
       gMin: G,
       gMax: G,
-      strategy: "durissima-planner",
-      durissimaMater: true
+      strategy: "durissima-team-planner",
+      durissimaMater: true,
+      durissimaVitaExtraEnabled: false
     });
   }
 
   catalog["durissima-rules-probe"] = {
     id: "durissima-rules-probe",
-    label: "Durissima · probe regole (solo + multi)",
+    label: "Durissima · probe regole (in pausa — solo + multi)",
     description:
       "Regole attuali: G=1 L3–8 + 9 formati multi. " +
       `≈ ${rulesProbePartite.toLocaleString("it-IT")} partite (${rulesProbeCount}/cella). Esporta JSON.`,
@@ -106,8 +109,9 @@
       lMax: L,
       gMin: G,
       gMax: G,
-      strategy: "durissima-planner",
-      durissimaMater: true
+      strategy: G === 1 ? "durissima-planner" : "durissima-team-planner",
+      durissimaMater: true,
+      durissimaVitaExtraEnabled: false
     });
   }
 

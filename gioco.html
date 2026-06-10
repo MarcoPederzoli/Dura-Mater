@@ -146,6 +146,33 @@
       margin-bottom: 18px;
     }
 
+    .format-tier-hint {
+      margin: 0 0 10px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .format-tier-hint[data-tier="core"] {
+      color: #166534;
+    }
+
+    .format-tier-hint[data-tier="hard"] {
+      color: #92400e;
+    }
+
+    .format-tier-hint[data-tier="extreme"],
+    .format-tier-hint[data-tier="epic"] {
+      color: #991b1b;
+    }
+
+    .format-tier-hint[data-tier="extra"] {
+      color: #475569;
+    }
+
+    .format-tier-hint[data-tier="invalid"] {
+      color: #b91c1c;
+    }
+
     .prefs-hint {
       margin: 0;
       padding: 0 16px 14px;
@@ -1178,6 +1205,7 @@
         <button id="load-game-setup" class="secondary" type="button">Carica partita</button>
         <button id="reset-prefs" class="secondary" type="button">Ripristina opzioni default</button>
       </div>
+      <p id="format-tier-hint" class="format-tier-hint prefs-hint" data-tier="core" aria-live="polite"></p>
       <p class="prefs-hint">Le impostazioni si salvano in questo browser (nome G1, giocatori, matrice, velocità, seed e configurazione). G2…G8: Dotto, Brontolo, Gongolo, Pisolo, Mammolo, Eolo, Cucciolo.</p>
       <div id="player-config" class="players"></div>
     </section>

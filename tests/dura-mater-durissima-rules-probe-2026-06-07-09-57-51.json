@@ -1,0 +1,280 @@
+{
+  "format": "dura-mater-durissima-rules-probe-cli",
+  "workflowId": "durissima-rules-probe",
+  "exportedAt": "2026-06-07T07:57:51.366Z",
+  "countPerCell": 300,
+  "steps": [
+    {
+      "stepId": "durissima-rules-probe-3x1",
+      "cells": {
+        "3x1": {
+          "done": 300,
+          "stalls": 259,
+          "emergSum": 516,
+          "afterSum": 1284
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-4x1",
+      "cells": {
+        "4x1": {
+          "done": 300,
+          "stalls": 294,
+          "emergSum": 984,
+          "afterSum": 2168
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-5x1",
+      "cells": {
+        "5x1": {
+          "done": 300,
+          "stalls": 300,
+          "emergSum": 1450,
+          "afterSum": 2598
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-6x1",
+      "cells": {
+        "6x1": {
+          "done": 300,
+          "stalls": 300,
+          "emergSum": 1798,
+          "afterSum": 2740
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-7x1",
+      "cells": {
+        "7x1": {
+          "done": 300,
+          "stalls": 300,
+          "emergSum": 2100,
+          "afterSum": 2963
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-8x1",
+      "cells": {
+        "8x1": {
+          "done": 300,
+          "stalls": 300,
+          "emergSum": 2400,
+          "afterSum": 3198
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-3x2",
+      "cells": {
+        "3x2": {
+          "done": 300,
+          "stalls": 243,
+          "emergSum": 0,
+          "afterSum": 0
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-3x3",
+      "cells": {
+        "3x3": {
+          "done": 300,
+          "stalls": 248,
+          "emergSum": 0,
+          "afterSum": 0
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-5x3",
+      "cells": {
+        "5x3": {
+          "done": 300,
+          "stalls": 289,
+          "emergSum": 0,
+          "afterSum": 0
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-5x5",
+      "cells": {
+        "5x5": {
+          "done": 300,
+          "stalls": 294,
+          "emergSum": 0,
+          "afterSum": 0
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-5x8",
+      "cells": {
+        "5x8": {
+          "done": 300,
+          "stalls": 297,
+          "emergSum": 0,
+          "afterSum": 0
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-7x7",
+      "cells": {
+        "7x7": {
+          "done": 300,
+          "stalls": 298,
+          "emergSum": 0,
+          "afterSum": 0
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-7x10",
+      "cells": {
+        "7x10": {
+          "done": 300,
+          "stalls": 300,
+          "emergSum": 0,
+          "afterSum": 0
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-8x8",
+      "cells": {
+        "8x8": {
+          "done": 300,
+          "stalls": 300,
+          "emergSum": 0,
+          "afterSum": 0
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-8x16",
+      "cells": {
+        "8x16": {
+          "done": 300,
+          "stalls": 300,
+          "emergSum": 0,
+          "afterSum": 0
+        }
+      }
+    }
+  ],
+  "cells": {
+    "3x1": {
+      "done": 300,
+      "stalls": 259,
+      "emergSum": 516,
+      "afterSum": 1284,
+      "cell": "3x1"
+    },
+    "4x1": {
+      "done": 300,
+      "stalls": 294,
+      "emergSum": 984,
+      "afterSum": 2168,
+      "cell": "4x1"
+    },
+    "5x1": {
+      "done": 300,
+      "stalls": 300,
+      "emergSum": 1450,
+      "afterSum": 2598,
+      "cell": "5x1"
+    },
+    "6x1": {
+      "done": 300,
+      "stalls": 300,
+      "emergSum": 1798,
+      "afterSum": 2740,
+      "cell": "6x1"
+    },
+    "7x1": {
+      "done": 300,
+      "stalls": 300,
+      "emergSum": 2100,
+      "afterSum": 2963,
+      "cell": "7x1"
+    },
+    "8x1": {
+      "done": 300,
+      "stalls": 300,
+      "emergSum": 2400,
+      "afterSum": 3198,
+      "cell": "8x1"
+    },
+    "3x2": {
+      "done": 300,
+      "stalls": 243,
+      "emergSum": 0,
+      "afterSum": 0,
+      "cell": "3x2"
+    },
+    "3x3": {
+      "done": 300,
+      "stalls": 248,
+      "emergSum": 0,
+      "afterSum": 0,
+      "cell": "3x3"
+    },
+    "5x3": {
+      "done": 300,
+      "stalls": 289,
+      "emergSum": 0,
+      "afterSum": 0,
+      "cell": "5x3"
+    },
+    "5x5": {
+      "done": 300,
+      "stalls": 294,
+      "emergSum": 0,
+      "afterSum": 0,
+      "cell": "5x5"
+    },
+    "5x8": {
+      "done": 300,
+      "stalls": 297,
+      "emergSum": 0,
+      "afterSum": 0,
+      "cell": "5x8"
+    },
+    "7x7": {
+      "done": 300,
+      "stalls": 298,
+      "emergSum": 0,
+      "afterSum": 0,
+      "cell": "7x7"
+    },
+    "7x10": {
+      "done": 300,
+      "stalls": 300,
+      "emergSum": 0,
+      "afterSum": 0,
+      "cell": "7x10"
+    },
+    "8x8": {
+      "done": 300,
+      "stalls": 300,
+      "emergSum": 0,
+      "afterSum": 0,
+      "cell": "8x8"
+    },
+    "8x16": {
+      "done": 300,
+      "stalls": 300,
+      "emergSum": 0,
+      "afterSum": 0,
+      "cell": "8x16"
+    }
+  }
+}

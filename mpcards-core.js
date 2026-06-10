@@ -25,12 +25,13 @@ const MPCARDS_CORE_SOURCE = `
     ["prudent", "U - Pianifica ma chiude se la sequenza si blocca", "U"],
     ["chain-max", "F - Massimizza carte giocate nel turno", "F"],
     ["durissima-planner", "G - Durissima: chiude la griglia", "G"],
+    ["durissima-team-planner", "T - Durissima coop: pianifica per la squadra", "T"],
     ["random", "R - Casuale legale", "R"],
     ["auto", "Auto a partita", "Auto"]
   ];
   const STRATEGY_KEYS = [
     "random", "greedy", "adjacent", "draw-random-finish-random", "low-value", "high-value", "compatibility",
-    "planner", "hand-planner", "prudent", "chain-max", "durissima-planner"
+    "planner", "hand-planner", "prudent", "chain-max", "durissima-planner", "durissima-team-planner"
   ];
   const DURISSIMA_SCARCE_VALUES = new Set(["1", "2", "3"]);
   const PLANNER_BRANCH_LIMIT = 10;
@@ -315,18 +316,43 @@ const MPCARDS_CORE_SOURCE = `
     return { matches, neighbors, compatibleNeighbors };
   }
 
+  function isDurissimaReserveEnabled(state) {
+    return isDurissimaMater(state) && Array.isArray(state.durissimaReserve);
+  }
+
+  function playableCardSources(state, playerId) {
+    const sources = [];
+    for (const card of (state.hands[playerId] || [])) {
+      sources.push({ card, fromReserve: false });
+    }
+    if (isDurissimaReserveEnabled(state)) {
+      for (const card of state.durissimaReserve) {
+        sources.push({ card, fromReserve: true });
+      }
+    }
+    return sources;
+  }
+
   function legalPlacements(state, playerId, requirement) {
-    const hand = state.hands[playerId] || [];
     const moves = [];
     const map = boardMap(state.board);
     for (const cell of candidateCells(state)) {
       if (map.has(coordKey(cell.x, cell.y))) continue;
       const bounds = boardBounds(state.board, [{ x: cell.x, y: cell.y }]);
       if (bounds.width > state.size || bounds.height > state.size) continue;
-      for (const card of hand) {
-        const score = placementScore(state, card, cell.x, cell.y);
+      for (const source of playableCardSources(state, playerId)) {
+        const score = placementScore(state, source.card, cell.x, cell.y);
         if (state.board.length === 0 || (score.neighbors >= requirement && score.compatibleNeighbors === score.neighbors)) {
-          moves.push({ cardUid: card.uid, card, x: cell.x, y: cell.y, matches: score.matches, neighbors: score.neighbors, compatibleNeighbors: score.compatibleNeighbors });
+          moves.push({
+            cardUid: source.card.uid,
+            card: source.card,
+            fromReserve: source.fromReserve === true,
+            x: cell.x,
+            y: cell.y,
+            matches: score.matches,
+            neighbors: score.neighbors,
+            compatibleNeighbors: score.compatibleNeighbors
+          });
         }
       }
     }
@@ -356,16 +382,25 @@ const MPCARDS_CORE_SOURCE = `
         card: cloneCardSnapshot(entry.card)
       })),
       hands,
+      durissimaReserve: (source.durissimaReserve || []).map(cloneCardSnapshot),
       turnPlayed: source.turnPlayed
     };
   }
 
   function applyPlacementSim(sim, playerId, move) {
-    const hand = sim.hands[playerId];
-    if (!hand) return false;
-    const cardIndex = hand.findIndex(card => card.uid === move.cardUid);
-    if (cardIndex < 0) return false;
-    const card = hand.splice(cardIndex, 1)[0];
+    let card = null;
+    if (move.fromReserve) {
+      const reserve = sim.durissimaReserve || [];
+      const cardIndex = reserve.findIndex(entry => entry.uid === move.cardUid);
+      if (cardIndex < 0) return false;
+      card = reserve.splice(cardIndex, 1)[0];
+    } else {
+      const hand = sim.hands[playerId];
+      if (!hand) return false;
+      const cardIndex = hand.findIndex(entry => entry.uid === move.cardUid);
+      if (cardIndex < 0) return false;
+      card = hand.splice(cardIndex, 1)[0];
+    }
     sim.board.push({ x: move.x, y: move.y, card, playerId });
     sim.turnPlayed++;
     return true;
@@ -441,7 +476,7 @@ const MPCARDS_CORE_SOURCE = `
     return sim.board.length === 0 || (score.neighbors >= requirement && score.compatibleNeighbors === score.neighbors);
   }
 
-  /** Pool informativo Durissima: mani (tutte in coop) + mazzo di pesca noto (ordine ignoto). */
+  /** Pool informativo Durissima (modello sim/bot): universo noto = mani + mazzo, ordine pesca ignoto; al tavolo mani e mazzo sono coperti. */
   function durissimaAllKnownCards(state, playerId, excludeUid) {
     const cards = [];
     if (!state || state.players <= 1) {
@@ -457,6 +492,7 @@ const MPCARDS_CORE_SOURCE = `
       }
     }
     for (const card of (state.drawPile || [])) cards.push(card);
+    for (const card of (state.durissimaReserve || [])) cards.push(card);
     return cards;
   }
 
@@ -652,6 +688,40 @@ const MPCARDS_CORE_SOURCE = `
     return slotLowDegree * durissimaCardRigidity(card) * 1.15;
   }
 
+  function durissimaTeamSetupBonus(state, playerId, move, requirement) {
+    if (!state || state.players <= 1) return 0;
+    const sim = cloneSimState(state, playerId);
+    if (!applyPlacementSim(sim, playerId, move)) return 0;
+    const order = state.turnOrder || state.initialTurnOrder || [];
+    const startIdx = order.indexOf(playerId);
+    if (startIdx < 0) return 0;
+    let bonus = 0;
+    for (let step = 1; step < state.players; step++) {
+      const partnerId = order[(startIdx + step) % order.length];
+      let stepBonus = 0;
+      for (const card of (state.hands[partnerId] || [])) {
+        const rigidity = durissimaCardRigidity(card);
+        let legalBefore = 0;
+        let legalAfter = 0;
+        for (const cell of candidateCells(state)) {
+          if (canPlaceCardAt(state, card, cell.x, cell.y, requirement)) legalBefore++;
+        }
+        for (const cell of candidateCells(sim)) {
+          if (canPlaceCardAt(sim, card, cell.x, cell.y, requirement)) legalAfter++;
+        }
+        const delta = legalAfter - legalBefore;
+        if (delta > 0) stepBonus += delta * ((10 + rigidity * 0.7) / step);
+        for (const pocket of durissimaTwoByTwoPockets(sim.board)) {
+          const opensPocket = canPlaceCardAt(sim, card, pocket.x, pocket.y, 1)
+            && !canPlaceCardAt(state, card, pocket.x, pocket.y, 1);
+          if (opensPocket) stepBonus += (28 + rigidity) / step;
+        }
+      }
+      bonus += stepBonus;
+    }
+    return bonus;
+  }
+
   function durissimaCoopPlacementAdjust(state, playerId, move, requirement) {
     if (!state || state.players <= 1) return 0;
     let othersLegal = 0;
@@ -712,7 +782,7 @@ const MPCARDS_CORE_SOURCE = `
     return (1 - fillRatio) * 11;
   }
 
-  function durissimaMoveScore(state, playerId, move, random, branchLimit, requirement) {
+  function durissimaMoveScore(state, playerId, move, random, branchLimit, requirement, teamMode) {
     const sim = cloneSimState(state, playerId);
     if (!applyPlacementSim(sim, playerId, move)) return -Infinity;
     const totalCells = state.size * state.size;
@@ -737,18 +807,19 @@ const MPCARDS_CORE_SOURCE = `
       blocked * 48 -
       durissimaFlexibilityReserveCost(move.card, fillRatio) -
       durissimaScarceValueCost(move.card, fillRatio) -
-      durissimaGlobalScarcityPenalty(state, move.card, expectedDegree)
+      durissimaGlobalScarcityPenalty(state, move.card, expectedDegree) +
+      (teamMode ? durissimaTeamSetupBonus(state, playerId, move, requirement) : 0)
     );
   }
 
-  function choosePlacementDurissima(state, playerId, requirement, random, branchLimit) {
+  function choosePlacementDurissima(state, playerId, requirement, random, branchLimit, teamMode) {
     const moves = legalPlacements(state, playerId, requirement);
     if (!moves.length) return null;
     const sample = moves.length > branchLimit ? shuffle(moves, random).slice(0, branchLimit) : moves;
     let bestScore = -Infinity;
     let bestMoves = [];
     for (const move of sample) {
-      const score = durissimaMoveScore(state, playerId, move, random, branchLimit, requirement);
+      const score = durissimaMoveScore(state, playerId, move, random, branchLimit, requirement, teamMode === true);
       if (score > bestScore) {
         bestScore = score;
         bestMoves = [move];
@@ -762,7 +833,8 @@ const MPCARDS_CORE_SOURCE = `
 
   function placementStrategyForTurn(state, playerId, strategy) {
     const handSize = (state.hands[playerId] || []).length;
-    if (strategy === "planner" || strategy === "chain-max" || strategy === "durissima-planner") return strategy;
+    if (strategy === "planner" || strategy === "chain-max" || strategy === "durissima-planner"
+      || strategy === "durissima-team-planner") return strategy;
     if (strategy === "hand-planner") {
       return handSize + state.turnPlayed >= 4 ? "planner" : "compatibility";
     }
@@ -802,7 +874,10 @@ const MPCARDS_CORE_SOURCE = `
     if (moves.length === 0) return null;
     const placementStrategy = placementStrategyForTurn(state, playerId, strategy);
     if (placementStrategy === "durissima-planner") {
-      return choosePlacementDurissima(state, playerId, requirement, random, PLANNER_BRANCH_LIMIT + 2);
+      return choosePlacementDurissima(state, playerId, requirement, random, PLANNER_BRANCH_LIMIT + 2, false);
+    }
+    if (placementStrategy === "durissima-team-planner") {
+      return choosePlacementDurissima(state, playerId, requirement, random, PLANNER_BRANCH_LIMIT + 2, true);
     }
     if (placementStrategy === "planner" || placementStrategy === "chain-max") {
       const limit = placementStrategy === "chain-max" ? PLANNER_BRANCH_LIMIT + 4 : PLANNER_BRANCH_LIMIT;
@@ -868,8 +943,12 @@ const MPCARDS_CORE_SOURCE = `
     if (state.turnPlayed < 4 && requirement > 4) {
       throw new Error("Il turno ha gia' raggiunto il limite di pose.");
     }
-    if (state.turnPlayed === 4 && !(state.hands[playerId] || []).length) {
-      throw new Error("Nessuna carta in mano per realizzare l'idea.");
+    if (state.turnPlayed === 4) {
+      const hasHand = (state.hands[playerId] || []).length > 0;
+      const hasReserve = isDurissimaReserveEnabled(state) && state.durissimaReserve.length > 0;
+      if (!hasHand && !hasReserve) {
+        throw new Error("Nessuna carta disponibile per realizzare l'idea.");
+      }
     }
     const legalMove = legalPlacements(state, playerId, requirement).find(candidate =>
       candidate.cardUid === move.cardUid &&
@@ -931,20 +1010,148 @@ const MPCARDS_CORE_SOURCE = `
     return true;
   }
 
+  function defaultDurissimaVitaExtraEnabled(options) {
+    if (options.durissimaMater !== true) return false;
+    return options.durissimaVitaExtraEnabled === true;
+  }
+
+  function defaultDurissimaReserveEnabled(options) {
+    return options.durissimaMater === true && options.durissimaReserveEnabled === true;
+  }
+
+  function defaultDurissimaVitaExtraPool(size, options) {
+    if (!defaultDurissimaVitaExtraEnabled(options)) return 0;
+    if (options.durissimaVitaExtraBudget !== undefined) {
+      return Math.max(0, Math.floor(Number(options.durissimaVitaExtraBudget)));
+    }
+    return size;
+  }
+
+  function durissimaVitaExtraPoolLeft(state) {
+    if (typeof state.durissimaVitaExtraPool === "number") return state.durissimaVitaExtraPool;
+    const legacy = state.durissimaVitaExtraLeft;
+    if (Array.isArray(legacy)) return legacy.reduce((sum, n) => sum + (n || 0), 0);
+    return 0;
+  }
+
+  function setupDurissimaReserve(drawPile, size, options) {
+    if (!defaultDurissimaReserveEnabled(options)) {
+      return { drawPile: drawPile.slice(), durissimaReserve: [] };
+    }
+    const reserveSize = options.durissimaReserveSize !== undefined
+      ? Math.floor(Number(options.durissimaReserveSize))
+      : size;
+    const pile = drawPile.slice();
+    const n = Math.max(0, Math.min(reserveSize, pile.length));
+    return { drawPile: pile.slice(n), durissimaReserve: pile.slice(0, n) };
+  }
+
   function defaultDurissimaEmergencyBudget(size, players, options) {
     if (options.durissimaMater !== true) return null;
     if (options.durissimaEmergencyDrawBudget !== undefined) {
       return normalizeDurissimaDrawBudget(options.durissimaEmergencyDrawBudget);
     }
-    return players === 1 ? size : 0;
+    if (defaultDurissimaVitaExtraEnabled(options)) return 0;
+    if (defaultDurissimaReserveEnabled(options)) return 0;
+    return 0;
+  }
+
+  function isDurissimaVitaExtraEnabled(state) {
+    return isDurissimaMater(state) && state.durissimaVitaExtraEnabled === true;
+  }
+
+  function canUseDurissimaVitaExtra(state, playerId) {
+    if (!isDurissimaVitaExtraEnabled(state) || state.status !== "playing") return false;
+    if (state.turnPlayed !== 0) return false;
+    if (durissimaVitaExtraPoolLeft(state) <= 0) return false;
+    const hand = state.hands[playerId] || [];
+    return hand.length > 0 || state.drawPile.length > 0;
+  }
+
+  function tryDurissimaVitaExtra(state, playerId, random) {
+    if (!canUseDurissimaVitaExtra(state, playerId)) return false;
+    const hand = state.hands[playerId] || [];
+    const target = state.initialHandSize || state.size;
+    state.drawPile = hand.concat(state.drawPile || []);
+    state.hands[playerId] = [];
+    const rng = random || mulberry32(hashSeed(
+      "vita:" + state.turns + ":" + playerId + ":" + state.board.length + ":" + state.drawPile.length
+    ));
+    state.drawPile = shuffle(state.drawPile, rng);
+    const deal = Math.min(target, state.drawPile.length);
+    for (let i = 0; i < deal; i++) {
+      state.hands[playerId].push(state.drawPile.shift());
+    }
+    if (typeof state.durissimaVitaExtraPool !== "number") {
+      state.durissimaVitaExtraPool = durissimaVitaExtraPoolLeft(state);
+    }
+    state.durissimaVitaExtraPool--;
+    if (!state.durissimaVitaExtraUsed) {
+      state.durissimaVitaExtraUsed = Array.from({ length: state.players }, () => 0);
+    }
+    state.durissimaVitaExtraUsed[playerId]++;
+    return true;
+  }
+
+  function spendDurissimaVitaExtraUntilPlayable(state, playerId, random) {
+    let used = 0;
+    while (canUseDurissimaVitaExtra(state, playerId) && !hasLegalPlacementsNow(state, playerId)) {
+      tryDurissimaVitaExtra(state, playerId, random);
+      used++;
+    }
+    return used;
+  }
+
+  function hasLegalPlacementsNow(state, playerId) {
+    const requirement = placementRequirement(state);
+    if (requirement === null || (requirement > 4 && requirement !== 1)) return false;
+    return legalPlacements(state, playerId, requirement).length > 0;
+  }
+
+  function resolveDurissimaStuck(state, random, options) {
+    options = options || {};
+    const playerId = state.currentPlayer;
+    const wantVita = options.useVitaExtra === true
+      || (options.useVitaExtra !== false && state.players === 1);
+    if (wantVita) {
+      const used = spendDurissimaVitaExtraUntilPlayable(state, playerId, random);
+      if (used > 0) {
+        if (hasLegalPlacementsNow(state, playerId)) return "vita_extra";
+        if (state.players === 1) {
+          const drew = tryDurissimaEmergencyDraw(state, playerId);
+          if (drew) return "drew";
+          state.status = "stalled";
+          return "lost";
+        }
+        passTurn(state);
+        return "passed";
+      }
+    }
+    if (state.players === 1) {
+      const drew = tryDurissimaEmergencyDraw(state, playerId);
+      if (drew) return "drew";
+      state.status = "stalled";
+      return "lost";
+    }
+    passTurn(state);
+    return "passed";
   }
 
   function applyPlacement(state, playerId, move) {
     const legalMove = validatePlacement(state, playerId, move);
+    let card;
+    if (legalMove.fromReserve) {
+      const reserve = state.durissimaReserve || [];
+      const cardIndex = reserve.findIndex(entry => entry.uid === legalMove.cardUid);
+      if (cardIndex < 0) throw new Error("Carta non presente nella riserva.");
+      card = reserve.splice(cardIndex, 1)[0];
+    } else {
+      const hand = state.hands[playerId];
+      const cardIndex = hand.findIndex(entry => entry.uid === legalMove.cardUid);
+      if (cardIndex < 0) throw new Error("Carta non presente nella mano.");
+      card = hand.splice(cardIndex, 1)[0];
+    }
     const hand = state.hands[playerId];
-    const cardIndex = hand.findIndex(card => card.uid === legalMove.cardUid);
-    if (cardIndex < 0) throw new Error("Carta non presente nella mano.");
-    const card = hand.splice(cardIndex, 1)[0];
     const milestoneBefore = {
       widthAxisFixed: state.widthAxisFixed === true,
       heightAxisFixed: state.heightAxisFixed === true
@@ -986,21 +1193,14 @@ const MPCARDS_CORE_SOURCE = `
     return true;
   }
 
-  function durissimaWhenStuckWithoutPlay(state) {
-    if (state.players === 1) {
-      const drew = tryDurissimaEmergencyDraw(state, state.currentPlayer);
-      if (drew) return "drew";
-      state.status = "stalled";
-      return "lost";
-    }
-    passTurn(state);
-    return "passed";
+  function durissimaWhenStuckWithoutPlay(state, random, options) {
+    return resolveDurissimaStuck(state, random, options);
   }
 
   function passTurn(state) {
     if (isDurissimaMater(state) && state.turnPlayed === 0 && state.players === 1) {
       throw new Error(
-        "Durissima Mater solitario: passare senza pescare dal buffer perde la partita."
+        "Durissima Mater solitario: senza mosse legali e senza vita extra la partita e' persa."
       );
     }
     const drew = drawForPlayer(state, state.currentPlayer);
@@ -1100,6 +1300,7 @@ const MPCARDS_CORE_SOURCE = `
     const random = options.random;
     const shuffled = shuffle(gameDeck, random);
     const hands = Array.from({ length: players }, () => shuffled.splice(0, deal.cardsPerPlayer));
+    const reserveSetup = setupDurissimaReserve(shuffled, size, options);
     const randomizeTurnOrder = options.randomizeTurnOrder !== false;
     const turnOrder = randomizeTurnOrder
       ? randomInitialTurnOrder(players, random)
@@ -1109,7 +1310,8 @@ const MPCARDS_CORE_SOURCE = `
       size,
       players,
       hands,
-      drawPile: shuffled,
+      drawPile: reserveSetup.drawPile,
+      durissimaReserve: reserveSetup.durissimaReserve,
       board: [],
       currentPlayer: initialTurnOrder[0],
       initialTurnOrder,
@@ -1133,6 +1335,9 @@ const MPCARDS_CORE_SOURCE = `
         : null,
       durissimaEmergencyDrawsUsed: 0,
       durissimaAfterPlayDrawsUsed: 0,
+      durissimaVitaExtraEnabled: defaultDurissimaVitaExtraEnabled(options),
+      durissimaVitaExtraPool: defaultDurissimaVitaExtraPool(size, options),
+      durissimaVitaExtraUsed: Array.from({ length: players }, () => 0),
       randomizeTurnOrder,
       turnOrder: initialTurnOrder.slice(),
       turnPlacementStats: emptyTurnPlacementStats(),
@@ -1166,7 +1371,16 @@ const MPCARDS_CORE_SOURCE = `
     if (action.type === "stop") {
       if (state.turnPlayed === 0) {
         if (isDurissimaMater(state)) {
-          const stuck = durissimaWhenStuckWithoutPlay(state);
+          const stuck = durissimaWhenStuckWithoutPlay(state, random, { useVitaExtra: true });
+          if (stuck === "vita_extra") {
+            const retry = chooseAction(state, playerId, playerStrategy, random);
+            if (retry.type === "move") {
+              applyPlacement(state, playerId, retry.move);
+              if (state.status !== "playing") return { played: true, move: retry.move, vitaExtra: true };
+              if (state.turnPlayed >= 5) endTurn(state);
+              return { played: true, move: retry.move, vitaExtra: true };
+            }
+          }
           return {
             played: false,
             passed: stuck === "passed",
@@ -1333,6 +1547,9 @@ const MPCARDS_CORE_SOURCE = `
       durissimaMater: state.durissimaMater === true,
       durissimaEmergencyDrawsUsed: state.durissimaEmergencyDrawsUsed || 0,
       durissimaAfterPlayDrawsUsed: state.durissimaAfterPlayDrawsUsed || 0,
+      durissimaReserveRemaining: (state.durissimaReserve || []).length,
+      durissimaVitaExtraUsed: (state.durissimaVitaExtraUsed || []).reduce((sum, n) => sum + n, 0),
+      durissimaVitaExtraPoolRemaining: durissimaVitaExtraPoolLeft(state),
       boardComplete: isBoardComplete(state),
       maxPlacementsInTurn: placementStats.maxInTurn,
       fourCardTurns: placementStats.byCount[4],
@@ -1403,6 +1620,13 @@ const MPCARDS_CORE_SOURCE = `
     maybeCompleteDurissima,
     tryDurissimaEmergencyDraw,
     tryDurissimaAfterPlayDraw,
+    isDurissimaVitaExtraEnabled,
+    durissimaVitaExtraPoolLeft,
+    canUseDurissimaVitaExtra,
+    tryDurissimaVitaExtra,
+    spendDurissimaVitaExtraUntilPlayable,
+    hasLegalPlacementsNow,
+    resolveDurissimaStuck,
     canPassTurnVoluntarily,
     passTurn,
     drawForPlayer,

@@ -1,0 +1,831 @@
+{
+  "format": "dura-mater-durissima-budget-solitario-cli",
+  "workflowId": "durissima-draw-budget-sweep-solitario",
+  "exportedAt": "2026-06-06T22:30:26.681Z",
+  "countPerCell": 80,
+  "xValues": [
+    0,
+    1,
+    2,
+    3,
+    5,
+    8,
+    12,
+    16,
+    24
+  ],
+  "steps": [
+    {
+      "stepId": "durissima-budget-solitario-X0",
+      "budgetX": 0,
+      "cells": {
+        "3x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 0,
+          "afterSum": 0
+        },
+        "4x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 0,
+          "afterSum": 0
+        },
+        "5x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 0,
+          "afterSum": 0
+        },
+        "6x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 0,
+          "afterSum": 0
+        },
+        "7x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 0,
+          "afterSum": 0
+        },
+        "8x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 0,
+          "afterSum": 0
+        }
+      }
+    },
+    {
+      "stepId": "durissima-budget-solitario-X1",
+      "budgetX": 1,
+      "cells": {
+        "3x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 80,
+          "afterSum": 80
+        },
+        "4x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 80,
+          "afterSum": 80
+        },
+        "5x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 80,
+          "afterSum": 80
+        },
+        "6x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 80,
+          "afterSum": 80
+        },
+        "7x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 80,
+          "afterSum": 80
+        },
+        "8x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 80,
+          "afterSum": 80
+        }
+      }
+    },
+    {
+      "stepId": "durissima-budget-solitario-X2",
+      "budgetX": 2,
+      "cells": {
+        "3x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 160,
+          "afterSum": 160
+        },
+        "4x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 160,
+          "afterSum": 160
+        },
+        "5x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 160,
+          "afterSum": 160
+        },
+        "6x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 160,
+          "afterSum": 160
+        },
+        "7x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 160,
+          "afterSum": 160
+        },
+        "8x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 160,
+          "afterSum": 159
+        }
+      }
+    },
+    {
+      "stepId": "durissima-budget-solitario-X3",
+      "budgetX": 3,
+      "cells": {
+        "3x1": {
+          "done": 80,
+          "stalls": 74,
+          "emergSum": 240,
+          "afterSum": 240
+        },
+        "4x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 240,
+          "afterSum": 240
+        },
+        "5x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 240,
+          "afterSum": 240
+        },
+        "6x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 240,
+          "afterSum": 240
+        },
+        "7x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 240,
+          "afterSum": 240
+        },
+        "8x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 240,
+          "afterSum": 240
+        }
+      }
+    },
+    {
+      "stepId": "durissima-budget-solitario-X5",
+      "budgetX": 5,
+      "cells": {
+        "3x1": {
+          "done": 80,
+          "stalls": 69,
+          "emergSum": 99,
+          "afterSum": 381
+        },
+        "4x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 400,
+          "afterSum": 400
+        },
+        "5x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 400,
+          "afterSum": 400
+        },
+        "6x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 400,
+          "afterSum": 400
+        },
+        "7x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 400,
+          "afterSum": 400
+        },
+        "8x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 400,
+          "afterSum": 400
+        }
+      }
+    },
+    {
+      "stepId": "durissima-budget-solitario-X8",
+      "budgetX": 8,
+      "cells": {
+        "3x1": {
+          "done": 80,
+          "stalls": 74,
+          "emergSum": 70,
+          "afterSum": 410
+        },
+        "4x1": {
+          "done": 80,
+          "stalls": 71,
+          "emergSum": 320,
+          "afterSum": 640
+        },
+        "5x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 640,
+          "afterSum": 640
+        },
+        "6x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 640,
+          "afterSum": 640
+        },
+        "7x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 640,
+          "afterSum": 640
+        },
+        "8x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 640,
+          "afterSum": 640
+        }
+      }
+    },
+    {
+      "stepId": "durissima-budget-solitario-X12",
+      "budgetX": 12,
+      "cells": {
+        "3x1": {
+          "done": 80,
+          "stalls": 73,
+          "emergSum": 90,
+          "afterSum": 390
+        },
+        "4x1": {
+          "done": 80,
+          "stalls": 77,
+          "emergSum": 225,
+          "afterSum": 735
+        },
+        "5x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 640,
+          "afterSum": 960
+        },
+        "6x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 960,
+          "afterSum": 960
+        },
+        "7x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 960,
+          "afterSum": 960
+        },
+        "8x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 960,
+          "afterSum": 960
+        }
+      }
+    },
+    {
+      "stepId": "durissima-budget-solitario-X16",
+      "budgetX": 16,
+      "cells": {
+        "3x1": {
+          "done": 80,
+          "stalls": 71,
+          "emergSum": 84,
+          "afterSum": 396
+        },
+        "4x1": {
+          "done": 80,
+          "stalls": 79,
+          "emergSum": 232,
+          "afterSum": 728
+        },
+        "5x1": {
+          "done": 80,
+          "stalls": 79,
+          "emergSum": 470,
+          "afterSum": 1130
+        },
+        "6x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 1120,
+          "afterSum": 1280
+        },
+        "7x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 1280,
+          "afterSum": 1280
+        },
+        "8x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 1280,
+          "afterSum": 1280
+        }
+      }
+    },
+    {
+      "stepId": "durissima-budget-solitario-X24",
+      "budgetX": 24,
+      "cells": {
+        "3x1": {
+          "done": 80,
+          "stalls": 74,
+          "emergSum": 84,
+          "afterSum": 396
+        },
+        "4x1": {
+          "done": 80,
+          "stalls": 77,
+          "emergSum": 223,
+          "afterSum": 737
+        },
+        "5x1": {
+          "done": 80,
+          "stalls": 79,
+          "emergSum": 475,
+          "afterSum": 1125
+        },
+        "6x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 758,
+          "afterSum": 1642
+        },
+        "7x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 1441,
+          "afterSum": 1919
+        },
+        "8x1": {
+          "done": 80,
+          "stalls": 80,
+          "emergSum": 1920,
+          "afterSum": 1920
+        }
+      }
+    }
+  ],
+  "cells": {
+    "durissima-budget-solitario-X0-L3": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 0,
+      "afterSum": 0,
+      "budgetX": 0,
+      "cell": "3x1"
+    },
+    "durissima-budget-solitario-X0-L4": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 0,
+      "afterSum": 0,
+      "budgetX": 0,
+      "cell": "4x1"
+    },
+    "durissima-budget-solitario-X0-L5": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 0,
+      "afterSum": 0,
+      "budgetX": 0,
+      "cell": "5x1"
+    },
+    "durissima-budget-solitario-X0-L6": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 0,
+      "afterSum": 0,
+      "budgetX": 0,
+      "cell": "6x1"
+    },
+    "durissima-budget-solitario-X0-L7": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 0,
+      "afterSum": 0,
+      "budgetX": 0,
+      "cell": "7x1"
+    },
+    "durissima-budget-solitario-X0-L8": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 0,
+      "afterSum": 0,
+      "budgetX": 0,
+      "cell": "8x1"
+    },
+    "durissima-budget-solitario-X1-L3": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 80,
+      "afterSum": 80,
+      "budgetX": 1,
+      "cell": "3x1"
+    },
+    "durissima-budget-solitario-X1-L4": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 80,
+      "afterSum": 80,
+      "budgetX": 1,
+      "cell": "4x1"
+    },
+    "durissima-budget-solitario-X1-L5": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 80,
+      "afterSum": 80,
+      "budgetX": 1,
+      "cell": "5x1"
+    },
+    "durissima-budget-solitario-X1-L6": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 80,
+      "afterSum": 80,
+      "budgetX": 1,
+      "cell": "6x1"
+    },
+    "durissima-budget-solitario-X1-L7": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 80,
+      "afterSum": 80,
+      "budgetX": 1,
+      "cell": "7x1"
+    },
+    "durissima-budget-solitario-X1-L8": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 80,
+      "afterSum": 80,
+      "budgetX": 1,
+      "cell": "8x1"
+    },
+    "durissima-budget-solitario-X2-L3": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 160,
+      "afterSum": 160,
+      "budgetX": 2,
+      "cell": "3x1"
+    },
+    "durissima-budget-solitario-X2-L4": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 160,
+      "afterSum": 160,
+      "budgetX": 2,
+      "cell": "4x1"
+    },
+    "durissima-budget-solitario-X2-L5": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 160,
+      "afterSum": 160,
+      "budgetX": 2,
+      "cell": "5x1"
+    },
+    "durissima-budget-solitario-X2-L6": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 160,
+      "afterSum": 160,
+      "budgetX": 2,
+      "cell": "6x1"
+    },
+    "durissima-budget-solitario-X2-L7": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 160,
+      "afterSum": 160,
+      "budgetX": 2,
+      "cell": "7x1"
+    },
+    "durissima-budget-solitario-X2-L8": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 160,
+      "afterSum": 159,
+      "budgetX": 2,
+      "cell": "8x1"
+    },
+    "durissima-budget-solitario-X3-L3": {
+      "done": 80,
+      "stalls": 74,
+      "emergSum": 240,
+      "afterSum": 240,
+      "budgetX": 3,
+      "cell": "3x1"
+    },
+    "durissima-budget-solitario-X3-L4": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 240,
+      "afterSum": 240,
+      "budgetX": 3,
+      "cell": "4x1"
+    },
+    "durissima-budget-solitario-X3-L5": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 240,
+      "afterSum": 240,
+      "budgetX": 3,
+      "cell": "5x1"
+    },
+    "durissima-budget-solitario-X3-L6": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 240,
+      "afterSum": 240,
+      "budgetX": 3,
+      "cell": "6x1"
+    },
+    "durissima-budget-solitario-X3-L7": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 240,
+      "afterSum": 240,
+      "budgetX": 3,
+      "cell": "7x1"
+    },
+    "durissima-budget-solitario-X3-L8": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 240,
+      "afterSum": 240,
+      "budgetX": 3,
+      "cell": "8x1"
+    },
+    "durissima-budget-solitario-X5-L3": {
+      "done": 80,
+      "stalls": 69,
+      "emergSum": 99,
+      "afterSum": 381,
+      "budgetX": 5,
+      "cell": "3x1"
+    },
+    "durissima-budget-solitario-X5-L4": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 400,
+      "afterSum": 400,
+      "budgetX": 5,
+      "cell": "4x1"
+    },
+    "durissima-budget-solitario-X5-L5": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 400,
+      "afterSum": 400,
+      "budgetX": 5,
+      "cell": "5x1"
+    },
+    "durissima-budget-solitario-X5-L6": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 400,
+      "afterSum": 400,
+      "budgetX": 5,
+      "cell": "6x1"
+    },
+    "durissima-budget-solitario-X5-L7": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 400,
+      "afterSum": 400,
+      "budgetX": 5,
+      "cell": "7x1"
+    },
+    "durissima-budget-solitario-X5-L8": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 400,
+      "afterSum": 400,
+      "budgetX": 5,
+      "cell": "8x1"
+    },
+    "durissima-budget-solitario-X8-L3": {
+      "done": 80,
+      "stalls": 74,
+      "emergSum": 70,
+      "afterSum": 410,
+      "budgetX": 8,
+      "cell": "3x1"
+    },
+    "durissima-budget-solitario-X8-L4": {
+      "done": 80,
+      "stalls": 71,
+      "emergSum": 320,
+      "afterSum": 640,
+      "budgetX": 8,
+      "cell": "4x1"
+    },
+    "durissima-budget-solitario-X8-L5": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 640,
+      "afterSum": 640,
+      "budgetX": 8,
+      "cell": "5x1"
+    },
+    "durissima-budget-solitario-X8-L6": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 640,
+      "afterSum": 640,
+      "budgetX": 8,
+      "cell": "6x1"
+    },
+    "durissima-budget-solitario-X8-L7": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 640,
+      "afterSum": 640,
+      "budgetX": 8,
+      "cell": "7x1"
+    },
+    "durissima-budget-solitario-X8-L8": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 640,
+      "afterSum": 640,
+      "budgetX": 8,
+      "cell": "8x1"
+    },
+    "durissima-budget-solitario-X12-L3": {
+      "done": 80,
+      "stalls": 73,
+      "emergSum": 90,
+      "afterSum": 390,
+      "budgetX": 12,
+      "cell": "3x1"
+    },
+    "durissima-budget-solitario-X12-L4": {
+      "done": 80,
+      "stalls": 77,
+      "emergSum": 225,
+      "afterSum": 735,
+      "budgetX": 12,
+      "cell": "4x1"
+    },
+    "durissima-budget-solitario-X12-L5": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 640,
+      "afterSum": 960,
+      "budgetX": 12,
+      "cell": "5x1"
+    },
+    "durissima-budget-solitario-X12-L6": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 960,
+      "afterSum": 960,
+      "budgetX": 12,
+      "cell": "6x1"
+    },
+    "durissima-budget-solitario-X12-L7": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 960,
+      "afterSum": 960,
+      "budgetX": 12,
+      "cell": "7x1"
+    },
+    "durissima-budget-solitario-X12-L8": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 960,
+      "afterSum": 960,
+      "budgetX": 12,
+      "cell": "8x1"
+    },
+    "durissima-budget-solitario-X16-L3": {
+      "done": 80,
+      "stalls": 71,
+      "emergSum": 84,
+      "afterSum": 396,
+      "budgetX": 16,
+      "cell": "3x1"
+    },
+    "durissima-budget-solitario-X16-L4": {
+      "done": 80,
+      "stalls": 79,
+      "emergSum": 232,
+      "afterSum": 728,
+      "budgetX": 16,
+      "cell": "4x1"
+    },
+    "durissima-budget-solitario-X16-L5": {
+      "done": 80,
+      "stalls": 79,
+      "emergSum": 470,
+      "afterSum": 1130,
+      "budgetX": 16,
+      "cell": "5x1"
+    },
+    "durissima-budget-solitario-X16-L6": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 1120,
+      "afterSum": 1280,
+      "budgetX": 16,
+      "cell": "6x1"
+    },
+    "durissima-budget-solitario-X16-L7": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 1280,
+      "afterSum": 1280,
+      "budgetX": 16,
+      "cell": "7x1"
+    },
+    "durissima-budget-solitario-X16-L8": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 1280,
+      "afterSum": 1280,
+      "budgetX": 16,
+      "cell": "8x1"
+    },
+    "durissima-budget-solitario-X24-L3": {
+      "done": 80,
+      "stalls": 74,
+      "emergSum": 84,
+      "afterSum": 396,
+      "budgetX": 24,
+      "cell": "3x1"
+    },
+    "durissima-budget-solitario-X24-L4": {
+      "done": 80,
+      "stalls": 77,
+      "emergSum": 223,
+      "afterSum": 737,
+      "budgetX": 24,
+      "cell": "4x1"
+    },
+    "durissima-budget-solitario-X24-L5": {
+      "done": 80,
+      "stalls": 79,
+      "emergSum": 475,
+      "afterSum": 1125,
+      "budgetX": 24,
+      "cell": "5x1"
+    },
+    "durissima-budget-solitario-X24-L6": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 758,
+      "afterSum": 1642,
+      "budgetX": 24,
+      "cell": "6x1"
+    },
+    "durissima-budget-solitario-X24-L7": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 1441,
+      "afterSum": 1919,
+      "budgetX": 24,
+      "cell": "7x1"
+    },
+    "durissima-budget-solitario-X24-L8": {
+      "done": 80,
+      "stalls": 80,
+      "emergSum": 1920,
+      "afterSum": 1920,
+      "budgetX": 24,
+      "cell": "8x1"
+    }
+  }
+}

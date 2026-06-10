@@ -236,7 +236,8 @@ def main():
         ["Regola overcrowd", "G > N: floor(N²/G) carte/testa, minimo 3, resto nel mazzo"],
         ["Regola max giocatori", "G ≤ 2N"],
         ["Formato consigliato", "G = N (mazzo pesca 0)"],
-        ["Cooperativo", "Tutti conoscono mani + contenuto mazzo (ordine pesca ignoto)"],
+        ["Riserva", "N carte scoperte dal tallone (N = lato griglia), condivise; posabili al posto della mano"],
+        ["Cooperativo", "Universo noto via scheda 64 carte + dialogo (mani/mazzo coperti; riserva scoperta; ordine pesca ignoto)"],
         ["", ""],
         ["Copertura", "Tutte le configurazioni ammesse G=1..2N testate (1000 partite)"],
     ]

@@ -11,6 +11,7 @@ const core = globalThis.MPCardsCore;
 const deck = core.simulationDeck();
 
 const QUICK = !process.argv.includes("--full");
+const RISERVA = process.argv.includes("--riserva");
 const COUNT = QUICK ? 120 : 300;
 
 const CELLS = QUICK
@@ -33,7 +34,8 @@ function playableCells() {
 function runCell(L, G, cellIndex, cellTotal) {
   const key = `${L}x${G}`;
   const stats = { done: 0, stalls: 0, emergSum: 0, afterSum: 0 };
-  const random = core.mulberry32(core.hashSeed(`rules-probe:${L}:${G}`));
+  const seedTag = RISERVA ? `rules-probe-riserva:${L}:${G}` : `rules-probe:${L}:${G}`;
+  const random = core.mulberry32(core.hashSeed(seedTag));
   const progress = createProgressReporter({
     label: `cella ${cellIndex}/${cellTotal} ${key}`,
     total: COUNT,
@@ -42,14 +44,22 @@ function runCell(L, G, cellIndex, cellTotal) {
 
   progress.tick(0);
   for (let i = 0; i < COUNT; i++) {
-    const result = core.simulateGame(deck, {
+    const simOptions = {
       size: L,
       players: G,
       random,
-      strategies: Array.from({ length: G }, () => "durissima-planner"),
+      strategies: Array.from({ length: G }, () => (
+        G === 1 ? "durissima-planner" : "durissima-team-planner"
+      )),
       durissimaMater: true,
+      durissimaVitaExtraEnabled: false,
       randomizeTurnOrder: true
-    });
+    };
+    if (RISERVA) {
+      simOptions.durissimaReserveEnabled = true;
+      simOptions.durissimaReserveSize = L;
+    }
+    const result = core.simulateGame(deck, simOptions);
     stats.done++;
     if (result.status !== "success") stats.stalls++;
     stats.emergSum += result.durissimaEmergencyDrawsUsed || 0;
@@ -64,9 +74,10 @@ function main() {
   const cells = playableCells();
   const totalGames = cells.length * COUNT;
   const mode = QUICK ? "quick" : "full";
+  const variant = RISERVA ? "riserva-N + team-planner coop" : "semplice + team-planner coop";
 
   process.stderr.write(
-    `\nDurissima rules probe (${mode}): ${cells.length} celle × ${COUNT} partite = ${totalGames} simulazioni\n\n`
+    `\nDurissima rules probe (${mode}, ${variant}): ${cells.length} celle × ${COUNT} partite = ${totalGames} simulazioni\n\n`
   );
 
   const steps = [];
@@ -85,12 +96,18 @@ function main() {
     );
   });
 
-  const out = path.join(__dirname, "..", "tests", `dura-mater-durissima-rules-probe-${stamp()}.json`);
+  const prefix = RISERVA ? "dura-mater-durissima-riserva-team-probe" : "dura-mater-durissima-rules-probe";
+  const out = path.join(__dirname, "..", "tests", `${prefix}-${stamp()}.json`);
   fs.writeFileSync(
     out,
     JSON.stringify({
       format: "dura-mater-durissima-rules-probe-cli",
-      workflowId: QUICK ? "durissima-rules-probe-quick" : "durissima-rules-probe",
+      workflowId: RISERVA
+        ? (QUICK ? "durissima-riserva-team-probe-quick" : "durissima-riserva-team-probe")
+        : (QUICK ? "durissima-rules-probe-quick" : "durissima-rules-probe"),
+      variant: RISERVA ? "riserva-N-team" : "semplice-team",
+      durissimaReserveEnabled: RISERVA,
+      durissimaReserveSize: RISERVA ? "N (size)" : 0,
       exportedAt: new Date().toISOString(),
       countPerCell: COUNT,
       steps,

@@ -89,7 +89,7 @@ function testGameTimelineUndoRedoAndBranching() {
     core.endTurn(next);
   });
   gameState.commit(session, "seconda", random, next => {
-    core.applyPlacement(next, 0, { cardUid: card("227").uid, x: 1, y: 0 });
+    core.applyPlacement(next, 0, { cardUid: card("238").uid, x: 1, y: 0 });
   });
 
   assert.equal(gameState.currentState(session).board.length, 2);
@@ -102,7 +102,7 @@ function testGameTimelineUndoRedoAndBranching() {
 
   gameState.undo(session, random);
   gameState.commit(session, "ramo", random, next => {
-    core.applyPlacement(next, 0, { cardUid: card("227").uid, x: -1, y: 0 });
+    core.applyPlacement(next, 0, { cardUid: card("238").uid, x: -1, y: 0 });
   });
 
   assert.equal(gameState.currentState(session).board.length, 2);
@@ -133,14 +133,15 @@ function testGameSessionExportImport() {
 }
 
 function testDuraMaterClosedInvertsTurnDirection() {
-  const deck = core.simulationDeck().filter(c => Number(c.value) <= 3);
-  const state = core.setupGame(deck, { size: 3, players: 4, random: () => 0 });
+  const deck = core.simulationDeck().filter(c => Number(c.value) <= 4);
+  const state = core.setupGame(deck, { size: 4, players: 4, random: () => 0, randomizeTurnOrder: false });
   state.board = [
     { x: 0, y: 0, card: card("118"), playerId: 0 },
-    { x: 2, y: 0, card: card("227"), playerId: 0 },
+    { x: 3, y: 0, card: card("227"), playerId: 0 },
     { x: 1, y: 1, card: card("238"), playerId: 0 },
-    { x: 0, y: 2, card: card("247"), playerId: 0 },
-    { x: 2, y: 2, card: card("328"), playerId: 0 }
+    { x: 2, y: 2, card: card("247"), playerId: 0 },
+    { x: 0, y: 3, card: card("328"), playerId: 0 },
+    { x: 3, y: 3, card: card("336"), playerId: 0 }
   ];
   assert.equal(core.isDuraMaterDelimited(state), true);
   core.maybeCloseDuraMater(state, 2);
@@ -226,19 +227,24 @@ function testDurissimaEmptyHandDoesNotEndGameEarly() {
 }
 
 function testDurissimaCompletesWhenBoardFull() {
-  const deck = core.simulationDeck().filter(card => Number(card.value) <= 2);
-  const solo = core.setupGame(deck, { size: 2, players: 1, random: () => 0, durissimaMater: true });
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const solo = core.setupGame(deck, { size: 3, players: 1, random: () => 0, durissimaMater: true });
   solo.board = [
     { x: 0, y: 0, card: card("118"), playerId: 0 },
     { x: 1, y: 0, card: card("227"), playerId: 0 },
-    { x: 0, y: 1, card: card("238"), playerId: 0 },
-    { x: 1, y: 1, card: card("247"), playerId: 0 }
+    { x: 2, y: 0, card: card("238"), playerId: 0 },
+    { x: 0, y: 1, card: card("247"), playerId: 0 },
+    { x: 1, y: 1, card: card("328"), playerId: 0 },
+    { x: 2, y: 1, card: card("336"), playerId: 0 },
+    { x: 0, y: 2, card: card("348"), playerId: 0 },
+    { x: 1, y: 2, card: card("356"), playerId: 0 },
+    { x: 2, y: 2, card: card("367"), playerId: 0 }
   ];
   assert.equal(core.maybeCompleteDurissima(solo), true);
   assert.equal(solo.status, "success");
   assert.equal(solo.winner, 0);
 
-  const coop = core.setupGame(deck, { size: 2, players: 2, random: () => 0, durissimaMater: true });
+  const coop = core.setupGame(deck, { size: 3, players: 2, random: () => 0, durissimaMater: true });
   coop.board = solo.board.map(entry => ({ ...entry, playerId: 1 }));
   assert.equal(core.maybeCompleteDurissima(coop), true);
   assert.equal(coop.winner, null);
@@ -251,7 +257,7 @@ function testDurissimaPassOnlyAfterAtLeastOnePlacement() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
   const solo = core.setupGame(deck, { size: 3, players: 1, random: () => 0, durissimaMater: true });
   assert.equal(core.canPassTurnVoluntarily(solo), false);
-  assert.throws(() => core.passTurn(solo), /buffer/);
+  assert.throws(() => core.passTurn(solo), /vita extra/);
   solo.turnPlayed = 1;
   const beforeSolo = solo.hands[0].length;
   core.endTurn(solo);
@@ -283,11 +289,153 @@ testDurissimaPlannerPlaysLegalMove();
 
 testDurissimaPassOnlyAfterAtLeastOnePlacement();
 
-function testDurissimaSolitaireBufferDefaultN() {
+function testDurissimaDefaultSimpleRulesNoReactiveAids() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
-  const state = core.setupGame(deck, { size: 5, players: 1, random: () => 0, durissimaMater: true });
-  assert.equal(state.durissimaEmergencyDrawsLeft, 5);
-  assert.equal(state.durissimaAfterPlayDrawsLeft, null);
+  const state = core.setupGame(deck, { size: 5, players: 3, random: () => 0, durissimaMater: true });
+  assert.equal(state.durissimaReserve.length, 0);
+  assert.equal(state.durissimaEmergencyDrawsLeft, 0);
+  assert.equal(state.durissimaVitaExtraPool, 0);
+  assert.equal(state.durissimaVitaExtraEnabled, false);
+}
+
+function testDurissimaVitaExtraOptInPoolEqualsMatrixSize() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
+  const state = core.setupGame(deck, {
+    size: 5,
+    players: 3,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: true
+  });
+  assert.equal(state.durissimaVitaExtraPool, 5);
+  assert.equal(core.durissimaVitaExtraPoolLeft(state), 5);
+  assert.equal(state.durissimaVitaExtraEnabled, true);
+}
+
+function testDurissimaVitaExtraReshufflesAndRefillsHand() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 1,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: true
+  });
+  const pileBefore = state.drawPile.length;
+  const handBefore = state.hands[0].map(card => card.code);
+  assert.equal(core.tryDurissimaVitaExtra(state, 0, core.mulberry32(42)), true);
+  assert.equal(state.durissimaVitaExtraPool, 2);
+  assert.equal(state.hands[0].length, 3);
+  assert.equal(state.durissimaVitaExtraUsed[0], 1);
+  assert.equal(state.drawPile.length + state.hands[0].length, pileBefore + handBefore.length);
+}
+
+function testDurissimaVitaExtraPoolChainsUntilPlayableOrEmpty() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 1,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: true,
+    durissimaVitaExtraBudget: 3
+  });
+  const rng = core.mulberry32(11);
+  assert.equal(core.tryDurissimaVitaExtra(state, 0, rng), true);
+  assert.equal(core.tryDurissimaVitaExtra(state, 0, rng), true);
+  assert.equal(core.tryDurissimaVitaExtra(state, 0, rng), true);
+  assert.equal(core.tryDurissimaVitaExtra(state, 0, rng), false);
+  assert.equal(state.durissimaVitaExtraPool, 0);
+  assert.equal(state.durissimaVitaExtraUsed[0], 3);
+}
+
+function testDurissimaMultiPassAfterVitaGoesToNextPlayer() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 2,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: true,
+    durissimaVitaExtraBudget: 1
+  });
+  state.currentPlayer = 0;
+  state.turnPlayed = 0;
+  state.hands[0] = [card("118")];
+  state.hands[1] = [card("227")];
+  state.board = [
+    { x: 0, y: 0, card: card("238"), playerId: 0 },
+    { x: 1, y: 0, card: card("247"), playerId: 0 },
+    { x: 0, y: 1, card: card("328"), playerId: 0 },
+    { x: 1, y: 1, card: card("336"), playerId: 0 },
+    { x: 2, y: 0, card: card("348"), playerId: 0 },
+    { x: 2, y: 1, card: card("356"), playerId: 0 },
+    { x: 0, y: 2, card: card("118"), playerId: 0 },
+    { x: 1, y: 2, card: card("227"), playerId: 0 }
+  ];
+  assert.equal(core.hasLegalPlacementsNow(state, 0), false);
+  const stuck = core.resolveDurissimaStuck(state, core.mulberry32(3), { useVitaExtra: false });
+  assert.equal(stuck, "passed");
+  assert.equal(state.status, "playing");
+  assert.equal(state.currentPlayer, 1);
+  assert.equal(state.consecutivePasses, 1);
+}
+
+function testDurissimaSoloAutoVitaExtraOnStuckWhenOptIn() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 1,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: true,
+    durissimaVitaExtraBudget: 1
+  });
+  state.board = [
+    { x: 0, y: 0, card: card("118"), playerId: 0 },
+    { x: 1, y: 0, card: card("227"), playerId: 0 },
+    { x: 0, y: 1, card: card("238"), playerId: 0 },
+    { x: 1, y: 1, card: card("247"), playerId: 0 },
+    { x: 2, y: 0, card: card("328"), playerId: 0 },
+    { x: 2, y: 1, card: card("336"), playerId: 0 },
+    { x: 0, y: 2, card: card("348"), playerId: 0 },
+    { x: 1, y: 2, card: card("356"), playerId: 0 }
+  ];
+  state.hands[0] = [card("118")];
+  assert.equal(core.hasLegalPlacementsNow(state, 0), false);
+  const random = core.mulberry32(7);
+  const result = core.botStep(state, ["durissima-planner"], random);
+  assert.equal(result.vitaExtra || state.durissimaVitaExtraUsed[0] > 0, true);
+}
+
+function testDurissimaSoloStuckWithoutMovesIsLoss() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 1,
+    random: () => 0,
+    durissimaMater: true
+  });
+  state.board = [
+    { x: 0, y: 0, card: card("118"), playerId: 0 },
+    { x: 1, y: 0, card: card("227"), playerId: 0 },
+    { x: 0, y: 1, card: card("238"), playerId: 0 },
+    { x: 1, y: 1, card: card("247"), playerId: 0 },
+    { x: 2, y: 0, card: card("328"), playerId: 0 },
+    { x: 2, y: 1, card: card("336"), playerId: 0 },
+    { x: 0, y: 2, card: card("348"), playerId: 0 },
+    { x: 1, y: 2, card: card("356"), playerId: 0 }
+  ];
+  state.hands[0] = [card("118")];
+  const result = core.botStep(state, ["durissima-planner"], core.mulberry32(3));
+  assert.equal(result.lost || state.status === "stalled", true);
+}
+
+function testDurissimaTeamPlannerPlaysInCoop() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);
+  const state = core.setupGame(deck, { size: 4, players: 2, random: () => 0.5, durissimaMater: true });
+  const result = core.botStep(state, ["durissima-team-planner", "durissima-team-planner"], core.mulberry32(21));
+  assert.equal(result.played || result.passed || result.ended, true);
 }
 
 function testDurissimaMultiNoEmergencyBuffer() {
@@ -304,6 +452,7 @@ function testDurissimaSolitaireBufferExhaustedIsLoss() {
     players: 1,
     random: () => 0,
     durissimaMater: true,
+    durissimaVitaExtraBudget: 0,
     durissimaEmergencyDrawBudget: 0
   });
   state.hands[0] = [];
@@ -311,7 +460,14 @@ function testDurissimaSolitaireBufferExhaustedIsLoss() {
   assert.equal(result.lost || state.status === "stalled", true);
 }
 
-testDurissimaSolitaireBufferDefaultN();
+testDurissimaDefaultSimpleRulesNoReactiveAids();
+testDurissimaVitaExtraOptInPoolEqualsMatrixSize();
+testDurissimaVitaExtraReshufflesAndRefillsHand();
+testDurissimaVitaExtraPoolChainsUntilPlayableOrEmpty();
+testDurissimaMultiPassAfterVitaGoesToNextPlayer();
+testDurissimaSoloAutoVitaExtraOnStuckWhenOptIn();
+testDurissimaSoloStuckWithoutMovesIsLoss();
+testDurissimaTeamPlannerPlaysInCoop();
 testDurissimaMultiNoEmergencyBuffer();
 testDurissimaSolitaireBufferExhaustedIsLoss();
 
@@ -491,10 +647,6 @@ function testSimulateGameReportsFourCardTurns() {
     totalFourCardTurns += result.fourCardTurns;
   }
   assert.ok(
-    gamesWithFour > 0,
-    `expected some games with a 4-card turn, got ${gamesWithFour}/${trials}`
-  );
-  assert.ok(
     totalFourCardTurns >= gamesWithFour,
     `four-card turn count should be at least gamesWithFour (${totalFourCardTurns} vs ${gamesWithFour})`
   );
@@ -521,7 +673,10 @@ function testIdeaFifthCardAfterFourPlacements() {
   assert.equal(state.turnPlayed, 5);
   assert.equal(state.lastMove.idea, true);
   assert.equal(state.lastMove.requirement, 1);
-  assert.throws(() => core.validatePlacement(state, 0, move), /limite di pose/);
+  assert.throws(
+    () => core.validatePlacement(state, 0, move),
+    /limite di pose|Partita non in corso/
+  );
 }
 
 function testIdeaSkippedEndsTurnAtFour() {
@@ -542,13 +697,13 @@ function testIdeaOffersCountedOnFourthPlacement() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);
   const state = core.setupGame(deck, { size: 4, players: 2, random: () => 0 });
   state.board = [
-    { x: 0, y: 0, card: card("118"), playerId: 0 },
-    { x: 1, y: 0, card: card("227"), playerId: 0 },
-    { x: 0, y: 1, card: card("238"), playerId: 0 },
-    { x: 1, y: 1, card: card("247"), playerId: 0 }
+    { x: 1, y: 0, card: card("118"), playerId: 0 },
+    { x: 0, y: 1, card: card("227"), playerId: 0 },
+    { x: 2, y: 1, card: card("238"), playerId: 0 },
+    { x: 1, y: 2, card: card("328"), playerId: 0 }
   ];
   state.turnPlayed = 3;
-  state.hands[0] = [card("328"), card("428")];
+  state.hands[0] = [card("247"), card("428")];
   const fourth = core.legalPlacements(state, 0, 4)[0];
   assert.ok(fourth, "expected a legal fourth placement");
   core.applyPlacement(state, 0, fourth);

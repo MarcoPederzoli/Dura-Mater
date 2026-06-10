@@ -137,6 +137,7 @@ const els = {
   tabInfo: document.querySelector("#tab-info"),
   modalPlayers: document.querySelector("#modal-players"),
   modalInfo: document.querySelector("#modal-info"),
+  formatTierHint: document.querySelector("#format-tier-hint"),
   status: document.querySelector("#status"),
   boardStatus: document.querySelector("#board-status"),
   turnFlow: document.querySelector("#turn-flow"),
@@ -419,6 +420,51 @@ function readPlayersConfig(players) {
   return { modes, strategies };
 }
 
+function durissimaGnTierLabel(size) {
+  if (size <= 4) return { level: "core", text: "giocabile" };
+  if (size === 5) return { level: "hard", text: "molto difficile" };
+  if (size === 6) return { level: "extreme", text: "estremo / quasi impossibile" };
+  return { level: "epic", text: "epico / non standard" };
+}
+
+function describeFormatTier(size, players) {
+  if (!core.isPlayableSetup(size, players)) {
+    const maxG = core.maxPlayersForSize(size);
+    if (players > maxG) {
+      return {
+        level: "invalid",
+        text: `Configurazione non ammessa: massimo ${maxG} giocatori con griglia ${size}×${size}.`
+      };
+    }
+    return {
+      level: "invalid",
+      text: `Configurazione non ammessa: servono almeno ${core.MIN_INITIAL_HAND} carte a testa.`
+    };
+  }
+  let text = "Competitiva: giocabile (tutte le combinazioni legali).";
+  if (players === size) {
+    const tier = durissimaGnTierLabel(size);
+    text += ` Durissima con G=N (${size}×${size}): ${tier.text}.`;
+    return { level: tier.level, text };
+  }
+  if (players === 1) {
+    return { level: "extra", text: `${text} Durissima solitario: extra estremo.` };
+  }
+  if (players < size) {
+    return { level: "extra", text: `${text} Durissima sotto-G: extra estremo.` };
+  }
+  return { level: "extra", text: `${text} Durissima overcrowd: extra estremo.` };
+}
+
+function updateFormatTierHint() {
+  if (!els.formatTierHint) return;
+  const size = clampNumber(els.size.value, 3, 8, 5);
+  const players = clampNumber(els.players.value, 1, MPCardsCore.MAX_PLAYERS, 3);
+  const tier = describeFormatTier(size, players);
+  els.formatTierHint.textContent = tier.text;
+  els.formatTierHint.dataset.tier = tier.level;
+}
+
 function startGame() {
   stopTimer();
   saveGamePrefsNow();
@@ -566,7 +612,7 @@ function applySuggestedAction(action) {
 function actionLabel(action) {
   if (action.type === "move") return `${action.move.card.code} in (${action.move.x}, ${action.move.y})`;
   if (game.state.turnPlayed === 0) {
-    if (core.isDurissimaMater(game.state) && game.state.players === 1) return "Pesca buffer";
+    if (core.isDurissimaMater(game.state) && game.state.players === 1) return "Sconfitta";
     return "Passa";
   }
   if (core.canOfferIdea(game.state, game.state.currentPlayer)) return "Chiude (salta idea)";
@@ -580,6 +626,31 @@ function actionTitle(action, labels) {
   return `${labels}: ${game.state.turnPlayed === 0 ? "passa" : "chiude il turno"}.`;
 }
 
+function ensureVitaExtraButton() {
+  if (els.vitaExtra || !els.pass?.parentNode) return;
+  const btn = document.createElement("button");
+  btn.id = "vita-extra";
+  btn.type = "button";
+  btn.className = "secondary";
+  btn.textContent = "Vita extra";
+  btn.hidden = true;
+  els.pass.parentNode.insertBefore(btn, els.pass);
+  els.vitaExtra = btn;
+  btn.addEventListener("click", useDurissimaVitaExtra);
+}
+
+function useDurissimaVitaExtra() {
+  if (!game || game.state.status !== "playing" || isBotTurn()) return;
+  const player = game.state.currentPlayer;
+  if (!core.canUseDurissimaVitaExtra(game.state, player)) return;
+  game.state = gameState.commit(game.session, `${playerLabel(player)}: vita extra.`, game.random, nextState => {
+    core.tryDurissimaVitaExtra(nextState, player, game.random);
+  });
+  resetTransientUi();
+  render();
+  scheduleBotIfNeeded();
+}
+
 function passOrEndTurn() {
   if (!game || game.state.status !== "playing") return;
   const player = game.state.currentPlayer;
@@ -588,10 +659,9 @@ function passOrEndTurn() {
     : `${playerLabel(player)} chiude il turno.`;
   game.state = gameState.commit(game.session, label, game.random, nextState => {
     if (nextState.turnPlayed === 0) {
-      if (core.isDurissimaMater(nextState) && nextState.players === 1) {
-        if (!core.tryDurissimaEmergencyDraw(nextState, nextState.currentPlayer)) {
-          nextState.status = "stalled";
-        }
+      if (core.isDurissimaMater(nextState)) {
+        const stuck = core.resolveDurissimaStuck(nextState, game.random, { useVitaExtra: false });
+        if (stuck === "lost") return;
       } else {
         core.passTurn(nextState);
       }
@@ -775,8 +845,10 @@ function selectCard(cardUid) {
     setPlayFeedback(`È il turno del computer: attendi, oppure imposta ${playerLabel(0)} su Manuale.`);
     return;
   }
-  const hand = game.state.hands[game.state.currentPlayer] || [];
-  const card = hand.find(entry => entry.uid === cardUid);
+  const state = game.state;
+  const hand = state.hands[state.currentPlayer] || [];
+  const reserve = core.isDurissimaMater(state) ? (state.durissimaReserve || []) : [];
+  const card = hand.find(entry => entry.uid === cardUid) || reserve.find(entry => entry.uid === cardUid);
   const moves = currentMoves().filter(move => move.cardUid === cardUid);
   if (!card || moves.length === 0) {
     setPlayFeedback("Questa carta non si può posare ora.");
@@ -1079,7 +1151,9 @@ function renderBoard() {
         : footprint.atHeightLimit
           ? " · altezza al limite N"
           : "";
-  els.boardStatus.textContent = `${state.board.length}/${state.size * state.size} carte, pesca ${state.drawPile.length}${closed}`;
+  const reserveCount = core.isDurissimaMater(state) ? (state.durissimaReserve || []).length : 0;
+  const reserveLabel = reserveCount ? `, riserva ${reserveCount}` : "";
+  els.boardStatus.textContent = `${state.board.length}/${state.size * state.size} carte, pesca ${state.drawPile.length}${reserveLabel}${closed}`;
 }
 
 function boardCellSize() {
@@ -1126,9 +1200,58 @@ function renderRealGameSidebar() {
   }
 }
 
+function appendReserveCards(container, layout, interactive) {
+  if (!game || !core.isDurissimaMater(game.state)) return;
+  const reserve = game.state.durissimaReserve || [];
+  if (!reserve.length) return;
+  const moves = currentMoves();
+  const playable = new Set(
+    moves.filter(move => move.fromReserve).map(move => move.cardUid)
+  );
+  const useSidebarLayout = layout === "sidebar";
+  const heading = document.createElement("p");
+  heading.className = "hand-section-label";
+  heading.textContent = "Riserva (condivisa)";
+  container.appendChild(heading);
+  for (const card of reserve) {
+    const item = document.createElement("div");
+    const isSelected = selectedCardUid === card.uid;
+    const canPlay = playable.has(card.uid) && interactive;
+    item.className = "hand-card reserve-card";
+    item.dataset.cardUid = card.uid;
+    if (canPlay && !isSelected) item.classList.add("playable");
+    if (isSelected) item.classList.add("selected");
+    if (previewCardUid === card.uid) item.classList.add("preview");
+    item.appendChild(cardTile(card));
+    if (isSelected) {
+      const badge = document.createElement("span");
+      badge.className = "hand-card-selected-badge";
+      badge.textContent = "Scelta";
+      item.appendChild(badge);
+    }
+    const entry = document.createElement("div");
+    entry.className = useSidebarLayout ? "sidebar-hand-entry" : "hand-dock-entry";
+    if (canPlay) {
+      item.addEventListener("mouseenter", () => hoverCard(card.uid));
+      item.addEventListener("mouseleave", clearHover);
+      entry.addEventListener("click", event => activateHandCard(card.uid, event));
+    }
+    entry.appendChild(item);
+    const name = document.createElement("p");
+    name.className = "card-name";
+    name.textContent = globalThis.MPCardsNames
+      ? MPCardsNames.formatCardName(card)
+      : card.code;
+    entry.appendChild(name);
+    container.appendChild(entry);
+  }
+}
+
 function appendHandCards(container, layout, player, hand, interactive) {
   const moves = currentMoves();
-  const playable = new Set(moves.map(move => move.cardUid));
+  const playable = new Set(
+    moves.filter(move => !move.fromReserve).map(move => move.cardUid)
+  );
   const useSidebarLayout = layout === "sidebar";
   for (const card of hand) {
     const item = document.createElement("div");
@@ -1237,6 +1360,7 @@ function renderSidebarHand() {
   }
   updateHandSelectionStatus(hand.length, player, "Manuale");
   appendHandCards(els.sidebarHand, "sidebar", player, hand, interactive);
+  appendReserveCards(els.sidebarHand, "sidebar", interactive);
 }
 
 function renderRealGameSidebar() {
@@ -1253,7 +1377,9 @@ function renderRealGameSidebar() {
 
 function appendHandCards(container, layout, player, hand, interactive) {
   const moves = currentMoves();
-  const playable = new Set(moves.map(move => move.cardUid));
+  const playable = new Set(
+    moves.filter(move => !move.fromReserve).map(move => move.cardUid)
+  );
   const useSidebarLayout = layout === "sidebar";
   for (const card of hand) {
     const item = document.createElement("div");
@@ -1302,6 +1428,7 @@ function renderSidebarHand() {
   }
   updateHandSelectionStatus(hand.length, player, "Manuale");
   appendHandCards(els.sidebarHand, "sidebar", player, hand, interactive);
+  appendReserveCards(els.sidebarHand, "sidebar", interactive);
 }
 
 function renderPlayerHandStacks() {
@@ -1378,6 +1505,7 @@ function renderHand() {
     : "Manuale";
   updateHandSelectionStatus(hand.length, player, modeLabel);
   appendHandCards(els.handDock, "dock", player, hand, interactive);
+  appendReserveCards(els.handDock, "dock", interactive);
 }
 
 function playerAssignmentLabel(playerIndex) {
@@ -1441,6 +1569,7 @@ function renderStrategyHints() {
 }
 
 function renderActions() {
+  ensureVitaExtraButton();
   const hasGame = !!game;
   els.undo.disabled = !hasGame || !gameState.canUndo(game.session);
   els.redo.disabled = !hasGame || !gameState.canRedo(game.session);
@@ -1448,16 +1577,25 @@ function renderActions() {
   if (!game || game.state.status !== "playing") {
     els.pass.disabled = true;
     els.botStep.disabled = true;
+    if (els.vitaExtra) els.vitaExtra.hidden = true;
     return;
   }
   const moves = currentMoves();
   const durissima = core.isDurissimaMater(game.state);
   const durissimaSolo = durissima && game.state.players === 1 && game.state.turnPlayed === 0;
-  const soloBufferDraw = durissimaSolo && moves.length === 0;
+  const canVita = durissima
+    && game.state.turnPlayed === 0
+    && moves.length === 0
+    && core.canUseDurissimaVitaExtra(game.state, game.state.currentPlayer);
   els.pass.style.display = isBotTurn() ? "none" : "inline-grid";
   els.botStep.style.display = isBotTurn() ? "inline-grid" : "none";
-  els.pass.disabled = isBotTurn() || (durissimaSolo && !soloBufferDraw);
+  els.pass.disabled = isBotTurn() || durissimaSolo;
   els.pass.className = moves.length === 0 || game.state.turnPlayed > 0 ? "warn" : "secondary";
+  if (els.vitaExtra) {
+    els.vitaExtra.hidden = isBotTurn() || !canVita || game.state.players < 2;
+    els.vitaExtra.disabled = !canVita;
+    els.vitaExtra.className = canVita ? "secondary" : "secondary";
+  }
   els.botStep.disabled = !isBotTurn() || els.speed.value !== "step";
 }
 
@@ -1538,8 +1676,15 @@ function renderLog() {
 
 els.players.addEventListener("input", () => {
   renderPlayerConfig();
+  updateFormatTierHint();
   scheduleSaveGamePrefs();
 });
+if (els.size) {
+  els.size.addEventListener("input", () => {
+    updateFormatTierHint();
+    scheduleSaveGamePrefs();
+  });
+}
 els.newGame.addEventListener("click", startGame);
 if (els.newGamePlay) els.newGamePlay.addEventListener("click", prepareNewGame);
 if (els.resetPrefs) els.resetPrefs.addEventListener("click", resetGamePrefsToDefaults);
@@ -1569,4 +1714,5 @@ els.speedLive.addEventListener("change", () => {
 window.addEventListener("resize", renderBoard);
 
 loadSavedGamePrefs();
+updateFormatTierHint();
 bindGamePrefsPersistence();

@@ -1,0 +1,121 @@
+{
+  "format": "dura-mater-durissima-rules-probe-cli",
+  "workflowId": "durissima-riserva-team-probe-quick",
+  "variant": "riserva-N-team",
+  "durissimaReserveEnabled": true,
+  "durissimaReserveSize": "N (size)",
+  "exportedAt": "2026-06-10T08:13:56.481Z",
+  "countPerCell": 120,
+  "steps": [
+    {
+      "stepId": "durissima-rules-probe-3x1",
+      "cells": {
+        "3x1": {
+          "done": 120,
+          "stalls": 65,
+          "emergSum": 0,
+          "afterSum": 360
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-5x1",
+      "cells": {
+        "5x1": {
+          "done": 120,
+          "stalls": 120,
+          "emergSum": 0,
+          "afterSum": 1507
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-5x5",
+      "cells": {
+        "5x5": {
+          "done": 120,
+          "stalls": 119,
+          "emergSum": 0,
+          "afterSum": 0
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-5x8",
+      "cells": {
+        "5x8": {
+          "done": 120,
+          "stalls": 118,
+          "emergSum": 0,
+          "afterSum": 0
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-8x8",
+      "cells": {
+        "8x8": {
+          "done": 120,
+          "stalls": 120,
+          "emergSum": 0,
+          "afterSum": 0
+        }
+      }
+    },
+    {
+      "stepId": "durissima-rules-probe-8x16",
+      "cells": {
+        "8x16": {
+          "done": 120,
+          "stalls": 120,
+          "emergSum": 0,
+          "afterSum": 0
+        }
+      }
+    }
+  ],
+  "cells": {
+    "3x1": {
+      "done": 120,
+      "stalls": 65,
+      "emergSum": 0,
+      "afterSum": 360,
+      "cell": "3x1"
+    },
+    "5x1": {
+      "done": 120,
+      "stalls": 120,
+      "emergSum": 0,
+      "afterSum": 1507,
+      "cell": "5x1"
+    },
+    "5x5": {
+      "done": 120,
+      "stalls": 119,
+      "emergSum": 0,
+      "afterSum": 0,
+      "cell": "5x5"
+    },
+    "5x8": {
+      "done": 120,
+      "stalls": 118,
+      "emergSum": 0,
+      "afterSum": 0,
+      "cell": "5x8"
+    },
+    "8x8": {
+      "done": 120,
+      "stalls": 120,
+      "emergSum": 0,
+      "afterSum": 0,
+      "cell": "8x8"
+    },
+    "8x16": {
+      "done": 120,
+      "stalls": 120,
+      "emergSum": 0,
+      "afterSum": 0,
+      "cell": "8x16"
+    }
+  }
+}

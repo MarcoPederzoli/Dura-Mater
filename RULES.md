@@ -199,13 +199,40 @@ La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **N×
 Variante in cui l'obiettivo e' **completare la matrice N×N** (tutte le carte posate). Non conta chi finisce le carte per primo; la partita finisce quando la griglia e' piena.
 
 - Al tavolo la Durissima e' **collaborativa** (un solo obiettivo comune). In solitario equivale a tenere tutte le carte insieme.
-- **Due o piu' giocatori**: turno e pesca come nel **gioco normale** (si pesca passando/chiudendo il turno se c'e' mazzo). La collaborazione al tavolo compensa la mancanza di un bot «globale». Se un giro completo passa senza che **nessuno** posi, la partita va a **monte**.
-- **Informazione condivisa (cooperativo):** tutti i giocatori conoscono **l'intero contenuto** delle mani di tutti e del **mazzo di pesca** ancora da distribuire. Si sa **quali** carte restano in gioco, non **in che ordine** verranno pescate dal mazzo. Al tavolo si possono coordinare mosse e chiusure di «isole» (es. completare un 2×2) sapendo se la carta necessaria e' in una mano o ancora nel mazzo. Il bot cooperativo (`durissima-planner`) usa lo stesso pool informativo per valutare isole e frontiera; per «chi puo' posare adesso» in una cella considera solo le carte gia' in mano.
-- **Un solo giocatore (solitario)**: a fine turno si pesca **solo se nel turno si e' posata almeno una carta** (se il mazzo non e' vuoto). Se non si puo' posare, si usano fino a **N pescate extra per partita** dal mazzo (**buffer di emergenza**, `N` = lato della griglia). Sono pescate aggiuntive da fermo, non sostituiscono la pesca dopo una posa. Su griglie piccole il buffer e' rilevante (3×3: 3 pescate su 6 nel mazzo; 5×5: 5 su 20). Buffer esaurito e ancora bloccati → partita persa.
+- **Due o piu' giocatori**: turno e pesca come nel **gioco normale** (si pesca passando/chiudendo il turno se c'e' mazzo). Se un giro completo passa senza che **nessuno** posi, la partita va a **monte**.
+- **Pesca:** nessun buffer emergenza, nessuna vita extra, nessun reshuffle di mano. Si pesca solo secondo le regole normali (in solitario: **solo dopo aver posato** almeno una carta nel turno).
+- **Informazione condivisa (cooperativo):** al tavolo mani e mazzo restano **coperti**. Con la **scheda di riferimento delle 64 carte** e il dialogo i giocatori costruiscono l'**universo noto**: si sa **quali** carte esistono ancora in partita (in qualche mano o nel mazzo), non **in che ordine** verranno pescate. Chi e' al turno puo' chiedere aiuto per le mosse; gli altri contribuiscono con la memoria condivisa dell'universo, ma **solo il giocatore attivo** puo' posare dalla propria mano. La simulazione coop usa `durissima-team-planner`: stesso universo noto, con bonus per mosse che **sbloccano** carte difficili nei turni successivi degli altri giocatori.
+- **Un solo giocatore (solitario)**: a fine turno si pesca **solo se nel turno si e' posata almeno una carta** (se il mazzo non e' vuoto). Bloccati senza mosse legali all'inizio del turno → partita **persa** (nessun passo, nessun aiuto reattivo).
 - **Posare meno carte del massimo** nello stesso turno resta lecito e spesso strategico: dopo la prima posa si puo' **chiudere il turno** anche se si potevano posare altre carte.
 - Mano vuota **non** termina la partita: si continua finche' la matrice non e' completa o la partita non va a monte.
 
-*Nota (bilanciamento provvisorio):* le regole sopra sono quelle concordate; il completamento reale della griglia va verificato in simulazione (solitario e multi‑giocatore). Se le percentuali di successo fossero troppo basse, le regole potrebbero essere riviste.
+## Giocabilita' (etichettatura provvisoria — giugno 2026)
+
+Classificazione per il prodotto e per l'UI. I test di bilanciamento Durissima sono in **pausa** (dati conservati in `tests/` e `scripts/BILANCIAMENTO-PAUSA.md`); le soglie sotto restano valide fino a nuova campagna di simulazione.
+
+### Partita competitiva (normale)
+
+- **Ambito:** tutte le configurazioni **legali** con `1 <= G <= 2N` e almeno 3 carte a testa.
+- **Giudizio:** **giocabile** in tutte le combinazioni ammesse. Nei sweep automatici (bot `planner`, 58 celle L 3–8) ogni cella conclude con un vincitore nel **74–100%** delle partite; nessuna cella a stallo totale.
+- L'overcrowd (`G > N`) e il solitario restano parte del gioco standard, non «extra».
+
+### Durissima Mater — formato consigliato `G = N` (cooperativo)
+
+| Livello | Griglia `N×N` | Etichetta | Note (simulazione, regole semplici attuali) |
+|---------|---------------|-----------|---------------------------------------------|
+| **Core** | 3×3, 4×4 | Giocabile | Completamento griglia ripetibile con pianificazione coordinata |
+| **Difficile** | 5×5 | Molto difficile | Sfida seria; successo raro anche con gioco ottimo |
+| **Estremo** | 6×6 | Quasi impossibile | Non previsto come modalita' standard |
+| **Epico** | 7×7, 8×8 | Non standard / impossibile | Solo come sfida dichiarata, non come core |
+
+### Durissima — altre configurazioni
+
+- **Solitario** (`G = 1`), **sotto-G** (`G < N`) e **overcrowd** (`N < G <= 2N`): **extra estremo** o impossibile a seconda del caso; non fanno parte del formato consigliato.
+- In UI e in torneo si possono offrire come varianti opzionali, con etichetta esplicita di difficolta'.
+
+### Prossimo focus regolamento
+
+- Formalizzazione dei **tornei a punteggio** (da definire in `RULES.md`).
 
 ## Timeline locale
 
