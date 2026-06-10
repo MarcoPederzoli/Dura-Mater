@@ -290,8 +290,21 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   function tournamentCompleteHand(state, reason) {
+    if (!state.tournamentHandLog) state.tournamentHandLog = [];
+    const finishOrder = (state.tournamentFinishOrder || []).slice();
+    const handEntry = {
+      handIndex: state.tournamentHandIndex,
+      starter: state.startingPlayer,
+      reason,
+      finishOrder,
+      firstFinisher: finishOrder.length ? finishOrder[0] : null,
+      starterWonHand: finishOrder.length > 0 && finishOrder[0] === state.startingPlayer,
+      handScores: (state.tournamentHandScores || []).slice(),
+      turns: state.turns
+    };
     if (reason === "monte") {
       if (!state.tournamentMonteLog) state.tournamentMonteLog = [];
+      const drawCards = state.drawPile.length;
       const stillIn = [];
       for (let player = 0; player < state.players; player++) {
         if (state.tournamentExited[player]) continue;
@@ -303,12 +316,16 @@ const MPCARDS_CORE_SOURCE = `
           totalPenalty: handCards
         });
       }
-      state.tournamentMonteLog.push({
+      const monteEntry = {
+        drawCards,
         stillIn,
         playersStillIn: stillIn.length
-      });
+      };
+      state.tournamentMonteLog.push(monteEntry);
+      handEntry.monte = monteEntry;
       tournamentApplyMontePenalties(state);
     }
+    state.tournamentHandLog.push(handEntry);
     state.tournamentLastHandReason = reason;
     state.tournamentHandIndex++;
     if (state.tournamentHandIndex >= state.players) {
@@ -321,6 +338,8 @@ const MPCARDS_CORE_SOURCE = `
 
   function tournamentMarkFinished(state, playerId) {
     if (state.tournamentExited[playerId]) return;
+    if (!state.tournamentFinishOrder) state.tournamentFinishOrder = [];
+    state.tournamentFinishOrder.push(playerId);
     const k = tournamentPlayersStillIn(state);
     tournamentAddPoints(state, playerId, k);
     state.tournamentExited[playerId] = true;
@@ -348,6 +367,7 @@ const MPCARDS_CORE_SOURCE = `
     state.turnPlacementStats = emptyTurnPlacementStats();
     state.tournamentExited = Array.from({ length: state.players }, () => false);
     state.tournamentHandScores = Array.from({ length: state.players }, () => 0);
+    state.tournamentFinishOrder = [];
     state.tournamentLastHandReason = null;
     state.status = "playing";
   }
@@ -1494,6 +1514,8 @@ const MPCARDS_CORE_SOURCE = `
       tournamentHandIndex: tournamentMode ? 0 : null,
       tournamentLastHandReason: tournamentMode ? null : null,
       tournamentMonteLog: tournamentMode ? [] : null,
+      tournamentHandLog: tournamentMode ? [] : null,
+      tournamentFinishOrder: tournamentMode ? [] : null,
       durissimaEmergencyDrawsLeft: defaultDurissimaEmergencyBudget(size, players, options),
       durissimaAfterPlayDrawsLeft: options.durissimaMater === true
         ? normalizeDurissimaDrawBudget(options.durissimaAfterPlayDrawBudget)
@@ -1715,6 +1737,7 @@ const MPCARDS_CORE_SOURCE = `
       tournamentHandsPlayed: state.tournamentHandIndex || 0,
       tournamentMonteHands: monteHands,
       tournamentMonteLog: (state.tournamentMonteLog || []).slice(),
+      tournamentHandLog: (state.tournamentHandLog || []).slice(),
       tournamentComplete: state.status === "tournament_complete",
       turns: totalTurns,
       strategies,
