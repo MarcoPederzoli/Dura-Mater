@@ -218,7 +218,8 @@ function readConfig() {
 }
 
 function defaultWorkerCount() {
-  return Math.max(1, Math.min(8, navigator.hardwareConcurrency || 4));
+  const cores = navigator.hardwareConcurrency || 4;
+  return Math.max(1, Math.min(32, cores > 1 ? cores - 1 : cores));
 }
 
 function activePlayerCount() {
