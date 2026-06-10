@@ -99,7 +99,7 @@ npm test
 ## Focus attuale
 
 - **Tornei a punteggio** — regolamento in `RULES.md` (sezione «Torneo a punteggio»). Prossimo: implementazione motore/UI.
-- **Da definire:** punteggio bersaglio per G molto alto (es. 16); allineamento condizione monte torneo (tallone vuoto) vs partita libera nel motore.
+- **Da definire:** punteggio bersaglio per G molto alto (es. 16). Monte torneo: G pass senza posate; penalità mano + tallone (per giocatore ancora in gioco).
 
 ## Da sistemare (regole)
 

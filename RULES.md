@@ -118,7 +118,7 @@ La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **N×
 - I giocatori agiscono a turno secondo l'ordine iniziale e la direzione in vigore.
 - Nel proprio turno un giocatore puo' posare da 1 a 4 carte, piu' eventualmente una quinta carta tramite l'**Idea** (vedi sotto).
 - Il giocatore puo' scegliere di posare meno di 4 carte anche se avrebbe mosse legali disponibili.
-- **Pesca in partita competitiva:** alla fine del proprio turno, se il mazzo non e' vuoto, si pesca **sempre** — sia dopo aver posato una o piu' carte, sia dopo un **passo** (turno chiuso senza posate). Passare senza posare e' una scelta strategica: si pesca ugualmente, ma le carte restano in mano (nel torneo a punteggio sono punti negativi se la partita finisce).
+- **Pesca in partita competitiva:** alla fine del proprio turno, se il mazzo non e' vuoto, si pesca **sempre** — sia dopo aver posato una o piu' carte, sia dopo un **passo** (turno chiuso senza posate). Passare senza posare e' una scelta strategica: si pesca ugualmente, ma le carte restano in mano (nel **torneo**, a monte: penalita' sulle carte in mano e sul tallone per chi e' ancora in gioco).
 - **Monte (competitiva e Durissima multi):** se **G turni consecutivi** passano senza che **nessuno** posi una carta, la partita va a **monte** (stallo), **anche se il tallone non e' vuoto**. Ogni posa azzera il contatore dei pass consecutivi.
 - Se il mazzo di pesca e' vuoto, il giocatore non pesca a fine turno.
 - Se un giocatore non ha mosse legali, passa (e in competitiva pesca se il mazzo non e' vuoto).
@@ -257,9 +257,11 @@ A differenza della partita libera (dove la prima mano vuota **termina** la parti
 
 #### 2) Monte (stallo)
 
-- La mano va a **monte** quando, per un **giro completo** di **G** turni, **nessun giocatore posa** una carta **e** il **tallone di pesca è esaurito** (se c’era un tallone; con **G = N** il tallone è già vuoto all’inizio).
-- A quel punto, ogni giocatore che ha ancora carte in mano riceve **−1 punto per ogni carta** rimasta in mano.
-- *Nota:* nella partita libera il motore attuale dichiara monte dopo **G pass** senza posate **anche con tallone pieno** (anti-accumulo). Per il torneo vale la condizione con **tallone esaurito** come sopra — da allineare in implementazione torneo.
+- La mano va a **monte** quando, per un **giro completo** di **G** turni consecutivi, **nessun giocatore posa** una carta — **anche se il tallone non è vuoto** (stessa condizione della partita competitiva; vedi «Turno di gioco»).
+- **Penalità a fine mano per monte:**
+  1. **Carte in mano:** ogni giocatore con carte rimaste in mano riceve **−1 punto per ogni carta** (i giocatori già **usciti** hanno mano vuota e non subiscono questa voce).
+  2. **Carte nel tallone:** ogni giocatore **ancora in gioco** (non ancora uscito) riceve inoltre **−1 punto per ogni carta ancora nel tallone** di pesca. La penalità è **per giocatore ancora in gioco** (es. 3 giocatori in gioco e 10 carte nel tallone → **−10** a ciascuno dei 3).
+- È un esito **molto penalizzante** (di norma da evitare). Con **4 o più giocatori** può diventare **tattica:** chi non posa obbliga gli altri a giocare, altrimenti tutti i restanti pagano anche l’intero tallone. Se qualcuno è **già uscito** con punti positivi, chi resta in gioco **non può permettersi** un monte con carte nel tallone: annullerebbe il vantaggio accumulato.
 
 ### Punti durante la mano
 
@@ -267,7 +269,8 @@ A differenza della partita libera (dove la prima mano vuota **termina** la parti
 |--------|--------|
 | Giocatore **N‑esimo** che svuota la mano (con **k** giocatori ancora in gioco, incluso lui) | **k** |
 | **Idea:** posa della **quarta carta** nello stesso turno (con almeno una carta ancora in mano dopo la quarta) | **+1** subito, indipendentemente dal fatto che si posi o meno la quinta carta |
-| Monte: ogni carta ancora in mano a fine mano | **−1** per carta |
+| **Monte:** ogni carta ancora **in mano** | **−1** per carta (chi è uscito: 0) |
+| **Monte:** ogni carta ancora nel **tallone** | **−1** per carta, **per ogni giocatore ancora in gioco** |
 
 - Il punto Idea si assegna al momento della quarta posa legale del turno, non alla quinta.
 - Se la quarta carta svuota la mano, valgono le regole normali di arrivo (punti per ordine di finish); l’Idea come quinta carta non si applica (come in partita libera).
@@ -285,7 +288,7 @@ A differenza della partita libera (dove la prima mano vuota **termina** la parti
 |---|----------------|----------------|
 | Prima mano vuota | Fine partita, un vincitore | **+G** punti, mano continua |
 | Idea (4ª carta) | Solo opzione 5ª carta | **+1** punto torneo |
-| Monte | G pass senza posate (motore: anche con tallone pieno) | G pass senza posate **e** tallone vuoto; penalità −1/carta |
+| Monte | G pass senza posate (anche con tallone pieno); nessun punteggio | G pass senza posate; **−1**/carta in mano; **−1**/carta nel tallone **×** ciascun giocatore ancora in gioco |
 | Durissima | Variante separata | **Non usata** |
 
 *Implementazione motore / UI torneo: non ancora presente (`promemoria.md`).*
