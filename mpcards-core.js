@@ -282,16 +282,33 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   function tournamentApplyMontePenalties(state) {
-    const drawPenalty = state.drawPile.length;
     for (let player = 0; player < state.players; player++) {
       if (state.tournamentExited[player]) continue;
       const handPenalty = (state.hands[player] || []).length;
-      tournamentAddPoints(state, player, -(handPenalty + drawPenalty));
+      tournamentAddPoints(state, player, -handPenalty);
     }
   }
 
   function tournamentCompleteHand(state, reason) {
-    if (reason === "monte") tournamentApplyMontePenalties(state);
+    if (reason === "monte") {
+      if (!state.tournamentMonteLog) state.tournamentMonteLog = [];
+      const stillIn = [];
+      for (let player = 0; player < state.players; player++) {
+        if (state.tournamentExited[player]) continue;
+        const handCards = (state.hands[player] || []).length;
+        stillIn.push({
+          player,
+          handCards,
+          handPenalty: handCards,
+          totalPenalty: handCards
+        });
+      }
+      state.tournamentMonteLog.push({
+        stillIn,
+        playersStillIn: stillIn.length
+      });
+      tournamentApplyMontePenalties(state);
+    }
     state.tournamentLastHandReason = reason;
     state.tournamentHandIndex++;
     if (state.tournamentHandIndex >= state.players) {
@@ -1476,6 +1493,7 @@ const MPCARDS_CORE_SOURCE = `
       tournamentExited: tournamentMode ? Array.from({ length: players }, () => false) : null,
       tournamentHandIndex: tournamentMode ? 0 : null,
       tournamentLastHandReason: tournamentMode ? null : null,
+      tournamentMonteLog: tournamentMode ? [] : null,
       durissimaEmergencyDrawsLeft: defaultDurissimaEmergencyBudget(size, players, options),
       durissimaAfterPlayDrawsLeft: options.durissimaMater === true
         ? normalizeDurissimaDrawBudget(options.durissimaAfterPlayDrawBudget)
@@ -1696,6 +1714,7 @@ const MPCARDS_CORE_SOURCE = `
       tournamentScores: (state.tournamentScores || []).slice(),
       tournamentHandsPlayed: state.tournamentHandIndex || 0,
       tournamentMonteHands: monteHands,
+      tournamentMonteLog: (state.tournamentMonteLog || []).slice(),
       tournamentComplete: state.status === "tournament_complete",
       turns: totalTurns,
       strategies,

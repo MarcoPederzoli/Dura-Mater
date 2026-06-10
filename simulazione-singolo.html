@@ -294,6 +294,46 @@
       display: none;
     }
 
+    .tournament-scores-bar {
+      flex: 1 1 100%;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #f0f9f8;
+    }
+
+    .tournament-scores-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent-dark);
+      margin-right: 4px;
+    }
+
+    .tournament-score-chip {
+      font-size: 13px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+    }
+
+    .tournament-score-chip.leader {
+      border-color: var(--good);
+      background: #ecfdf5;
+      color: #065f46;
+    }
+
+    .tournament-score-chip.current {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+
     .play-area {
       display: grid;
       gap: 18px;
@@ -375,6 +415,61 @@
 
     .status.good { color: var(--good); }
     .status.bad { color: var(--bad); }
+
+    .tournament-ranking-panel {
+      margin: 0 12px 12px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8faf9;
+    }
+
+    .tournament-ranking-panel .panel-head-compact {
+      padding: 0 0 8px;
+      border-bottom: none;
+    }
+
+    .tournament-ranking-panel h2 {
+      font-size: 14px;
+      margin: 0;
+    }
+
+    .tournament-ranking-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 6px;
+    }
+
+    .tournament-ranking-row {
+      display: grid;
+      grid-template-columns: 2.5rem 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: #fff;
+      border: 1px solid var(--line);
+      font-size: 13px;
+    }
+
+    .tournament-ranking-row.rank-winner {
+      border-color: var(--good);
+      background: #ecfdf5;
+      font-weight: 600;
+    }
+
+    .rank-place {
+      color: var(--muted);
+      font-weight: 700;
+      text-align: right;
+    }
+
+    .rank-score {
+      font-weight: 700;
+      color: var(--accent-dark);
+    }
 
     .board-wrap {
       padding: 16px;
@@ -1011,6 +1106,7 @@
     <div id="game-shell" class="game-shell" hidden>
       <div class="gamebar">
         <p id="play-feedback" class="play-feedback" aria-live="polite"></p>
+        <div id="tournament-scores-bar" class="tournament-scores-bar" hidden aria-live="polite"></div>
         <div class="pill"><span id="active-player">-</span><strong id="draw-count">Pesca: 0</strong></div>
         <label class="speed-control" aria-label="Velocita' computer">
           <select id="speed-live">
@@ -1072,6 +1168,12 @@
           </div>
           <div id="turn-flow" class="turn-flow" aria-live="polite"></div>
           <div id="inversion-alert" class="inversion-alert" hidden></div>
+          <section id="tournament-ranking-panel" class="tournament-ranking-panel" hidden aria-live="polite">
+            <div class="panel-head panel-head-compact">
+              <h2 id="tournament-ranking-title">Classifica torneo</h2>
+            </div>
+            <ol id="tournament-ranking-list" class="tournament-ranking-list"></ol>
+          </section>
         </aside>
       </div>
     </div>

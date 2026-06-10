@@ -395,14 +395,25 @@ function setAllStrategies(value) {
   scheduleSavePrefs();
 }
 
-function countValidJobs(lMin, lMax, gMin, gMax) {
+function countValidJobs(lMin, lMax, gMin, gMax, options = {}) {
+  const tournamentMode = options.tournamentMode === true;
   let jobs = 0;
   for (let size = lMin; size <= lMax; size++) {
     for (let players = gMin; players <= gMax; players++) {
-      if (isPlayableSetup(size, players)) jobs++;
+      if (!isPlayableSetup(size, players)) continue;
+      if (tournamentMode && players < 2) continue;
+      jobs++;
     }
   }
   return jobs;
+}
+
+function plannedSimulationTotal(config, jobs = null) {
+  const jobList = jobs || makeJobs(config);
+  const perCase = config.count;
+  const cases = jobList.length;
+  const total = jobList.reduce((sum, job) => sum + job.count, 0);
+  return { perCase, cases, total };
 }
 
 function applySimulationPreset(key) {
@@ -416,9 +427,12 @@ function applySimulationPreset(key) {
   if (els.durissimaMater) els.durissimaMater.checked = preset.durissimaMater;
   if (els.fixedTurnOrder) els.fixedTurnOrder.checked = preset.fixedTurnOrder;
   setAllStrategies(preset.strategy);
-  const jobs = countValidJobs(preset.lMin, preset.lMax, preset.gMin, preset.gMax);
+  const jobs = countValidJobs(preset.lMin, preset.lMax, preset.gMin, preset.gMax, {
+    tournamentMode: Boolean(els.tournamentMode?.checked)
+  });
   const total = jobs * preset.count;
-  setStatus(`Preset «${preset.label}»: ${jobs} casi L×G, ${total.toLocaleString("it-IT")} partite previste.`, "good");
+  const unit = els.tournamentMode?.checked ? "tornei" : "partite";
+  setStatus(`Preset «${preset.label}»: ${jobs} casi L×G, ${total.toLocaleString("it-IT")} ${unit} previste.`, "good");
   scheduleSavePrefs();
 }
 
@@ -553,7 +567,9 @@ function applyWorkflowToUi(key) {
   renderStrategyInputs(stepConfig.strategies);
   const total = workflow.steps.reduce((sum, step) => {
     const cfg = stepConfigFromWorkflowStep(step, workflow.shared, ui);
-    return sum + countValidJobs(cfg.lMin, cfg.lMax, cfg.gMin, cfg.gMax) * cfg.count;
+    return sum + countValidJobs(cfg.lMin, cfg.lMax, cfg.gMin, cfg.gMax, {
+      tournamentMode: cfg.tournamentMode === true
+    }) * cfg.count;
   }, 0);
   setStatus(
     `Workflow «${workflow.label}»: ${workflow.steps.length} step, ${total.toLocaleString("it-IT")} partite totali. Primo step caricato nei campi.`,
@@ -959,12 +975,19 @@ function renderCellContent(type, stats) {
   }
 
   if (type === "player") {
+    const tournamentMode = activeRun?.config?.tournamentMode === true;
     stats.winsByPlayer.forEach((count, index) => {
       const played = stats.playedByPlayer[index] || 0;
       const points = stats.pointsByPlayer[index] || 0;
       if (played > 0) {
-        const ratio = points / played;
-        box.appendChild(line(`G${index + 1}: ${pct(points, played)}`, disparityClass(ratio)));
+        if (tournamentMode) {
+          const avg = points / played;
+          const wins = stats.winsByPlayer[index] || 0;
+          box.appendChild(line(`G${index + 1}: μ ${avg.toFixed(2)} (${wins}/${played} vitt.)`));
+        } else {
+          const ratio = points / played;
+          box.appendChild(line(`G${index + 1}: ${pct(points, played)}`, disparityClass(ratio)));
+        }
       }
     });
     if (stats.stalls > 0) box.appendChild(line(`Stallo: ${pct(stats.stalls, stats.done)}`));
@@ -1168,7 +1191,7 @@ function buildResultsSnapshot(state, meta = {}) {
     version: 1,
     exportedAt: new Date().toISOString(),
     partial: Boolean(meta.partial),
-    simulationsDone: state.grandTotal.done,
+    simulationsDone: state.done ?? state.grandTotal.done,
     simulationsTarget: state.total,
     config: serializeConfig(state.config),
     grandTotal: cloneStats(state.grandTotal),
@@ -1523,6 +1546,48 @@ function analyzePlayerPositions(stats, config, ctx) {
   return { rows, spread, skipped: false, verdict };
 }
 
+function analyzeTournamentStandings(stats, config) {
+  const slots = activePlayerSlots(stats, config);
+  const tournaments = stats.done || 0;
+  const rows = [];
+  for (let index = 0; index < slots; index++) {
+    const played = stats.playedByPlayer[index] || 0;
+    if (!played) continue;
+    const totalScore = stats.pointsByPlayer[index] || 0;
+    const avgScore = totalScore / played;
+    const wins = stats.winsByPlayer[index] || 0;
+    rows.push({
+      index,
+      label: `G${index + 1}`,
+      played,
+      totalScore,
+      avgScore,
+      wins,
+      winRate: wins / played
+    });
+  }
+  rows.sort((a, b) => b.avgScore - a.avgScore || b.wins - a.wins || a.index - b.index);
+  rows.forEach((row, rank) => {
+    row.place = rank + 1;
+  });
+  let verdict = tournaments
+    ? `Classifica media su ${tournaments} tornei (per punteggio medio per sede).`
+    : "Nessun torneo completato nel campione.";
+  if (rows.length >= 2) {
+    const best = rows[0];
+    const worst = rows[rows.length - 1];
+    const spread = best.avgScore - worst.avgScore;
+    if (spread >= 4) {
+      verdict = `Vantaggio sede marcato: ${best.label} media ${best.avgScore.toFixed(2)} vs ${worst.label} ${worst.avgScore.toFixed(2)} (Δ ${spread.toFixed(2)}).`;
+    } else if (spread >= 2) {
+      verdict = `Leggero scostamento tra sedi (Δ ${spread.toFixed(2)} punti medi): meglio ${best.label}, peggio ${worst.label}.`;
+    } else {
+      verdict = `Punteggi medi equilibrati tra le sedi (spread ${spread.toFixed(2)}).`;
+    }
+  }
+  return { rows, tournaments, skipped: !rows.length, verdict };
+}
+
 function analyzeStrategies(stats, ctx) {
   if (!ctx.strategyBiasReliable) {
     return {
@@ -1644,6 +1709,9 @@ function buildAnalysisReport(grandTotal, config, cells) {
   const participation = participationSummary(grandTotal);
 
   const seatStrategy = buildSeatStrategyBreakdown(grandTotal, config);
+  const tournamentStandings = context.tournament
+    ? analyzeTournamentStandings(grandTotal, config)
+    : { rows: [], tournaments: 0, skipped: true, verdict: "" };
 
   return {
     sample,
@@ -1653,6 +1721,7 @@ function buildAnalysisReport(grandTotal, config, cells) {
     dmCloser,
     strategies,
     seatStrategy,
+    tournamentStandings,
     scenarios,
     scenarioInitialTurn,
     scenarioCompletions,
@@ -1717,6 +1786,16 @@ function formatAnalysisPlainText(snapshot) {
     `${analysis.summary.goalLabel}: ${analysis.summary.successPct.toFixed(1)}% · Stallo: ${analysis.summary.stallPct.toFixed(1)}%`,
     ...(analysis.summary.options.tournamentMode
       ? [`Mani a monte (totale): ${analysis.summary.tournamentMonteHands} (media ${analysis.summary.avgTournamentMonteHands.toFixed(2)} per torneo)`]
+      : []),
+    ...(analysis.tournamentStandings && !analysis.tournamentStandings.skipped
+      ? [
+        "",
+        `Classifica media torneo (${analysis.tournamentStandings.tournaments} tornei):`,
+        ...analysis.tournamentStandings.rows.map(row =>
+          `- ${row.place}° ${row.label}: media ${row.avgScore.toFixed(2)} (tot ${row.totalScore}, ${row.wins}/${row.played} vittorie)`
+        ),
+        analysis.tournamentStandings.verdict
+      ]
       : []),
     `Turni medi: ${analysis.summary.avgTurns.toFixed(1)}`,
     `Partite con almeno un turno da 4 carte: ${analysis.summary.fourCardGamePct.toFixed(1)}% (${analysis.summary.gamesWithFourCardTurn}/${analysis.summary.simulations})`,
@@ -2046,7 +2125,7 @@ function publishRunResults(state, partial = false) {
     renderWorkflowAnalysis(lastResults);
     return;
   }
-  if (!state || state.grandTotal.done === 0) return;
+  if (!state || (state.done ?? state.grandTotal.done) === 0) return;
   lastResults = buildResultsSnapshot(state, { partial });
   renderAnalysis(lastResults);
 }
@@ -2106,6 +2185,21 @@ function renderAnalysis(snapshot) {
      <p>Opzioni run: inversione ai limiti DM, ordine iniziale ${analysis.summary.options.randomizeTurnOrder ? "casuale (come partita reale)" : "fisso G1 primo (solo test)"}.</p>`
   );
   els.analysisContent.appendChild(summaryBlock);
+
+  if (analysis.tournamentStandings && !analysis.tournamentStandings.skipped) {
+    const standingsBlock = document.createElement("div");
+    standingsBlock.className = "analysis-block";
+    standingsBlock.innerHTML = `<h3>Classifica media torneo</h3>
+      <p>Punteggio medio per sede su <strong>${analysis.tournamentStandings.tournaments}</strong> tornei completati (somma dei punteggi di tutte le mani ÷ numero tornei).</p>`;
+    standingsBlock.appendChild(renderAnalysisList(analysis.tournamentStandings.rows, row =>
+      `${row.place}° ${row.label}: media <strong>${row.avgScore.toFixed(2)}</strong> (totale ${row.totalScore}, ${row.wins}/${row.played} vittorie torneo)`
+    ));
+    const standingsVerdict = document.createElement("p");
+    standingsVerdict.className = "analysis-verdict";
+    standingsVerdict.textContent = analysis.tournamentStandings.verdict;
+    standingsBlock.appendChild(standingsVerdict);
+    els.analysisContent.appendChild(standingsBlock);
+  }
 
   if (analysis.scenarioCompletions.length) {
     const outcome = analysis.summary.scenarioOutcome;
@@ -2268,9 +2362,16 @@ function line(text, className = "") {
 }
 
 function updateProgress(state) {
-  const percent = state.total ? state.done / state.total * 100 : 0;
+  const total = state.total || 0;
+  const rawDone = state.done || 0;
+  const done = total ? Math.min(rawDone, total) : rawDone;
+  const percent = total ? Math.min(100, done / total * 100) : 0;
   els.progress.style.width = `${percent}%`;
-  els.progressText.textContent = `${state.done}/${state.total} simulazioni.`;
+  const perCase = state.config?.count;
+  const cases = state.jobs?.length;
+  const unit = state.config?.tournamentMode ? "tornei" : "simulazioni";
+  const detail = perCase && cases ? ` · ${cases} casi × ${perCase}/${unit === "tornei" ? "torneo" : "caso"}` : "";
+  els.progressText.textContent = `${done}/${total} ${unit}${detail}.`;
 }
 
 function workerSource() {
@@ -2478,9 +2579,11 @@ function startSimulationRun(state, meta = {}) {
   resetTables(config, jobs, state);
   clearAnalysisUi();
   updateProgress(state);
+  const plan = plannedSimulationTotal(config, jobs);
+  const unit = config.tournamentMode ? "tornei" : "simulazioni";
   const label = meta.workflowLabel
-    ? `Workflow «${meta.workflowLabel}»: ${state.total.toLocaleString("it-IT")} partite in ${state.stepStates?.length || state.workflow?.steps?.length || "?"} step.`
-    : `In corso: ${jobs.length} casi validi.`;
+    ? `Workflow «${meta.workflowLabel}»: ${state.total.toLocaleString("it-IT")} ${unit} in ${state.stepStates?.length || state.workflow?.steps?.length || "?"} step.`
+    : `In corso: ${plan.total.toLocaleString("it-IT")} ${unit} previste (${plan.cases} casi × ${plan.perCase}).`;
   setStatus(label, "");
   els.run.disabled = true;
   if (els.runWorkflow) els.runWorkflow.disabled = true;
@@ -2549,6 +2652,7 @@ function dispatchNext(worker, state) {
 }
 
 function finishRun(state) {
+  state.stopped = true;
   for (const worker of state.workers) worker.terminate();
   state.workers = [];
   activeRun = null;

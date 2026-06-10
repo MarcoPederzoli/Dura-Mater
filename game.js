@@ -177,7 +177,11 @@ const els = {
   playerHandsList: document.querySelector("#player-hands-list"),
   summary: document.querySelector("#summary"),
   log: document.querySelector("#log"),
-  playFeedback: document.querySelector("#play-feedback")
+  playFeedback: document.querySelector("#play-feedback"),
+  tournamentRankingPanel: document.querySelector("#tournament-ranking-panel"),
+  tournamentRankingTitle: document.querySelector("#tournament-ranking-title"),
+  tournamentRankingList: document.querySelector("#tournament-ranking-list"),
+  tournamentScoresBar: document.querySelector("#tournament-scores-bar")
 };
 
 let game = null;
@@ -195,16 +199,7 @@ function resetInversionUiFlags(state) {
     duraMaterClosed: !!(state && state.duraMaterClosed)
   };
 }
-let inversionUiFlags = { firstAxisInversionDone: false, duraMaterClosed: false };
-let loadedPlayerPrefs = null;
-let saveGamePrefsTimer = null;
 
-function resetInversionUiFlags(state) {
-  inversionUiFlags = {
-    firstAxisInversionDone: !!(state && state.firstAxisInversionDone),
-    duraMaterClosed: !!(state && state.duraMaterClosed)
-  };
-}
 function state() {
   return game ? gameState.currentState(game.session) : null;
 }
@@ -436,12 +431,85 @@ function isTournamentEnabled() {
   return Boolean(els.tournamentMode?.checked);
 }
 
-function formatTournamentRanking(state) {
-  if (!state?.tournamentScores) return "";
-  const order = state.tournamentScores
+function tournamentRankingEntries(state) {
+  if (!state?.tournamentScores) return [];
+  return state.tournamentScores
     .map((score, player) => ({ player, score }))
-    .sort((a, b) => b.score - a.score || a.player - b.player);
-  return order.map((entry, index) => `${index + 1}. ${playerLabel(entry.player)} (${entry.score})`).join(" · ");
+    .sort((a, b) => b.score - a.score || a.player - b.player)
+    .map((entry, index) => ({ ...entry, place: index + 1 }));
+}
+
+function formatTournamentRanking(state) {
+  return tournamentRankingEntries(state)
+    .map(entry => `${entry.place}. ${playerLabel(entry.player)} (${entry.score})`)
+    .join(" · ");
+}
+
+function renderTournamentScoresBar() {
+  if (!els.tournamentScoresBar) return;
+  if (!game || !core.isTournamentMode(game.state)) {
+    els.tournamentScoresBar.hidden = true;
+    els.tournamentScoresBar.replaceChildren();
+    return;
+  }
+  const state = game.state;
+  const done = state.status === "tournament_complete";
+  els.tournamentScoresBar.hidden = false;
+  els.tournamentScoresBar.removeAttribute("hidden");
+  els.tournamentScoresBar.replaceChildren();
+  const label = document.createElement("span");
+  label.className = "tournament-scores-label";
+  label.textContent = done ? "Classifica torneo" : "Punteggi torneo";
+  els.tournamentScoresBar.append(label);
+  for (const entry of tournamentRankingEntries(state)) {
+    const chip = document.createElement("span");
+    chip.className = "tournament-score-chip";
+    if (done && entry.player === state.winner) chip.classList.add("leader");
+    if (state.status === "playing" && entry.player === state.currentPlayer) chip.classList.add("current");
+    const handDelta = state.tournamentHandScores?.[entry.player] || 0;
+    const handHint = state.status === "playing" && handDelta !== 0
+      ? ` (${handDelta >= 0 ? "+" : ""}${handDelta} mano)`
+      : "";
+    chip.textContent = `${playerShortLabel(entry.player)} ${entry.score}${handHint}`;
+    chip.title = `${entry.place}° posto · ${entry.score} punti totali`;
+    els.tournamentScoresBar.append(chip);
+  }
+}
+
+function renderTournamentRanking() {
+  if (!els.tournamentRankingPanel) return;
+  if (!game || !core.isTournamentMode(game.state)) {
+    els.tournamentRankingPanel.hidden = true;
+    return;
+  }
+  const state = game.state;
+  const done = state.status === "tournament_complete";
+  els.tournamentRankingPanel.hidden = false;
+  els.tournamentRankingPanel.removeAttribute("hidden");
+  if (els.tournamentRankingTitle) {
+    els.tournamentRankingTitle.textContent = done ? "Classifica finale" : "Punteggi torneo";
+  }
+  if (!els.tournamentRankingList) return;
+  els.tournamentRankingList.replaceChildren();
+  for (const entry of tournamentRankingEntries(state)) {
+    const row = document.createElement("li");
+    row.className = "tournament-ranking-row";
+    if (done && entry.player === state.winner) row.classList.add("rank-winner");
+    const place = document.createElement("span");
+    place.className = "rank-place";
+    place.textContent = `${entry.place}°`;
+    const name = document.createElement("span");
+    name.className = "rank-name";
+    name.textContent = playerLabel(entry.player);
+    const score = document.createElement("span");
+    score.className = "rank-score";
+    score.textContent = String(entry.score);
+    row.append(place, name, score);
+    els.tournamentRankingList.append(row);
+  }
+  if (done && els.playFeedback) {
+    setPlayFeedback(`Torneo concluso — ${formatTournamentRanking(state)}`);
+  }
 }
 
 function describeFormatTier(size, players) {
@@ -1142,6 +1210,8 @@ function render() {
   renderHand();
   renderStrategyHints();
   renderSummary();
+  renderTournamentScoresBar();
+  renderTournamentRanking();
   renderActions();
   updatePlayerHandCounts();
   renderLog();
@@ -1351,15 +1421,20 @@ function appendHandCards(container, layout, player, hand, interactive) {
 }
 
 function renderHandCountsBar() {
-  if (!els.handCountsList || !isRealGame()) return;
+  if (!els.handCountsList) return;
   els.handCountsList.innerHTML = "";
   if (!game) return;
   const state = game.state;
+  const tournament = core.isTournamentMode(state);
+  if (!isRealGame() && !tournament) return;
   for (let player = 0; player < state.players; player++) {
     const count = (state.hands[player] || []).length;
+    const exited = tournament && state.tournamentExited?.[player];
     const chip = document.createElement("div");
     chip.className = "hand-count-chip";
-    if (state.status === "success" && player === state.winner) {
+    if (state.status === "tournament_complete" && player === state.winner) {
+      chip.classList.add("winner");
+    } else if (state.status === "success" && player === state.winner) {
       chip.classList.add("winner");
     } else if (state.status === "playing" && player === state.currentPlayer) {
       chip.classList.add("current");
@@ -1368,37 +1443,18 @@ function renderHandCountsBar() {
     const name = document.createElement("strong");
     name.textContent = playerShortLabel(player);
     const detail = document.createElement("span");
-    if (state.status === "success" && player === state.winner && count === 0) {
-      detail.textContent = "Vince";
-    } else {
-      detail.textContent = String(count);
-      chip.title = count === 1 ? "1 carta in mano" : `${count} carte in mano`;
-    }
-    chip.appendChild(name);
-    chip.appendChild(detail);
-    els.handCountsList.appendChild(chip);
-  }
-}
-
-function renderHandCountsBar() {
-  if (!els.handCountsList || !isRealGame()) return;
-  els.handCountsList.innerHTML = "";
-  if (!game) return;
-  const state = game.state;
-  for (let player = 0; player < state.players; player++) {
-    const count = (state.hands[player] || []).length;
-    const chip = document.createElement("div");
-    chip.className = "hand-count-chip";
-    if (state.status === "success" && player === state.winner) {
-      chip.classList.add("winner");
-    } else if (state.status === "playing" && player === state.currentPlayer) {
-      chip.classList.add("current");
-    }
-    if (player === handViewPlayer()) chip.classList.add("you");
-    const name = document.createElement("strong");
-    name.textContent = playerShortLabel(player);
-    const detail = document.createElement("span");
-    if (state.status === "success" && player === state.winner && count === 0) {
+    if (tournament && state.tournamentScores) {
+      const score = state.tournamentScores[player] || 0;
+      const handDelta = state.tournamentHandScores?.[player] || 0;
+      if (exited) {
+        detail.textContent = `${score} pt`;
+        chip.title = `${score} punti torneo · uscito da questa mano`;
+      } else {
+        detail.textContent = `${count} · ${score} pt`;
+        const handHint = handDelta !== 0 ? ` · mano ${handDelta >= 0 ? "+" : ""}${handDelta}` : "";
+        chip.title = `${count} carte in mano · ${score} punti torneo${handHint}`;
+      }
+    } else if (state.status === "success" && player === state.winner && count === 0) {
       detail.textContent = "Vince";
     } else {
       detail.textContent = String(count);

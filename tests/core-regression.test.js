@@ -866,7 +866,7 @@ function testTournamentMontePenalties() {
   state.drawPile = [card("238"), card("247"), card("328")];
   state.tournamentExited[1] = true;
   core.tournamentApplyMontePenalties(state);
-  assert.equal(state.tournamentScores[0], -5);
+  assert.equal(state.tournamentScores[0], -2);
   assert.equal(state.tournamentScores[1], 0);
 }
 
