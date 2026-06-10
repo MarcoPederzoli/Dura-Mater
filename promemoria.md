@@ -98,7 +98,8 @@ npm test
 
 ## Focus attuale
 
-- **Tornei a punteggio** — formalizzazione regolamento (prossimo task).
+- **Tornei a punteggio** — regolamento in `RULES.md` (sezione «Torneo a punteggio»). Prossimo: implementazione motore/UI.
+- **Da definire:** punteggio bersaglio per G molto alto (es. 16); allineamento condizione monte torneo (tallone vuoto) vs partita libera nel motore.
 
 ## Da sistemare (regole)
 

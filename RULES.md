@@ -230,9 +230,65 @@ Classificazione per il prodotto e per l'UI. I test di bilanciamento Durissima so
 - **Solitario** (`G = 1`), **sotto-G** (`G < N`) e **overcrowd** (`N < G <= 2N`): **extra estremo** o impossibile a seconda del caso; non fanno parte del formato consigliato.
 - In UI e in torneo si possono offrire come varianti opzionali, con etichetta esplicita di difficolta'.
 
-### Prossimo focus regolamento
+## Torneo a punteggio (solo partita competitiva)
 
-- Formalizzazione dei **tornei a punteggio** (da definire in `RULES.md`).
+Il **torneo** usa le stesse regole di gioco della partita competitiva (mosse, pesca, Idea, Dura Mater chiusa, ecc.), ma **obiettivo, fine mano e punteggio** sono diversi. **Non** si applica alla Durissima Mater.
+
+### Scopo del torneo
+
+- **Equità tra posti al tavolo:** ogni giocatore resta nella **stessa posizione fisica** (G1, G2, …) per tutto il torneo; non si scambiano sedi.
+- Il vincitore del torneo non è chi vince una singola mano, ma chi totalizza **più punti** sommando tutte le mani giocate.
+- Dopo ogni mano, il **primo giocatore** della mano successiva **avanza di una posizione in senso orario** (es. mano 1 inizia G1, mano 2 G2, …, mano G inizia di nuovo G1 con G giocatori). Così il vantaggio del posto e dell’ordine di turno si distribuisce nel tempo.
+
+### Sede e punteggio
+
+- I giocatori sono **G** al tavolo; il punteggio è tenuto **per sede** (G1…G**G**), non per «vincitore della mano».
+- Le mani si susseguono fino a fine torneo; i punti **si sommano** (positivi e negativi) da una mano all’altra.
+
+### Fine di una mano (due modi)
+
+A differenza della partita libera (dove la prima mano vuota **termina** la partita), in torneo **la mano continua** dopo che un giocatore finisce le carte, finché non si verifica uno dei due casi sotto.
+
+#### 1) Tutti i giocatori finiscono le carte
+
+- Ogni volta che un giocatore **svuota la mano**, riceve subito punti pari al **numero di giocatori ancora in gioco in quel momento** (incluso sé stesso al momento dello svuotamento).
+- Esempio con **G = 4:** primo che finisce → **4** punti; secondo → **3**; terzo → **2**; ultimo → **1**.
+- Quando anche l’ultimo ha finito, la mano è conclusa (tutte le carte sono state posate; la griglia può risultare completata se tutte le carte del sottomazzo erano in gioco).
+
+#### 2) Monte (stallo)
+
+- La mano va a **monte** quando, per un **giro completo** di **G** turni, **nessun giocatore posa** una carta **e** il **tallone di pesca è esaurito** (se c’era un tallone; con **G = N** il tallone è già vuoto all’inizio).
+- A quel punto, ogni giocatore che ha ancora carte in mano riceve **−1 punto per ogni carta** rimasta in mano.
+- *Nota:* nella partita libera il motore attuale dichiara monte dopo **G pass** senza posate **anche con tallone pieno** (anti-accumulo). Per il torneo vale la condizione con **tallone esaurito** come sopra — da allineare in implementazione torneo.
+
+### Punti durante la mano
+
+| Evento | Punti |
+|--------|--------|
+| Giocatore **N‑esimo** che svuota la mano (con **k** giocatori ancora in gioco, incluso lui) | **k** |
+| **Idea:** posa della **quarta carta** nello stesso turno (con almeno una carta ancora in mano dopo la quarta) | **+1** subito, indipendentemente dal fatto che si posi o meno la quinta carta |
+| Monte: ogni carta ancora in mano a fine mano | **−1** per carta |
+
+- Il punto Idea si assegna al momento della quarta posa legale del turno, non alla quinta.
+- Se la quarta carta svuota la mano, valgono le regole normali di arrivo (punti per ordine di finish); l’Idea come quinta carta non si applica (come in partita libera).
+
+### Fine del torneo e classifica
+
+- **Classifica:** si ordina per punteggio totale; primo, secondo, terzo posto, ecc.
+- **Durata:** da definire in base a **G**:
+  - **G mani** (una per ogni rotazione del primo giocatore) è il formato simmetrico naturale.
+  - Con **G molto alto** (es. 16), si può preferire un **punteggio bersaglio** annunciato prima del torneo: vince (o si chiude il torneo) chi per primo raggiunge quella soglia — da stabilire in regolamento casa.
+
+### Riepilogo differenze partita libera vs torneo
+
+| | Partita libera | Mano in torneo |
+|---|----------------|----------------|
+| Prima mano vuota | Fine partita, un vincitore | **+G** punti, mano continua |
+| Idea (4ª carta) | Solo opzione 5ª carta | **+1** punto torneo |
+| Monte | G pass senza posate (motore: anche con tallone pieno) | G pass senza posate **e** tallone vuoto; penalità −1/carta |
+| Durissima | Variante separata | **Non usata** |
+
+*Implementazione motore / UI torneo: non ancora presente (`promemoria.md`).*
 
 ## Timeline locale
 
