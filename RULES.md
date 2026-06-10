@@ -291,7 +291,7 @@ A differenza della partita libera (dove la prima mano vuota **termina** la parti
 | Monte | G pass senza posate (anche con tallone pieno); nessun punteggio | G pass senza posate; **−1**/carta in mano; **−1**/carta nel tallone **×** ciascun giocatore ancora in gioco |
 | Durissima | Variante separata | **Non usata** |
 
-*Implementazione motore / UI torneo: non ancora presente (`promemoria.md`).*
+*Implementazione motore / UI torneo: presente in `mpcards-core.js` (`tournamentMode`), `game.js` / `gioco.html` / `simulazione-singolo.html` e `simulator.js` / `simulatore-massivo.html`.*
 
 ## Timeline locale
 

@@ -248,12 +248,133 @@ const MPCARDS_CORE_SOURCE = `
     }
   }
 
+  function isTournamentMode(state) {
+    return !!(state && state.tournamentMode === true && !isDurissimaMater(state));
+  }
+
+  function tournamentTurnOrder(players, handIndex) {
+    const base = defaultTurnOrder(players);
+    const offset = ((handIndex % players) + players) % players;
+    return base.slice(offset).concat(base.slice(0, offset));
+  }
+
+  function tournamentPlayersStillIn(state) {
+    if (!state.tournamentExited) return state.players;
+    let count = 0;
+    for (let player = 0; player < state.players; player++) {
+      if (!state.tournamentExited[player]) count++;
+    }
+    return count;
+  }
+
+  function tournamentAddPoints(state, playerId, delta) {
+    if (!delta || playerId < 0 || playerId >= state.players) return;
+    state.tournamentScores[playerId] += delta;
+    state.tournamentHandScores[playerId] += delta;
+  }
+
+  function tournamentLeaderId(state) {
+    let best = 0;
+    for (let player = 1; player < state.players; player++) {
+      if (state.tournamentScores[player] > state.tournamentScores[best]) best = player;
+    }
+    return best;
+  }
+
+  function tournamentApplyMontePenalties(state) {
+    const drawPenalty = state.drawPile.length;
+    for (let player = 0; player < state.players; player++) {
+      if (state.tournamentExited[player]) continue;
+      const handPenalty = (state.hands[player] || []).length;
+      tournamentAddPoints(state, player, -(handPenalty + drawPenalty));
+    }
+  }
+
+  function tournamentCompleteHand(state, reason) {
+    if (reason === "monte") tournamentApplyMontePenalties(state);
+    state.tournamentLastHandReason = reason;
+    state.tournamentHandIndex++;
+    if (state.tournamentHandIndex >= state.players) {
+      state.status = "tournament_complete";
+      state.winner = tournamentLeaderId(state);
+    } else {
+      state.status = "hand_over";
+    }
+  }
+
+  function tournamentMarkFinished(state, playerId) {
+    if (state.tournamentExited[playerId]) return;
+    const k = tournamentPlayersStillIn(state);
+    tournamentAddPoints(state, playerId, k);
+    state.tournamentExited[playerId] = true;
+    if (tournamentPlayersStillIn(state) === 0) {
+      tournamentCompleteHand(state, "finished");
+    } else {
+      endTurn(state);
+    }
+  }
+
+  function resetTournamentHandPlayState(state) {
+    state.board = [];
+    state.currentPlayer = state.turnOrder[0];
+    state.consecutivePasses = 0;
+    state.turns = 0;
+    state.turnPlayed = 0;
+    state.winner = null;
+    state.lastMove = null;
+    state.duraMaterClosed = false;
+    state.closedByPlayer = null;
+    state.widthAxisFixed = false;
+    state.heightAxisFixed = false;
+    state.firstAxisInversionDone = false;
+    state.turnDirection = 1;
+    state.turnPlacementStats = emptyTurnPlacementStats();
+    state.tournamentExited = Array.from({ length: state.players }, () => false);
+    state.tournamentHandScores = Array.from({ length: state.players }, () => 0);
+    state.tournamentLastHandReason = null;
+    state.status = "playing";
+  }
+
+  function beginNextTournamentHand(state, deck, random) {
+    if (!isTournamentMode(state) || state.status !== "hand_over") {
+      throw new Error("Nuova mano torneo non disponibile.");
+    }
+    const size = state.size;
+    const players = state.players;
+    const deal = computeInitialDeal(size, players);
+    const gameDeck = deck
+      .filter(card => Number(card.value) <= size)
+      .map(cloneCardForGame);
+    if (gameDeck.length !== size * size) {
+      throw new Error("Sottomazzo non valido per lato " + size + ": " + gameDeck.length + " carte.");
+    }
+    const shuffled = shuffle(gameDeck, random);
+    state.hands = Array.from({ length: players }, () => shuffled.splice(0, deal.cardsPerPlayer));
+    state.drawPile = shuffled;
+    const turnOrder = tournamentTurnOrder(players, state.tournamentHandIndex);
+    state.turnOrder = turnOrder.slice();
+    state.initialTurnOrder = turnOrder.slice();
+    state.startingPlayer = turnOrder[0];
+    state.initialHandSize = deal.cardsPerPlayer;
+    state.initialDrawCount = deal.drawCount;
+    state.overcrowdedDeal = deal.overcrowded;
+    resetTournamentHandPlayState(state);
+    return state;
+  }
+
   function nextPlayerId(state) {
     const order = ensureTurnOrder(state);
     const index = order.indexOf(state.currentPlayer);
     if (index < 0) return order[0];
     const step = state.turnDirection === -1 ? -1 : 1;
-    const nextIndex = (index + step + order.length) % order.length;
+    let nextIndex = (index + step + order.length) % order.length;
+    if (isTournamentMode(state) && state.tournamentExited) {
+      let guard = 0;
+      while (state.tournamentExited[order[nextIndex]] && guard < order.length) {
+        nextIndex = (nextIndex + step + order.length) % order.length;
+        guard++;
+      }
+    }
     return order[nextIndex];
   }
 
@@ -1172,6 +1293,12 @@ const MPCARDS_CORE_SOURCE = `
     handleTurnOrderAfterPlacement(state, playerId, milestoneBefore);
     if (isDurissimaMater(state)) {
       maybeCompleteDurissima(state);
+    } else if (isTournamentMode(state)) {
+      if (hand.length === 0) {
+        tournamentMarkFinished(state, playerId);
+      } else if (state.turnPlayed === 4) {
+        tournamentAddPoints(state, playerId, 1);
+      }
     } else if (hand.length === 0) {
       state.status = "success";
       state.winner = playerId;
@@ -1214,6 +1341,10 @@ const MPCARDS_CORE_SOURCE = `
     state.consecutivePasses++;
     const canStall = !isDurissimaMater(state) || !isBoardComplete(state);
     if (canStall && state.consecutivePasses >= state.players) {
+      if (isTournamentMode(state)) {
+        tournamentCompleteHand(state, "monte");
+        return;
+      }
       state.status = "stalled";
     }
     endTurn(state);
@@ -1308,10 +1439,13 @@ const MPCARDS_CORE_SOURCE = `
     const shuffled = shuffle(gameDeck, random);
     const hands = Array.from({ length: players }, () => shuffled.splice(0, deal.cardsPerPlayer));
     const reserveSetup = setupDurissimaReserve(shuffled, size, options);
-    const randomizeTurnOrder = options.randomizeTurnOrder !== false;
-    const turnOrder = randomizeTurnOrder
-      ? randomInitialTurnOrder(players, random)
-      : defaultTurnOrder(players);
+    const tournamentMode = options.tournamentMode === true && options.durissimaMater !== true;
+    const randomizeTurnOrder = tournamentMode ? false : options.randomizeTurnOrder !== false;
+    const turnOrder = tournamentMode
+      ? tournamentTurnOrder(players, 0)
+      : randomizeTurnOrder
+        ? randomInitialTurnOrder(players, random)
+        : defaultTurnOrder(players);
     const initialTurnOrder = turnOrder.slice();
     return {
       size,
@@ -1336,6 +1470,12 @@ const MPCARDS_CORE_SOURCE = `
       firstAxisInversionDone: false,
       turnDirection: 1,
       durissimaMater: options.durissimaMater === true,
+      tournamentMode,
+      tournamentScores: tournamentMode ? Array.from({ length: players }, () => 0) : null,
+      tournamentHandScores: tournamentMode ? Array.from({ length: players }, () => 0) : null,
+      tournamentExited: tournamentMode ? Array.from({ length: players }, () => false) : null,
+      tournamentHandIndex: tournamentMode ? 0 : null,
+      tournamentLastHandReason: tournamentMode ? null : null,
       durissimaEmergencyDrawsLeft: defaultDurissimaEmergencyBudget(size, players, options),
       durissimaAfterPlayDrawsLeft: options.durissimaMater === true
         ? normalizeDurissimaDrawBudget(options.durissimaAfterPlayDrawBudget)
@@ -1436,7 +1576,7 @@ const MPCARDS_CORE_SOURCE = `
       const slot = initialTurnSlotFor(result, player);
       patch.playedByInitialTurnSlot[slot]++;
     }
-    if (result.status === "success") {
+    if (result.status === "success" || result.status === "tournament_complete") {
       if (result.winner === null) {
         for (let player = 0; player < playerCount; player++) {
           const slot = initialTurnSlotFor(result, player);
@@ -1501,7 +1641,86 @@ const MPCARDS_CORE_SOURCE = `
     };
   }
 
+  function simulateTournament(deck, options) {
+    const random = options.random;
+    const players = options.players;
+    if (!Number.isInteger(players) || players < 2) {
+      throw new Error("Il torneo richiede almeno 2 giocatori.");
+    }
+    let strategies = resolveStrategies(options.strategies, players, random);
+    if (options.shuffleStrategiesAmongSeats) {
+      strategies = shuffle(strategies.slice(), random);
+    }
+    const state = setupGame(deck, {
+      ...options,
+      tournamentMode: true,
+      randomizeTurnOrder: false
+    });
+    const stepFactor = 16;
+    const maxStepsPerHand = options.size * options.size * players * stepFactor;
+    const maxTotalSteps = maxStepsPerHand * players * 2;
+    let steps = 0;
+    let monteHands = 0;
+    let totalTurns = 0;
+    while (state.tournamentHandIndex < players && steps < maxTotalSteps) {
+      let handSteps = 0;
+      while (state.status === "playing" && handSteps < maxStepsPerHand && steps < maxTotalSteps) {
+        botStep(state, strategies, random);
+        handSteps++;
+        steps++;
+      }
+      totalTurns += state.turns;
+      if (state.status === "hand_over") {
+        if (state.tournamentLastHandReason === "monte") monteHands++;
+        beginNextTournamentHand(state, deck, random);
+      } else if (state.status === "tournament_complete") {
+        if (state.tournamentLastHandReason === "monte") monteHands++;
+        break;
+      } else {
+        state.status = "stalled";
+        break;
+      }
+    }
+    if (state.status === "playing") state.status = "stalled";
+    const placementStats = state.turnPlacementStats || emptyTurnPlacementStats();
+    const participation = summarizeParticipation(
+      state.board,
+      state.players,
+      state.initialHandSize,
+      state.winner
+    );
+    return {
+      status: state.status,
+      tournamentMode: true,
+      winner: state.winner,
+      tournamentScores: (state.tournamentScores || []).slice(),
+      tournamentHandsPlayed: state.tournamentHandIndex || 0,
+      tournamentMonteHands: monteHands,
+      tournamentComplete: state.status === "tournament_complete",
+      turns: totalTurns,
+      strategies,
+      startingPlayer: state.startingPlayer,
+      initialTurnOrder: state.initialTurnOrder.slice(),
+      duraMaterClosed: state.duraMaterClosed,
+      closedByPlayer: state.closedByPlayer,
+      durissimaMater: false,
+      maxPlacementsInTurn: placementStats.maxInTurn,
+      fourCardTurns: placementStats.byCount[4],
+      hadFourCardTurn: placementStats.maxInTurn >= 4,
+      ideaOffers: placementStats.ideaOffers || 0,
+      fiveCardTurns: placementStats.byCount[5],
+      hadFiveCardTurn: placementStats.maxInTurn >= 5,
+      initialHandSize: state.initialHandSize,
+      initialDrawCount: state.initialDrawCount,
+      overcrowdedDeal: state.overcrowdedDeal === true,
+      ...participation
+    };
+  }
+
   function simulateGame(deck, options) {
+    if (options.tournamentMode === true && options.durissimaMater !== true) {
+      return simulateTournament(deck, options);
+    }
     const random = options.random;
     let strategies = resolveStrategies(options.strategies, options.players, random);
     if (options.shuffleStrategiesAmongSeats) {
@@ -1647,6 +1866,14 @@ const MPCARDS_CORE_SOURCE = `
     resolveStrategies,
     botStep,
     summarizeParticipation,
+    isTournamentMode,
+    tournamentTurnOrder,
+    tournamentAddPoints,
+    tournamentApplyMontePenalties,
+    tournamentMarkFinished,
+    tournamentCompleteHand,
+    beginNextTournamentHand,
+    simulateTournament,
     simulateGame,
     initialTurnSlotFor,
     ensureTurnRolePatch,

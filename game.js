@@ -49,6 +49,7 @@ const DEFAULT_GAME_PREFS = {
   speed: "1000",
   seed: "",
   playerOneName: "Giocatore 1",
+  tournamentMode: false,
   modes: ["manual", ...Array.from({ length: MPCardsCore.MAX_PLAYERS - 1 }, () => "bot")],
   strategies: Array.from({ length: MPCardsCore.MAX_PLAYERS }, () => "auto")
 };
@@ -118,6 +119,7 @@ const els = {
   speed: document.querySelector("#speed"),
   speedLive: document.querySelector("#speed-live"),
   seed: document.querySelector("#seed"),
+  tournamentMode: document.querySelector("#tournament-mode"),
   playerOneName: document.querySelector("#player-one-name"),
   setupSection: document.querySelector("#setup-section"),
   newGame: document.querySelector("#new-game"),
@@ -267,6 +269,7 @@ function normalizeGamePrefs(prefs) {
   normalized.size = clampNumber(normalized.size, 3, 8, DEFAULT_GAME_PREFS.size);
   normalized.speed = SPEED_VALUES.has(normalized.speed) ? normalized.speed : DEFAULT_GAME_PREFS.speed;
   normalized.seed = typeof normalized.seed === "string" ? normalized.seed : DEFAULT_GAME_PREFS.seed;
+  normalized.tournamentMode = normalized.tournamentMode === true;
   normalized.playerOneName = typeof normalized.playerOneName === "string"
     ? normalized.playerOneName.trim().slice(0, 32)
     : DEFAULT_GAME_PREFS.playerOneName;
@@ -295,6 +298,7 @@ function collectGamePrefs() {
     speed: els.speed.value,
     seed: els.seed.value,
     playerOneName: readPlayerOneName(),
+    tournamentMode: Boolean(els.tournamentMode?.checked),
     modes: config.modes.concat(DEFAULT_GAME_PREFS.modes).slice(0, 8),
     strategies: config.strategies.concat(DEFAULT_GAME_PREFS.strategies).slice(0, 8)
   });
@@ -308,6 +312,7 @@ function applyGamePrefs(prefs) {
   els.speedLive.value = normalized.speed;
   els.seed.value = normalized.seed;
   if (els.playerOneName) els.playerOneName.value = normalized.playerOneName;
+  if (els.tournamentMode) els.tournamentMode.checked = normalized.tournamentMode;
   loadedPlayerPrefs = {
     modes: normalized.modes,
     strategies: normalized.strategies
@@ -351,7 +356,7 @@ function resetGamePrefsToDefaults() {
 }
 
 function bindGamePrefsPersistence() {
-  const fields = [els.players, els.size, els.speed, els.seed, els.playerOneName];
+  const fields = [els.players, els.size, els.speed, els.seed, els.playerOneName, els.tournamentMode];
   for (const field of fields) {
     if (!field) continue;
     field.addEventListener("input", scheduleSaveGamePrefs);
@@ -427,7 +432,23 @@ function durissimaGnTierLabel(size) {
   return { level: "epic", text: "epico / non standard" };
 }
 
+function isTournamentEnabled() {
+  return Boolean(els.tournamentMode?.checked);
+}
+
+function formatTournamentRanking(state) {
+  if (!state?.tournamentScores) return "";
+  const order = state.tournamentScores
+    .map((score, player) => ({ player, score }))
+    .sort((a, b) => b.score - a.score || a.player - b.player);
+  return order.map((entry, index) => `${index + 1}. ${playerLabel(entry.player)} (${entry.score})`).join(" · ");
+}
+
 function describeFormatTier(size, players) {
+  const tournament = isTournamentEnabled();
+  if (tournament && players < 2) {
+    return { level: "invalid", text: "Torneo: servono almeno 2 giocatori (competitiva)." };
+  }
   if (!core.isPlayableSetup(size, players)) {
     const maxG = core.maxPlayersForSize(size);
     if (players > maxG) {
@@ -441,19 +462,25 @@ function describeFormatTier(size, players) {
       text: `Configurazione non ammessa: servono almeno ${core.MIN_INITIAL_HAND} carte a testa.`
     };
   }
-  let text = "Competitiva: giocabile (tutte le combinazioni legali).";
-  if (players === size) {
+  let text = tournament
+    ? `Torneo competitivo: ${players} mani automatiche, classifica a punteggio.`
+    : "Competitiva: giocabile (tutte le combinazioni legali).";
+  if (!tournament && players === size) {
     const tier = durissimaGnTierLabel(size);
     text += ` Durissima con G=N (${size}×${size}): ${tier.text}.`;
     return { level: tier.level, text };
   }
-  if (players === 1) {
+  if (!tournament && players === 1) {
     return { level: "extra", text: `${text} Durissima solitario: extra estremo.` };
   }
-  if (players < size) {
+  if (!tournament && players < size) {
     return { level: "extra", text: `${text} Durissima sotto-G: extra estremo.` };
   }
-  return { level: "extra", text: `${text} Durissima overcrowd: extra estremo.` };
+  if (!tournament) {
+    return { level: "extra", text: `${text} Durissima overcrowd: extra estremo.` };
+  }
+  if (players === size) return { level: "core", text };
+  return { level: "extra", text: `${text} Variante overcrowd/sotto-G.` };
 }
 
 function updateFormatTierHint() {
@@ -482,6 +509,11 @@ function startGame() {
     }
     return;
   }
+  const tournamentMode = isTournamentEnabled();
+  if (tournamentMode && players < 2) {
+    setStatus("Il torneo richiede almeno 2 giocatori.", "bad");
+    return;
+  }
   const seed = els.seed.value.trim() || String(Date.now());
   const random = gameState.createRandom(seed);
   const config = readPlayersConfig(players);
@@ -494,7 +526,7 @@ function startGame() {
   }
   let state;
   try {
-    state = core.setupGame(deck, { players, size, random });
+    state = core.setupGame(deck, { players, size, random, tournamentMode });
   } catch (error) {
     setStatus(error.message, "bad");
     return;
@@ -506,6 +538,7 @@ function startGame() {
     deckCodes: CANONICAL_DECK_CODES,
     players,
     size,
+    tournamentMode,
     modes: config.modes,
     strategySettings: config.strategies,
     strategies,
@@ -519,7 +552,9 @@ function startGame() {
     strategySettings: config.strategies,
     strategies,
     seed,
-    playerOneName
+    playerOneName,
+    deck,
+    tournamentMode
   };
   enterPlayingMode();
   resetTransientUi();
@@ -692,8 +727,26 @@ function runBotStep() {
   scheduleBotIfNeeded();
 }
 
+function advanceTournamentHandIfNeeded() {
+  if (!game?.tournamentMode || !core.isTournamentMode(game.state)) return false;
+  if (game.state.status !== "hand_over") return false;
+  const handDone = game.state.tournamentHandIndex;
+  const total = game.state.players;
+  game.state = gameState.commit(game.session, `Fine mano ${handDone}/${total}.`, game.random, next => {
+    core.beginNextTournamentHand(next, game.deck, game.random);
+  });
+  resetInversionUiFlags(game.state);
+  resetTransientUi();
+  render();
+  return true;
+}
+
 function scheduleBotIfNeeded() {
   stopTimer();
+  if (advanceTournamentHandIfNeeded()) {
+    scheduleBotIfNeeded();
+    return;
+  }
   if (!isBotTurn()) return;
   const speed = els.speed.value;
   if (speed === "step") return;
@@ -730,6 +783,7 @@ function saveGame() {
     deckCodes: CANONICAL_DECK_CODES,
     players: game.state.players,
     size: game.state.size,
+    tournamentMode: game.tournamentMode === true,
     modes: game.modes,
     strategySettings: game.strategySettings,
     strategies: game.strategies,
@@ -757,6 +811,13 @@ function applyLoadedSession(session) {
   const config = session.config || {};
   const seed = config.seed || String(Date.now());
   const random = gameState.createRandom(seed);
+  let deck;
+  try {
+    deck = core.simulationDeck();
+  } catch (error) {
+    setStatus(error.message, "bad");
+    return;
+  }
   game = {
     session,
     state: gameState.currentState(session),
@@ -765,7 +826,9 @@ function applyLoadedSession(session) {
     strategySettings: config.strategySettings || [],
     strategies: config.strategies || [],
     seed,
-    playerOneName: config.playerOneName || DEFAULT_GAME_PREFS.playerOneName
+    playerOneName: config.playerOneName || DEFAULT_GAME_PREFS.playerOneName,
+    deck,
+    tournamentMode: config.tournamentMode === true
   };
   gameState.restoreRandom(game.session, game.random);
   if (!game.strategies.length) {
@@ -1604,13 +1667,24 @@ function renderSummary() {
   if (!game) return;
   const state = game.state;
   const player = state.currentPlayer;
+  const tournament = core.isTournamentMode(state);
+  const tournamentDone = state.status === "tournament_complete";
   els.activePlayer.textContent = state.status === "playing"
     ? `${playerLabel(player)} ${game.modes[player] === "bot" ? core.strategyShortLabel(game.strategies[player]) : "Manuale"}`
-    : state.status === "success"
-      ? `Vince ${playerLabel(state.winner)}`
-      : "Stallo";
-  els.drawCount.textContent = `Pesca: ${state.drawPile.length}`;
+    : tournamentDone
+      ? `Torneo: vince ${playerLabel(state.winner)}`
+      : state.status === "success"
+        ? `Vince ${playerLabel(state.winner)}`
+        : state.status === "hand_over"
+          ? `Mano ${state.tournamentHandIndex}/${state.players} conclusa`
+          : "Stallo";
+  els.drawCount.textContent = tournament
+    ? `Pesca: ${state.drawPile.length} · Mano ${Math.min(state.tournamentHandIndex + (state.status === "playing" ? 1 : 0), state.players)}/${state.players}`
+    : `Pesca: ${state.drawPile.length}`;
   const rows = [
+    ...(tournament
+      ? [["Torneo", tournamentDone ? "Completato" : `Mano ${Math.min(state.tournamentHandIndex + (state.status === "playing" ? 1 : 0), state.players)}/${state.players}`]]
+      : []),
     ["Stato", state.status],
     ["Turni", state.turns],
     ["Dura Mater", state.duraMaterClosed ? `Chiusa (da ${playerLabel(state.closedByPlayer)})` : "Aperta"],
@@ -1623,7 +1697,15 @@ function renderSummary() {
     ["Carte giocate nel turno", state.turnPlayed],
     ...(core.canOfferIdea(state, player) ? [["Idea", "Quinta carta disponibile"]] : []),
     ...(core.canOfferIdea(state, player) ? [["Idea", "Quinta carta disponibile"]] : []),
-    ["Passaggi consecutivi", state.consecutivePasses]
+    ["Passaggi consecutivi", state.consecutivePasses],
+    ...(tournament
+      ? state.tournamentScores.map((score, index) => [
+          `Punti ${playerLabel(index)}`,
+          state.status === "playing"
+            ? `${score} (mano: ${state.tournamentHandScores[index] >= 0 ? "+" : ""}${state.tournamentHandScores[index]})`
+            : String(score)
+        ])
+      : [])
   ];
   for (const [label, value] of rows) {
     const row = document.createElement("div");
@@ -1633,10 +1715,20 @@ function renderSummary() {
     els.summary.appendChild(row);
   }
   if (!selectedCardUid) {
-    setStatus(
-      state.status === "playing" ? "Partita in corso." : state.status === "success" ? `Vince ${playerLabel(state.winner)}.` : "Partita in stallo.",
-      state.status === "success" ? "good" : state.status === "stalled" ? "bad" : ""
-    );
+    if (tournamentDone) {
+      setStatus(`Classifica: ${formatTournamentRanking(state)}`, "good");
+    } else if (state.status === "hand_over") {
+      setStatus(`Mano conclusa (${state.tournamentLastHandReason === "monte" ? "monte" : "tutti finiti"}). Prossima mano…`, "");
+    } else {
+      setStatus(
+        state.status === "playing"
+          ? tournament ? "Torneo in corso." : "Partita in corso."
+          : state.status === "success"
+            ? `Vince ${playerLabel(state.winner)}.`
+            : "Partita in stallo.",
+        state.status === "success" || tournamentDone ? "good" : state.status === "stalled" ? "bad" : ""
+      );
+    }
   }
 }
 
@@ -1674,6 +1766,12 @@ function renderLog() {
   els.log.textContent = game ? gameState.labels(game.session).slice().reverse().join("\n") : "";
 }
 
+if (els.tournamentMode) {
+  els.tournamentMode.addEventListener("change", () => {
+    updateFormatTierHint();
+    scheduleSaveGamePrefs();
+  });
+}
 els.players.addEventListener("input", () => {
   renderPlayerConfig();
   updateFormatTierHint();

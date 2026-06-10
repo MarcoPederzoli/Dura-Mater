@@ -852,4 +852,63 @@ function testSummarizeParticipationDetectsExcludedPlayer() {
 testSummarizeParticipationCountsPlacementsPerPlayer();
 testSummarizeParticipationDetectsExcludedPlayer();
 
+function testTournamentTurnOrderRotatesStarter() {
+  assert.deepEqual(core.tournamentTurnOrder(4, 0), [0, 1, 2, 3]);
+  assert.deepEqual(core.tournamentTurnOrder(4, 1), [1, 2, 3, 0]);
+  assert.deepEqual(core.tournamentTurnOrder(4, 3), [3, 0, 1, 2]);
+}
+
+function testTournamentMontePenalties() {
+  const random = gameState.createRandom("tournament-monte");
+  const state = core.setupGame(deck, { size: 3, players: 2, random, tournamentMode: true });
+  state.hands[0] = [card("118"), card("227")];
+  state.hands[1] = [];
+  state.drawPile = [card("238"), card("247"), card("328")];
+  state.tournamentExited[1] = true;
+  core.tournamentApplyMontePenalties(state);
+  assert.equal(state.tournamentScores[0], -5);
+  assert.equal(state.tournamentScores[1], 0);
+}
+
+function testTournamentFinishAwardsDescendingPoints() {
+  const random = gameState.createRandom("tournament-finish");
+  const state = core.setupGame(deck, { size: 5, players: 4, random, tournamentMode: true });
+  state.tournamentExited = [false, false, false, false];
+  state.tournamentScores = [0, 0, 0, 0];
+  state.tournamentHandScores = [0, 0, 0, 0];
+  state.hands[0] = [];
+  core.tournamentMarkFinished(state, 0);
+  assert.equal(state.tournamentScores[0], 4);
+  state.hands[1] = [];
+  core.tournamentMarkFinished(state, 1);
+  assert.equal(state.tournamentScores[1], 3);
+  state.hands[2] = [];
+  core.tournamentMarkFinished(state, 2);
+  assert.equal(state.tournamentScores[2], 2);
+  state.hands[3] = [];
+  core.tournamentMarkFinished(state, 3);
+  assert.equal(state.tournamentScores[3], 1);
+  assert.equal(state.status, "hand_over");
+}
+
+function testSimulateTournamentCompletes() {
+  const random = core.mulberry32(core.hashSeed("tournament-sim"));
+  const result = core.simulateTournament(deck, {
+    size: 3,
+    players: 2,
+    strategies: ["planner", "planner"],
+    random
+  });
+  assert.equal(result.tournamentMode, true);
+  assert.equal(result.tournamentHandsPlayed, 2);
+  assert.equal(result.tournamentComplete, true);
+  assert.equal(result.status, "tournament_complete");
+  assert.equal(result.tournamentScores.length, 2);
+}
+
+testTournamentTurnOrderRotatesStarter();
+testTournamentMontePenalties();
+testTournamentFinishAwardsDescendingPoints();
+testSimulateTournamentCompletes();
+
 console.log("core regression tests passed");

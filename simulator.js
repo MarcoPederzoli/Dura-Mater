@@ -14,6 +14,7 @@ const DEFAULT_PREFS = {
   workers: null,
   seed: "",
   durissimaMater: false,
+  tournamentMode: false,
   fixedTurnOrder: false,
   deckEditOpen: false,
   deckCodes: "",
@@ -29,6 +30,7 @@ const els = {
   workers: document.querySelector("#workers"),
   seed: document.querySelector("#seed"),
   durissimaMater: document.querySelector("#durissima-mater"),
+  tournamentMode: document.querySelector("#tournament-mode"),
   fixedTurnOrder: document.querySelector("#fixed-turn-order"),
   deckCodes: document.querySelector("#deck-codes"),
   run: document.querySelector("#run"),
@@ -159,8 +161,25 @@ function clampConfigForDurissima(config) {
   if (!config.durissimaMater || (config.gMin === 1 && config.gMax === 1)) return config;
   config.gMin = 1;
   config.gMax = 1;
+  config.tournamentMode = false;
   if (els.gMin) els.gMin.value = 1;
   if (els.gMax) els.gMax.value = 1;
+  if (els.tournamentMode) els.tournamentMode.checked = false;
+  return config;
+}
+
+function clampConfigForTournament(config) {
+  if (!config.tournamentMode) return config;
+  config.durissimaMater = false;
+  if (config.gMin < 2) {
+    config.gMin = 2;
+    if (els.gMin) els.gMin.value = 2;
+  }
+  if (config.gMax < 2) {
+    config.gMax = 2;
+    if (els.gMax) els.gMax.value = 2;
+  }
+  if (els.durissimaMater) els.durissimaMater.checked = false;
   return config;
 }
 
@@ -169,7 +188,7 @@ function readConfig() {
   const lMax = clampNumber(els.lMax.value, 3, 8, 8);
   const gMin = clampNumber(els.gMin.value, 1, MAX_PLAYERS, 1);
   const gMax = clampNumber(els.gMax.value, 1, MAX_PLAYERS, MAX_PLAYERS);
-  const config = clampConfigForDurissima({
+  let config = {
     count: clampNumber(els.count.value, 1, 100000, 100),
     lMin: Math.min(lMin, lMax),
     lMax: Math.max(lMin, lMax),
@@ -178,10 +197,13 @@ function readConfig() {
     workers: clampNumber(els.workers.value, 1, 32, defaultWorkerCount()),
     seed: els.seed.value.trim() || String(Date.now()),
     durissimaMater: Boolean(els.durissimaMater?.checked),
+    tournamentMode: Boolean(els.tournamentMode?.checked),
     randomizeTurnOrder: !Boolean(els.fixedTurnOrder?.checked),
     deckCodes: readDeckCodesText(),
     strategies: readStrategies()
-  });
+  };
+  if (config.tournamentMode) config = clampConfigForTournament(config);
+  else config = clampConfigForDurissima(config);
   MPCardsCore.parseDeckCodes(config.deckCodes);
   if (els.deckCodes && els.deckEditPanel && !els.deckEditPanel.hidden) {
     els.deckCodes.value = config.deckCodes;
@@ -229,6 +251,7 @@ function normalizePrefs(raw) {
     : clampNumber(prefs.workers, 1, 32, workersFallback);
   prefs.seed = typeof prefs.seed === "string" ? prefs.seed : DEFAULT_PREFS.seed;
   prefs.durissimaMater = prefs.durissimaMater === true;
+  prefs.tournamentMode = prefs.tournamentMode === true;
   prefs.fixedTurnOrder = prefs.fixedTurnOrder === true || prefs.randomizeTurnOrder === false;
   prefs.deckEditOpen = Boolean(prefs.deckEditOpen);
   prefs.deckCodes = typeof prefs.deckCodes === "string" ? prefs.deckCodes : DEFAULT_PREFS.deckCodes;
@@ -259,6 +282,7 @@ function collectPrefs() {
     workers: els.workers.value,
     seed: els.seed.value,
     durissimaMater: Boolean(els.durissimaMater?.checked),
+    tournamentMode: Boolean(els.tournamentMode?.checked),
     fixedTurnOrder: Boolean(els.fixedTurnOrder?.checked),
     deckEditOpen: Boolean(els.deckEditPanel && !els.deckEditPanel.hidden),
     deckCodes,
@@ -276,6 +300,7 @@ function applyPrefs(prefs) {
   els.workers.value = normalized.workers;
   els.seed.value = normalized.seed;
   if (els.durissimaMater) els.durissimaMater.checked = normalized.durissimaMater;
+  if (els.tournamentMode) els.tournamentMode.checked = normalized.tournamentMode;
   if (els.fixedTurnOrder) els.fixedTurnOrder.checked = normalized.fixedTurnOrder;
   if (els.deckCodes) {
     els.deckCodes.value = normalized.deckEditOpen && normalized.deckCodes
@@ -323,7 +348,7 @@ function resetPrefsToDefaults() {
 function bindPrefsPersistence() {
   const fields = [
     els.count, els.lMin, els.lMax, els.gMin, els.gMax, els.workers, els.seed,
-    els.durissimaMater, els.fixedTurnOrder
+    els.durissimaMater, els.tournamentMode, els.fixedTurnOrder
   ];
   for (const field of fields) {
     if (!field) continue;
@@ -401,7 +426,7 @@ function makeJobs(config, stepId = "") {
   const jobs = [];
   for (let size = config.lMin; size <= config.lMax; size++) {
     for (let players = config.gMin; players <= config.gMax; players++) {
-      if (isPlayableSetup(size, players)) {
+      if (isPlayableSetup(size, players) && (!config.tournamentMode || players >= 2)) {
         const deal = computeInitialDeal(size, players);
         const cellId = `${size}x${players}`;
         jobs.push({
@@ -420,6 +445,7 @@ function makeJobs(config, stepId = "") {
           deckCodes: config.deckCodes,
           strategies: config.strategies.slice(0, players),
           durissimaMater: config.durissimaMater,
+          tournamentMode: config.tournamentMode === true,
           durissimaEmergencyDrawBudget: config.durissimaEmergencyDrawBudget,
           durissimaAfterPlayDrawBudget: config.durissimaAfterPlayDrawBudget,
           randomizeTurnOrder: config.randomizeTurnOrder !== false,
@@ -725,6 +751,7 @@ function emptyStats(players, dealMeta = null) {
     gamesWithFiveCardTurn: 0,
     fiveCardTurns: 0,
     ideaOffers: 0,
+    tournamentMonteHands: 0,
     gamesAllPlayersPlaced: 0,
     playersPlacedSum: 0,
     gamesLastPlayerPlaced: 0,
@@ -748,6 +775,7 @@ function mergeStats(target, patch) {
   target.gamesWithFiveCardTurn += patch.gamesWithFiveCardTurn || 0;
   target.fiveCardTurns += patch.fiveCardTurns || 0;
   target.ideaOffers += patch.ideaOffers || 0;
+  target.tournamentMonteHands = (target.tournamentMonteHands || 0) + (patch.tournamentMonteHands || 0);
   target.gamesAllPlayersPlaced += patch.gamesAllPlayersPlaced || 0;
   target.playersPlacedSum += patch.playersPlacedSum || 0;
   target.gamesLastPlayerPlaced += patch.gamesLastPlayerPlaced || 0;
@@ -1062,6 +1090,7 @@ function serializeConfig(config) {
     workers: config.workers,
     seed: config.seed,
     durissimaMater: config.durissimaMater,
+    tournamentMode: config.tournamentMode === true,
     randomizeTurnOrder: config.randomizeTurnOrder !== false,
     shuffleStrategiesAmongSeats: config.shuffleStrategiesAmongSeats === true,
     strategies: config.strategies.slice(),
@@ -1237,13 +1266,21 @@ function sampleStrength(done) {
   return { level: "high", text: "Campione ampio (≥1000): stime più affidabili." };
 }
 
-function scenarioOutcomeLabels(durissima) {
-  if (durissima) {
+function scenarioOutcomeLabels(mode) {
+  if (mode.durissima) {
     return {
       sectionTitle: "Completamento matrice per scenario",
       sectionHint: "Durissima Mater attiva: % di partite in cui tutte le carte sono state posate (matrice L×L piena).",
       rowVerb: "completate",
       exportHeading: "Completamento matrice per scenario (dal più difficile):"
+    };
+  }
+  if (mode.tournament) {
+    return {
+      sectionTitle: "Esito torneo per scenario",
+      sectionHint: "Torneo a punteggio: % di tornei completati (G mani). Stallo = torneo interrotto o incompleto.",
+      rowVerb: "completati",
+      exportHeading: "Tornei completati per scenario (dal peggiore al migliore):"
     };
   }
   return {
@@ -1260,10 +1297,16 @@ function buildAnalysisContext(config, grandTotal) {
     ? (grandTotal.done - grandTotal.stalls) / grandTotal.done * 100
     : 0;
   const durissima = config.durissimaMater === true;
+  const tournament = config.tournamentMode === true;
   const randomizeTurnOrder = config.randomizeTurnOrder !== false;
-  const competitiveBiasReliable = !durissima && stallPct < 70 && successPct >= 15;
+  const competitiveBiasReliable = !durissima && !tournament && stallPct < 70 && successPct >= 15;
   const warnings = [];
-  if (!randomizeTurnOrder) {
+  if (tournament) {
+    warnings.push(
+      "Torneo a punteggio: ogni simulazione esegue G mani con rotazione del primo giocatore. Le vittorie sono per sede con punteggio totale più alto."
+    );
+  }
+  if (!randomizeTurnOrder && !tournament) {
     warnings.push(
       "Ordine iniziale fisso (G1 sempre primo): le % per G1…Gn misurano il ruolo nel turno, non un posto al tavolo come in partita reale."
     );
@@ -1287,9 +1330,10 @@ function buildAnalysisContext(config, grandTotal) {
     stallPct,
     successPct,
     durissima,
+    tournament,
     randomizeTurnOrder,
     competitiveBiasReliable,
-    strategyBiasReliable: competitiveBiasReliable,
+    strategyBiasReliable: tournament ? successPct >= 15 && stallPct < 70 : competitiveBiasReliable,
     warnings
   };
 }
@@ -1634,10 +1678,19 @@ function buildAnalysisReport(grandTotal, config, cells) {
       lastThreeAllPlacedPct,
       gamesLastThreeAllPlaced: grandTotal.gamesLastThreeAllPlaced || 0,
       ...participation,
-      goalLabel: context.durissima ? "Completamento matrice" : "Partite con vincitore",
-      scenarioOutcome: scenarioOutcomeLabels(context.durissima),
+      goalLabel: context.durissima
+        ? "Completamento matrice"
+        : context.tournament
+          ? "Tornei completati"
+          : "Partite con vincitore",
+      tournamentMonteHands: grandTotal.tournamentMonteHands || 0,
+      avgTournamentMonteHands: grandTotal.done
+        ? (grandTotal.tournamentMonteHands || 0) / grandTotal.done
+        : 0,
+      scenarioOutcome: scenarioOutcomeLabels(context),
       options: {
         durissimaMater: config.durissimaMater,
+        tournamentMode: config.tournamentMode === true,
         randomizeTurnOrder: config.randomizeTurnOrder !== false
       }
     }
@@ -1651,15 +1704,20 @@ function formatAnalysisPlainText(snapshot) {
     partial ? "(run parziale)" : "",
     `Partite aggregate: ${simulationsDone}`,
     `Parametri: area ${formatAreaLabel(config.lMin)} – ${formatAreaLabel(config.lMax)}, giocatori ${config.gMin}–${config.gMax}, ${config.count} sim/caso`,
-    `Opzioni: inversione ai limiti DM, Durissima Mater ${config.durissimaMater ? "on (solo G=1 in sim)" : "off"}, ordine iniziale ${config.randomizeTurnOrder !== false ? "casuale" : "fisso G1"}`,
+    `Opzioni: inversione ai limiti DM, Durissima Mater ${config.durissimaMater ? "on (solo G=1 in sim)" : "off"}, Torneo ${config.tournamentMode ? "on" : "off"}, ordine iniziale ${config.randomizeTurnOrder !== false ? "casuale" : "fisso G1"}`,
     "",
     analysis.sample.text,
     ...analysis.context.warnings.map(note => `⚠ ${note}`),
     "",
     analysis.summary.options.durissimaMater
       ? "Modalità: Durissima Mater (matrice piena)."
-      : "Modalità: competitiva (vince chi finisce le carte).",
+      : analysis.summary.options.tournamentMode
+        ? "Modalità: torneo a punteggio (G mani per torneo)."
+        : "Modalità: competitiva (vince chi finisce le carte).",
     `${analysis.summary.goalLabel}: ${analysis.summary.successPct.toFixed(1)}% · Stallo: ${analysis.summary.stallPct.toFixed(1)}%`,
+    ...(analysis.summary.options.tournamentMode
+      ? [`Mani a monte (totale): ${analysis.summary.tournamentMonteHands} (media ${analysis.summary.avgTournamentMonteHands.toFixed(2)} per torneo)`]
+      : []),
     `Turni medi: ${analysis.summary.avgTurns.toFixed(1)}`,
     `Partite con almeno un turno da 4 carte: ${analysis.summary.fourCardGamePct.toFixed(1)}% (${analysis.summary.gamesWithFourCardTurn}/${analysis.summary.simulations})`,
     `Turni da 4 carte (totale): ${analysis.summary.fourCardTurns} (media ${analysis.summary.avgFourCardTurnsPerGame.toFixed(2)} per partita)`,
@@ -2032,7 +2090,9 @@ function renderAnalysis(snapshot) {
   summaryBlock.innerHTML = "<h3>Esito partite</h3>";
   const modeLine = analysis.summary.options.durissimaMater
     ? "Modalità: <strong>Durissima Mater</strong> — obiettivo = riempire tutta la matrice."
-    : "Modalità: <strong>competitiva</strong> — obiettivo = esaurire la mano prima degli altri.";
+    : analysis.summary.options.tournamentMode
+      ? "Modalità: <strong>torneo a punteggio</strong> — G mani per torneo, classifica cumulativa per sede."
+      : "Modalità: <strong>competitiva</strong> — obiettivo = esaurire la mano prima degli altri.";
   summaryBlock.insertAdjacentHTML(
     "beforeend",
     `<p>${modeLine}</p>
@@ -2249,6 +2309,7 @@ function workerSource() {
         gamesWithFiveCardTurn: 0,
         fiveCardTurns: 0,
         ideaOffers: 0,
+        tournamentMonteHands: 0,
         gamesAllPlayersPlaced: 0,
         playersPlacedSum: 0,
         gamesLastPlayerPlaced: 0,
@@ -2292,6 +2353,7 @@ function workerSource() {
           strategies: job.strategies,
           random,
           durissimaMater: job.durissimaMater === true,
+          tournamentMode: job.tournamentMode === true,
           durissimaEmergencyDrawBudget: job.durissimaEmergencyDrawBudget,
           durissimaAfterPlayDrawBudget: job.durissimaAfterPlayDrawBudget,
           randomizeTurnOrder: job.randomizeTurnOrder !== false,
@@ -2317,7 +2379,25 @@ function workerSource() {
         if (result.lastPlayerPlaced) patch.gamesLastPlayerPlaced++;
         if (result.lastThreeAllPlaced) patch.gamesLastThreeAllPlaced++;
         accumulateParticipation(patch, result);
-        if (result.status === "success") {
+        if (result.tournamentMode) {
+          patch.tournamentMonteHands += result.tournamentMonteHands || 0;
+          if (result.tournamentComplete && result.winner !== null && result.winner !== undefined) {
+            const strat = result.strategies[result.winner];
+            patch.winsByPlayer[result.winner]++;
+            patch.winsByStrategy[strat]++;
+            bumpSeat(patch.seatStrategy.wins, result.winner, strat, 1);
+            const scores = result.tournamentScores || [];
+            for (let player = 0; player < job.players; player++) {
+              const score = scores[player] || 0;
+              patch.pointsByPlayer[player] += score;
+              const pStrat = result.strategies[player];
+              patch.pointsByStrategy[pStrat] += score;
+              bumpSeat(patch.seatStrategy.points, player, pStrat, score);
+            }
+          } else {
+            patch.stalls++;
+          }
+        } else if (result.status === "success") {
           if (result.winner === null) {
             for (let player = 0; player < job.players; player++) {
               const strat = result.strategies[player];
@@ -2545,8 +2625,19 @@ els.gMax.addEventListener("input", () => {
 if (els.durissimaMater) {
   els.durissimaMater.addEventListener("change", () => {
     if (els.durissimaMater.checked) {
-      clampConfigForDurissima({ gMin: 1, gMax: 1, durissimaMater: true });
+      if (els.tournamentMode) els.tournamentMode.checked = false;
+      clampConfigForDurissima({ gMin: 1, gMax: 1, durissimaMater: true, tournamentMode: false });
       setStatus("Durissima Mater: simulazione limitata a 1 giocatore (collaborativa al tavolo).", "good");
+    }
+    scheduleSavePrefs();
+  });
+}
+if (els.tournamentMode) {
+  els.tournamentMode.addEventListener("change", () => {
+    if (els.tournamentMode.checked) {
+      if (els.durissimaMater) els.durissimaMater.checked = false;
+      clampConfigForTournament({ gMin: 2, gMax: Math.max(2, clampNumber(els.gMax.value, 2, MAX_PLAYERS, 2)), tournamentMode: true, durissimaMater: false });
+      setStatus("Torneo: ogni simulazione esegue G mani con classifica a punteggio (minimo 2 giocatori).", "good");
     }
     scheduleSavePrefs();
   });
