@@ -13,11 +13,13 @@ function formatKind(size, players) {
   return "under";
 }
 
-function cellsForSize(size) {
+function cellsForSize(size, options = {}) {
   const cells = [];
   const gMax = core.maxPlayersForSize(size);
-  for (let players = 2; players <= gMax; players++) {
+  const gStart = options.allLegal ? 2 : core.recommendedMinPlayers(size);
+  for (let players = gStart; players <= gMax; players++) {
     if (!core.isPlayableSetup(size, players)) continue;
+    if (!options.allLegal && !core.isDefaultSweepSetup(size, players)) continue;
     const deal = core.computeInitialDeal(size, players);
     cells.push({
       size,

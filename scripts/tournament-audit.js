@@ -15,7 +15,9 @@ const {
   writeAuditOutput,
   buildManifestEntry
 } = require("./tournament-audit-lib");
+const { parseAllLegalFlag } = require("./sweep-cells");
 
+const ALL_LEGAL = parseAllLegalFlag(process.argv);
 const argv = filterArgv(process.argv.slice(2));
 const WORKERS = parseWorkersFlag(process.argv.slice(2), defaultCliWorkers());
 const COUNT = Number(argv[1]) || 300;
@@ -26,13 +28,16 @@ const sizes = (argv[0] || "3,4,5")
   .filter(n => Number.isInteger(n) && n >= 3 && n <= 8);
 
 if (!sizes.length) {
-  process.stderr.write("Uso: node scripts/tournament-audit.js <N[,N...]> [tornei/cella] [strategia] [--workers N]\n");
+  process.stderr.write(
+    "Uso: node scripts/tournament-audit.js <N[,N...]> [tornei/cella] [strategia] [--workers N] [--all-legal]\n"
+  );
   process.stderr.write("Es.: node scripts/tournament-audit.js 3,4,5 300 planner --workers 8\n");
+  process.stderr.write("     --all-legal  include sotto-G sconsigliato (es. , ).\n");
   process.exit(1);
 }
 
 async function auditSize(size) {
-  const cells = cellsForSize(size);
+  const cells = cellsForSize(size, { allLegal: ALL_LEGAL });
   const seedTag = `v1-N${size}`;
   const started = Date.now();
   process.stderr.write(

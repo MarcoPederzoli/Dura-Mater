@@ -20,8 +20,9 @@ function buildFormats() {
   const formats = [];
   for (let size = 3; size <= 8; size++) {
     const gMax = core.maxPlayersForSize(size);
-    for (let players = 2; players <= gMax; players++) {
-      if (!core.isPlayableSetup(size, players)) continue;
+    const gStart = core.recommendedMinPlayers(size);
+    for (let players = gStart; players <= gMax; players++) {
+      if (!core.isDefaultSweepSetup(size, players)) continue;
       const kind = formatKind(size, players);
       if (kind === "G=N") continue;
       formats.push({ size, players, kind });
@@ -169,14 +170,14 @@ for (const strategy of STRATEGIES) {
       `${r.key}: vittorie ${r.seatAvgs.map(s => `${s.seat} ${s.wins} (${s.winRatePct.toFixed(0)}%)`).join(" · ")}`
     );
     console.log(
-      `  Spread vittorie ${f.spreadWins} (atteso ~${f.expectedPerSeat.toFixed(1)}/sede) · χ²=${f.chi2.toFixed(2)} · spread win-rate ${f.spreadRatePct.toFixed(1)}pp`
+      `  Spread vittorie ${f.spreadWins} (atteso ~${f.expectedPerSeat.toFixed(1)}/sede) · chi2=${f.chi2.toFixed(2)} · spread win-rate ${f.spreadRatePct.toFixed(1)}pp`
     );
   }
 
   const gnFair = gn.map(r => r.fairness);
   const avgChi = gnFair.reduce((s, f) => s + f.chi2, 0) / gnFair.length;
   const avgSpread = gnFair.reduce((s, f) => s + f.spreadWins, 0) / gnFair.length;
-  console.log(`\nMedia G=N: χ²=${avgChi.toFixed(2)} · spread vittorie medio ${avgSpread.toFixed(1)} (su 100 tornei, atteso 12.5/sede a 8 giocatori)`);
+  console.log(`\nMedia G=N: chi2=${avgChi.toFixed(2)} · spread vittorie medio ${avgSpread.toFixed(1)} (su 100 tornei, atteso 12.5/sede a 8 giocatori)`);
 
   console.log("\n=== EQUITÀ SEDI (under + overcrowded, campione) ===\n");
   const sample = [...underOver].sort((a, b) => {
@@ -188,7 +189,7 @@ for (const strategy of STRATEGIES) {
     const r = runFormat(fmt, strategy);
     const f = r.fairness;
     console.log(
-      `${r.key} [${r.kind}, tallone iniz. ${r.deal.drawCount}]: ${r.seatAvgs.map(s => `${s.seat} ${s.winRatePct.toFixed(0)}%`).join(" · ")} · spread ${f.spreadWins} · χ²=${f.chi2.toFixed(1)}`
+      `${r.key} [${r.kind}, tallone iniz. ${r.deal.drawCount}]: ${r.seatAvgs.map(s => `${s.seat} ${s.winRatePct.toFixed(0)}%`).join(" · ")} · spread ${f.spreadWins} · chi2=${f.chi2.toFixed(1)}`
     );
   }
 }

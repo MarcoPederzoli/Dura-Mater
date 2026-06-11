@@ -77,7 +77,7 @@ function main() {
   const variant = RISERVA ? "riserva-N + team-planner coop" : "semplice + team-planner coop";
 
   process.stderr.write(
-    `\nDurissima rules probe (${mode}, ${variant}): ${cells.length} celle × ${COUNT} partite = ${totalGames} simulazioni\n\n`
+    `\nDurissima rules probe (${mode}, ${variant}): ${cells.length} celle  x  ${COUNT} partite = ${totalGames} simulazioni\n\n`
   );
 
   const steps = [];

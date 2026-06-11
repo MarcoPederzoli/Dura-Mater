@@ -93,7 +93,7 @@ npm test
 
 - **Dura (competitiva + torneo):** chiusa come prodotto — `G_min … 2N`, **nessun solitario** (`G = 1` escluso da UI e regole prodotto). Sweep `G >= G_min`: vittoria 74-100%.
 - **Solitario:** solo **Durissima** (`G = 1`, griglia piena); **Dura solitario abbandonato** (giugno 2026) — troppo breve / fortunoso a N basso, banale a N alto.
-- **Durissima coop:** solo `G = N` su **3x3 e 4x4** core; **5x5** molto difficile; **6x6+** estremo/epico.
+- **Durissima:** variante di riferimento **N reshuffle** (core + pool N). Coop consigliato `G = N`; **3x3/4x4** core; **5x5** molto difficile; **6x6+** estremo/epico. G legali `1..2N` (no G_min competitivo).
 - Dettaglio in `RULES.md` e `scripts/BILANCIAMENTO-PAUSA.md`. JSON probe Durissima: non eliminare.
 
 ## Focus attuale

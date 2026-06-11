@@ -913,14 +913,20 @@ const MPCARDS_CORE_SOURCE = `
     return penalty;
   }
 
+  function durissimaMinPlacementRequirement(sim, x, y) {
+    if (!sim.board.length) return 1;
+    return Math.max(1, durissimaBoardNeighborsAt(sim, x, y));
+  }
+
   function durissimaUnreachableFrontier(sim, outlookCards) {
     const cells = candidateCells(sim);
     if (!cells.length) return 0;
     let blocked = 0;
     for (const cell of cells) {
+      const minReq = durissimaMinPlacementRequirement(sim, cell.x, cell.y);
       let reachable = false;
       for (const card of outlookCards) {
-        if (canPlaceCardAt(sim, card, cell.x, cell.y, 1)) {
+        if (canPlaceCardAt(sim, card, cell.x, cell.y, minReq)) {
           reachable = true;
           break;
         }
@@ -970,14 +976,41 @@ const MPCARDS_CORE_SOURCE = `
     );
   }
 
-  function choosePlacementDurissima(state, playerId, requirement, random, branchLimit, teamMode) {
+  function durissimaMoveDeadZoneStats(state, playerId, move) {
+    const sim = cloneSimState(state, playerId);
+    if (!applyPlacementSim(sim, playerId, move)) {
+      return { blocked: Infinity, frontier: 0, fatal: true };
+    }
+    const outlookCards = durissimaClosureOutlook(state, playerId, move.cardUid);
+    const blocked = durissimaUnreachableFrontier(sim, outlookCards);
+    const frontier = candidateCells(sim).length;
+    const fatal = frontier > 0 && blocked >= frontier;
+    return { blocked, frontier, fatal };
+  }
+
+  /** Partita compromessa: tutta la frontiera resta inchiudibile con l'universo noto. */
+  function durissimaMoveIsFatal(state, playerId, move) {
+    return durissimaMoveDeadZoneStats(state, playerId, move).fatal;
+  }
+
+  /** In chiusura griglia conviene posare anche mosse rischiose piuttosto che bruciare il pool. */
+  function durissimaPreferSafePlays(state) {
+    const remaining = state.size * state.size - state.board.length;
+    return remaining > Math.max(2, Math.ceil(state.size * 0.75));
+  }
+
+  function choosePlacementDurissima(state, playerId, requirement, random, branchLimit, teamMode, options) {
+    options = options || {};
+    const skipFatal = options.skipFatal === true;
     const moves = legalPlacements(state, playerId, requirement);
     if (!moves.length) return null;
     const sample = moves.length > branchLimit ? shuffle(moves, random).slice(0, branchLimit) : moves;
     let bestScore = -Infinity;
     let bestMoves = [];
     for (const move of sample) {
+      if (skipFatal && durissimaMoveIsFatal(state, playerId, move)) continue;
       const score = durissimaMoveScore(state, playerId, move, random, branchLimit, requirement, teamMode === true);
+      if (score === -Infinity) continue;
       if (score > bestScore) {
         bestScore = score;
         bestMoves = [move];
@@ -985,8 +1018,65 @@ const MPCARDS_CORE_SOURCE = `
         bestMoves.push(move);
       }
     }
-    if (!bestMoves.length) return moves[Math.floor(random() * moves.length)];
+    if (!bestMoves.length) return null;
     return bestMoves[Math.floor(random() * bestMoves.length)];
+  }
+
+  function isDurissimaPlannerStrategy(strategy) {
+    return strategy === "durissima-planner" || strategy === "durissima-team-planner";
+  }
+
+  function useDurissimaStrategicVita(state) {
+    return isDurissimaMater(state)
+      && state.durissimaVitaExtraEnabled === true
+      && state.durissimaStrategicVitaExtra !== false;
+  }
+
+  /**
+   * Inizio turno (strategico): come il planner normale, ma con un reshuffle volontario
+   * (1 per decisione) se la migliore mossa e' fatale in fase non di chiusura.
+   * Senza mosse legali, catena reshuffle come il modo reattivo (salvataggio da blocco).
+   */
+  function chooseDurissimaTurnStartAction(state, playerId, strategy, random) {
+    const teamMode = strategy === "durissima-team-planner";
+    const branchLimit = PLANNER_BRANCH_LIMIT + 2;
+    const requirement = placementRequirement(state);
+    const hasLegal = legalPlacements(state, playerId, requirement).length > 0;
+
+    if (!hasLegal) {
+      const used = spendDurissimaVitaExtraUntilPlayable(state, playerId, random);
+      if (used > 0 && hasLegalPlacementsNow(state, playerId)) {
+        const move = choosePlacementDurissima(
+          state, playerId, placementRequirement(state), random, branchLimit, teamMode
+        );
+        if (move) return { type: "move", move };
+      }
+      return { type: "stop" };
+    }
+
+    const preferSafe = durissimaPreferSafePlays(state);
+    function pickBest() {
+      return choosePlacementDurissima(
+        state, playerId, placementRequirement(state), random, branchLimit, teamMode
+      );
+    }
+    function okToPlay(move) {
+      if (!move) return false;
+      if (!preferSafe) return true;
+      return !durissimaMoveIsFatal(state, playerId, move);
+    }
+
+    let bestMove = pickBest();
+    if (okToPlay(bestMove)) return { type: "move", move: bestMove };
+
+    if (canUseDurissimaVitaExtra(state, playerId)) {
+      tryDurissimaVitaExtra(state, playerId, random);
+      bestMove = pickBest();
+      if (okToPlay(bestMove)) return { type: "move", move: bestMove };
+    }
+
+    if (bestMove) return { type: "move", move: bestMove };
+    return { type: "stop" };
   }
 
   function placementStrategyForTurn(state, playerId, strategy) {
@@ -1066,6 +1156,13 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   function chooseAction(state, playerId, strategy, random) {
+    if (
+      useDurissimaStrategicVita(state) &&
+      state.turnPlayed === 0 &&
+      isDurissimaPlannerStrategy(strategy)
+    ) {
+      return chooseDurissimaTurnStartAction(state, playerId, strategy, random);
+    }
     if (state.turnPlayed >= 5) return { type: "stop" };
     const requirement = placementRequirement(state);
     if (state.turnPlayed >= 4 && requirement > 4) return { type: "stop" };
@@ -1168,9 +1265,11 @@ const MPCARDS_CORE_SOURCE = `
     return true;
   }
 
+  /** Variante di riferimento Durissima: «N reshuffle» attivo salvo opt-out esplicito. */
   function defaultDurissimaVitaExtraEnabled(options) {
     if (options.durissimaMater !== true) return false;
-    return options.durissimaVitaExtraEnabled === true;
+    if (options.durissimaVitaExtraEnabled === false) return false;
+    return true;
   }
 
   function defaultDurissimaReserveEnabled(options) {
@@ -1470,6 +1569,15 @@ const MPCARDS_CORE_SOURCE = `
     return isPlayableSetup(size, players) && players >= recommendedMinPlayers(size);
   }
 
+  /** Durissima: nessun G_min competitivo; solitario e sotto-G ammessi se legali. */
+  function durissimaMinPlayers() {
+    return 1;
+  }
+
+  function isDurissimaSweepSetup(size, players) {
+    return isPlayableSetup(size, players) && players >= durissimaMinPlayers();
+  }
+
   function isPlayableSetup(size, players) {
     if (!Number.isInteger(size) || size < 3 || size > 8) return false;
     if (!Number.isInteger(players) || players < 1 || players > MAX_PLAYERS) return false;
@@ -1544,6 +1652,7 @@ const MPCARDS_CORE_SOURCE = `
       durissimaEmergencyDrawsUsed: 0,
       durissimaAfterPlayDrawsUsed: 0,
       durissimaVitaExtraEnabled: defaultDurissimaVitaExtraEnabled(options),
+      durissimaStrategicVitaExtra: options.durissimaStrategicVitaExtra !== false,
       durissimaVitaExtraPool: defaultDurissimaVitaExtraPool(size, options),
       durissimaVitaExtraUsed: Array.from({ length: players }, () => 0),
       randomizeTurnOrder,
@@ -1579,22 +1688,30 @@ const MPCARDS_CORE_SOURCE = `
     if (action.type === "stop") {
       if (state.turnPlayed === 0) {
         if (isDurissimaMater(state)) {
-          const stuck = durissimaWhenStuckWithoutPlay(state, random, { useVitaExtra: true });
-          if (stuck === "vita_extra") {
-            const retry = chooseAction(state, playerId, playerStrategy, random);
-            if (retry.type === "move") {
-              applyPlacement(state, playerId, retry.move);
-              if (state.status !== "playing") return { played: true, move: retry.move, vitaExtra: true };
-              if (state.turnPlayed >= 5) endTurn(state);
-              return { played: true, move: retry.move, vitaExtra: true };
+          if (!useDurissimaStrategicVita(state)) {
+            const stuck = durissimaWhenStuckWithoutPlay(state, random, { useVitaExtra: true });
+            if (stuck === "vita_extra") {
+              const retry = chooseAction(state, playerId, playerStrategy, random);
+              if (retry.type === "move") {
+                applyPlacement(state, playerId, retry.move);
+                if (state.status !== "playing") return { played: true, move: retry.move, vitaExtra: true };
+                if (state.turnPlayed >= 5) endTurn(state);
+                return { played: true, move: retry.move, vitaExtra: true };
+              }
             }
+            return {
+              played: false,
+              passed: stuck === "passed",
+              drew: stuck === "drew",
+              lost: stuck === "lost"
+            };
           }
-          return {
-            played: false,
-            passed: stuck === "passed",
-            drew: stuck === "drew",
-            lost: stuck === "lost"
-          };
+          if (state.players === 1) {
+            state.status = "stalled";
+            return { played: false, lost: true };
+          }
+          passTurn(state);
+          return { played: false, passed: true };
         }
         passTurn(state);
         return { played: false, passed: true };
@@ -1924,8 +2041,10 @@ const MPCARDS_CORE_SOURCE = `
     maxPlayersForSize,
     recommendedMaxPlayers,
     recommendedMinPlayers,
+    durissimaMinPlayers,
     isRecommendedSetup,
     isDefaultSweepSetup,
+    isDurissimaSweepSetup,
     isPlayableSetup,
     setupGame,
     resolveStrategies,

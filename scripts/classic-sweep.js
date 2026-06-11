@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const { createProgressReporter } = require("./cli-progress");
+const { parseAllLegalFlag, playableGForSize } = require("./sweep-cells");
 
 require(path.join(__dirname, "..", "mpcards-core.js"));
 
@@ -26,13 +27,16 @@ const WORKFLOW_IDS = {
   all: "classic-audit-all"
 };
 
+const ALL_LEGAL = parseAllLegalFlag(process.argv);
+
 function usage() {
   process.stderr.write(
-    "Uso: node scripts/classic-sweep.js <workflow> [partite/cella]\n" +
+    "Uso: node scripts/classic-sweep.js <workflow> [partite/cella] [--all-legal]\n" +
       "Workflow: L3-L5 | L6 | L7 | L8 | all\n" +
-      "Default: 1000 partite/cella (come riepilogo Durissima)\n" +
+      "Default: 1000 partite/cella; solo G >= G_min (ceil(N/2), eccezione 7x7->3).\n" +
+      "  --all-legal  include anche sotto-G sconsigliato e solitario (G=1).\n" +
       "Es.: node scripts/classic-sweep.js L3-L5\n" +
-      "     node scripts/classic-sweep.js L8 500\n"
+      "     node scripts/classic-sweep.js L8 500 --all-legal\n"
   );
   process.exit(1);
 }
@@ -44,12 +48,7 @@ function stamp() {
 }
 
 function playableCellsForL(L) {
-  const out = [];
-  const gMax = core.maxPlayersForSize(L);
-  for (let G = 1; G <= gMax; G++) {
-    if (core.isPlayableSetup(L, G)) out.push(G);
-  }
-  return out;
+  return playableGForSize(core, L, { allLegal: ALL_LEGAL });
 }
 
 function buildCellList(sizes) {
@@ -143,7 +142,8 @@ function main() {
   const totalGames = cells.length * count;
 
   process.stderr.write(
-    `\nClassic sweep (${workflowId}): ${cells.length} celle × ${count} partite = ${totalGames} simulazioni\n\n`
+    `\nClassic sweep (${workflowId}): ${cells.length} celle  x  ${count} partite = ${totalGames} simulazioni` +
+      `${ALL_LEGAL ? " · --all-legal" : " · G>=G_min"}\n\n`
   );
 
   const allCells = {};

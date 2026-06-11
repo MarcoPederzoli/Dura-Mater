@@ -570,7 +570,7 @@
     <header>
       <div>
         <h1>Dura Mater — Simulatore massivo</h1>
-        <p>Batch di partite automatiche sul mazzo ufficiale (stesse regole del gioco, inclusa Dura Mater chiusa). Matrici L × G aggiornate in tempo reale.</p>
+        <p>Batch di partite automatiche sul mazzo ufficiale (stesse regole del gioco, inclusa Dura Mater chiusa). Matrici L  x  G aggiornate in tempo reale.</p>
       </div>
       <nav>
         <a href="gioco.html">Gioco</a>
@@ -602,11 +602,11 @@
             Preset rapido
             <select id="preset-select" aria-label="Preset parametri simulazione">
               <option value="">Personalizzato</option>
-              <option value="scan-456">Sweep 4×4–6×6 · 2–6 gioc. · 500/caso (~13 casi)</option>
-              <option value="scan-56">Sweep 5×5–6×6 · 2–6 gioc. · 500/caso (~10 casi)</option>
-              <option value="scan-468">Sweep 4×4–8×8 · 2–8 gioc. · 300/caso (ampio)</option>
-              <option value="solo-55">Solo 5×5 · 4 gioc. · 10 000</option>
-              <option value="solo-66">Solo 6×6 · 4–6 gioc. · 2 000/caso</option>
+              <option value="scan-456">Sweep - · 2-6 gioc. · 500/caso (~13 casi)</option>
+              <option value="scan-56">Sweep - · 2-6 gioc. · 500/caso (~10 casi)</option>
+              <option value="scan-468">Sweep - · 2-8 gioc. · 300/caso (ampio)</option>
+              <option value="solo-55">Solo  · 4 gioc. · 10 000</option>
+              <option value="solo-66">Solo  · 4-6 gioc. · 2 000/caso</option>
             </select>
           </label>
           <button id="apply-preset" class="secondary" type="button">Applica preset</button>
@@ -618,23 +618,23 @@
         <label>
           Ordine minimo area
           <select id="l-min" aria-label="Ordine minimo area di gioco">
-            <option value="3">3×3</option>
-            <option value="4">4×4</option>
-            <option value="5">5×5</option>
-            <option value="6">6×6</option>
-            <option value="7">7×7</option>
-            <option value="8">8×8</option>
+            <option value="3"></option>
+            <option value="4"></option>
+            <option value="5"></option>
+            <option value="6"></option>
+            <option value="7"></option>
+            <option value="8"></option>
           </select>
         </label>
         <label>
           Ordine massimo area
           <select id="l-max" aria-label="Ordine massimo area di gioco">
-            <option value="3">3×3</option>
-            <option value="4">4×4</option>
-            <option value="5">5×5</option>
-            <option value="6">6×6</option>
-            <option value="7">7×7</option>
-            <option value="8" selected>8×8</option>
+            <option value="3"></option>
+            <option value="4"></option>
+            <option value="5"></option>
+            <option value="6"></option>
+            <option value="7"></option>
+            <option value="8" selected></option>
           </select>
         </label>
         <label>
@@ -647,7 +647,7 @@
         </label>
         <label>
           Worker
-          <span class="label-hint">Processi paralleli nel browser: più worker = simulazione più veloce (1–32).</span>
+          <span class="label-hint">Processi paralleli nel browser: più worker = simulazione più veloce (1-32).</span>
           <input id="workers" type="number" min="1" max="32" value="7" aria-label="Numero worker paralleli">
         </label>
         <label>
@@ -658,7 +658,7 @@
         <label class="option-check">
           <input id="durissima-mater" type="checkbox" aria-label="Durissima Mater">
           Durissima Mater
-          <span class="label-hint">Obiettivo: matrice L×L piena (cooperativo al tavolo). <strong>Formato consigliato G=N:</strong> 3×3–4×4 giocabile · 5×5 molto difficile · 6×6+ estremo/epico. Altre G = extra. Test bilanciamento in pausa (<code>scripts/BILANCIAMENTO-PAUSA.md</code>).</span>
+          <span class="label-hint">Obiettivo: matrice LxL piena (cooperativo al tavolo). <strong>Formato consigliato G=N:</strong> - giocabile ·  molto difficile · + estremo/epico. Altre G = extra. Test bilanciamento in pausa (<code>scripts/BILANCIAMENTO-PAUSA.md</code>).</span>
         </label>
         <label class="option-check">
           <input id="tournament-mode" type="checkbox" aria-label="Torneo a punteggio">
@@ -696,7 +696,7 @@
         <div><span>D</span> meno adiacenze</div>
         <div><span>E</span> una carta finche' pesca, poi casuale</div>
         <div><span>P</span> pianifica quante carte consecutive può posare (fino a 4)</div>
-        <div><span>H</span> con ≥4 carte in mano pianifica, altrimenti come M</div>
+        <div><span>H</span> con >=4 carte in mano pianifica, altrimenti come M</div>
         <div><span>U</span> pianifica ma chiude il turno se la sequenza non prosegue</div>
         <div><span>F</span> spinge a giocare il massimo di carte nel turno</div>
         <div><span>R</span> casuale legale</div>
@@ -756,7 +756,7 @@
           <h2>Turni e turni da 4 carte</h2>
         </div>
         <div class="strategy-help">
-          <div><span>≥1 turno da 4</span> % partite con catena da 4 carte in un turno</div>
+          <div><span>>=1 turno da 4</span> % partite con catena da 4 carte in un turno</div>
           <div><span>Idea (5ª)</span> % partite in cui la quinta carta viene posata · <span>Idea usate</span> % idee realizzate sulle offerte</div>
           <div><span>Tutti posano</span> % partite in cui ogni giocatore posa almeno una carta</div>
           <div><span>Ultimo posa</span> % partite in cui l'ultimo nel turno iniziale posa almeno una carta</div>

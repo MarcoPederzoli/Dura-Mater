@@ -17,11 +17,11 @@
     question:
       "Con le regole Durissima formalizzate, quante partite completano la matrice (solitario e multi)?",
     scope:
-      "Regole semplici: niente vite extra, reshuffle o buffer. Pesca solo dopo posa (solitario). " +
-      "Multi: pesca come gioco normale. Monte se giro senza posate. Bot coop: durissima-team-planner.",
+      "Core Durissima: Dura Mater + pesca solo dopo posa + vittoria a griglia piena. " +
+      "Niente vite extra, riserva o buffer (default). Monte se G pass senza posate. Bot coop: durissima-team-planner.",
     read: "cells[\"LxG\"]: successPct = (done - stalls) / done. Confronta G=1 vs G=N vs overcrowd.",
     metrics:
-      "Se successPct resta sotto ~1–5% ovunque, le regole vanno ripensate. Solitario 3×1 è il caso più facile.",
+      "Se successPct resta sotto ~1-5% ovunque, le regole vanno ripensate. Solitario  è il caso più facile.",
     verdict:
       "Esporta JSON e analizza con python scripts/analyze-durissima-rules-probe.py",
     params: "T (durissima-team-planner) in coop, G in solitario; ordine casuale; nessun aiuto reattivo."
@@ -36,12 +36,13 @@
     rulesProbePartite += rulesProbeCount;
     rulesProbeSteps.push({
       id: `durissima-rules-probe-solo-L${L}`,
-      label: `${L}×1 · solitario`,
+      label: `${L} x 1 · solitario`,
       count: rulesProbeCount,
       lMin: L,
       lMax: L,
       gMin: 1,
       gMax: 1,
+      allLegal: true,
       strategy: "durissima-planner",
       durissimaMater: true,
       durissimaVitaExtraEnabled: false
@@ -63,12 +64,13 @@
     rulesProbePartite += rulesProbeCount;
     rulesProbeSteps.push({
       id: `durissima-rules-probe-${L}x${G}`,
-      label: `${L}×${G} · ${note}`,
+      label: `${L} x ${G} · ${note}`,
       count: rulesProbeCount,
       lMin: L,
       lMax: L,
       gMin: G,
       gMax: G,
+      allLegal: true,
       strategy: "durissima-team-planner",
       durissimaMater: true,
       durissimaVitaExtraEnabled: false
@@ -79,7 +81,7 @@
     id: "durissima-rules-probe",
     label: "Durissima · probe regole (in pausa — solo + multi)",
     description:
-      "Regole attuali: G=1 L3–8 + 9 formati multi. " +
+      "Regole attuali: G=1 L3-8 + 9 formati multi. " +
       `≈ ${rulesProbePartite.toLocaleString("it-IT")} partite (${rulesProbeCount}/cella). Esporta JSON.`,
     shared,
     steps: rulesProbeSteps,
@@ -103,12 +105,13 @@
     rulesQuickPartite += rulesQuickCount;
     rulesQuickSteps.push({
       id: `durissima-rules-quick-${L}x${G}`,
-      label: `${L}×${G}`,
+      label: `${L} x ${G}`,
       count: rulesQuickCount,
       lMin: L,
       lMax: L,
       gMin: G,
       gMax: G,
+      allLegal: true,
       strategy: G === 1 ? "durissima-planner" : "durissima-team-planner",
       durissimaMater: true,
       durissimaVitaExtraEnabled: false
@@ -119,7 +122,7 @@
     id: "durissima-rules-probe-quick",
     label: "Durissima · probe regole (rapido)",
     description:
-      `6 celle rappresentative × ${rulesQuickCount} ≈ ${rulesQuickPartite.toLocaleString("it-IT")} partite.`,
+      `6 celle rappresentative  x  ${rulesQuickCount} ≈ ${rulesQuickPartite.toLocaleString("it-IT")} partite.`,
     shared,
     steps: rulesQuickSteps,
     durissimaGuide: rulesProbeGuide

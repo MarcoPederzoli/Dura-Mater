@@ -69,7 +69,7 @@ let lastAnalysisText = "";
 
 const SIM_PRESETS = {
   "scan-456": {
-    label: "Sweep 4×4–6×6",
+    label: "Sweep -",
     count: 500,
     lMin: 4,
     lMax: 6,
@@ -80,7 +80,7 @@ const SIM_PRESETS = {
     strategy: "planner"
   },
   "scan-56": {
-    label: "Sweep 5×5–6×6",
+    label: "Sweep -",
     count: 500,
     lMin: 5,
     lMax: 6,
@@ -91,7 +91,7 @@ const SIM_PRESETS = {
     strategy: "planner"
   },
   "scan-468": {
-    label: "Sweep 4×4–8×8",
+    label: "Sweep -",
     count: 300,
     lMin: 4,
     lMax: 8,
@@ -102,7 +102,7 @@ const SIM_PRESETS = {
     strategy: "planner"
   },
   "solo-55": {
-    label: "Solo 5×5",
+    label: "Solo ",
     count: 10000,
     lMin: 5,
     lMax: 5,
@@ -113,7 +113,7 @@ const SIM_PRESETS = {
     strategy: "planner"
   },
   "solo-66": {
-    label: "Solo 6×6",
+    label: "Solo ",
     count: 2000,
     lMin: 6,
     lMax: 6,
@@ -154,16 +154,22 @@ function pct(value, total) {
 }
 
 function formatAreaLabel(size) {
-  return `${size}×${size}`;
+  return `${size} x ${size}`;
+}
+
+function durissimaPlayerCap(size) {
+  return MPCardsCore.maxPlayersForSize(clampNumber(size, 3, 8, 5));
 }
 
 function clampConfigForDurissima(config) {
-  if (!config.durissimaMater || (config.gMin === 1 && config.gMax === 1)) return config;
+  if (!config.durissimaMater) return config;
+  const cap = durissimaPlayerCap(config.lMax || config.lMin || 5);
   config.gMin = 1;
-  config.gMax = 1;
+  config.gMax = Math.min(Math.max(config.gMax || cap, 1), cap);
   config.tournamentMode = false;
+  config.allLegal = true;
   if (els.gMin) els.gMin.value = 1;
-  if (els.gMax) els.gMax.value = 1;
+  if (els.gMax) els.gMax.value = config.gMax;
   if (els.tournamentMode) els.tournamentMode.checked = false;
   return config;
 }
@@ -398,11 +404,15 @@ function setAllStrategies(value) {
 
 function countValidJobs(lMin, lMax, gMin, gMax, options = {}) {
   const tournamentMode = options.tournamentMode === true;
+  const durissima = options.durissimaMater === true;
+  const allLegal = options.allLegal === true || durissima;
   let jobs = 0;
   for (let size = lMin; size <= lMax; size++) {
     for (let players = gMin; players <= gMax; players++) {
       if (!isPlayableSetup(size, players)) continue;
       if (tournamentMode && players < 2) continue;
+      if (durissima && !MPCardsCore.isDurissimaSweepSetup(size, players)) continue;
+      else if (!allLegal && !MPCardsCore.isDefaultSweepSetup(size, players)) continue;
       jobs++;
     }
   }
@@ -429,44 +439,49 @@ function applySimulationPreset(key) {
   if (els.fixedTurnOrder) els.fixedTurnOrder.checked = preset.fixedTurnOrder;
   setAllStrategies(preset.strategy);
   const jobs = countValidJobs(preset.lMin, preset.lMax, preset.gMin, preset.gMax, {
-    tournamentMode: Boolean(els.tournamentMode?.checked)
+    tournamentMode: Boolean(els.tournamentMode?.checked),
+    allLegal: preset.allLegal === true
   });
   const total = jobs * preset.count;
   const unit = els.tournamentMode?.checked ? "tornei" : "partite";
-  setStatus(`Preset «${preset.label}»: ${jobs} casi L×G, ${total.toLocaleString("it-IT")} ${unit} previste.`, "good");
+  setStatus(`Preset «${preset.label}»: ${jobs} casi LxG, ${total.toLocaleString("it-IT")} ${unit} previste.`, "good");
   scheduleSavePrefs();
 }
 
 function makeJobs(config, stepId = "") {
+  const durissima = config.durissimaMater === true;
+  const allLegal = config.allLegal === true || durissima;
   const jobs = [];
   for (let size = config.lMin; size <= config.lMax; size++) {
     for (let players = config.gMin; players <= config.gMax; players++) {
-      if (isPlayableSetup(size, players) && (!config.tournamentMode || players >= 2)) {
-        const deal = computeInitialDeal(size, players);
-        const cellId = `${size}x${players}`;
-        jobs.push({
-          id: stepId ? `${stepId}::${cellId}` : cellId,
-          cellId,
-          stepId: stepId || null,
-          size,
-          players,
-          initialHandSize: deal.cardsPerPlayer,
-          initialDrawCount: deal.drawCount,
-          overcrowdedDeal: deal.overcrowded,
-          count: config.count,
-          seed: stepId
-            ? `${config.seed}:${stepId}:${size}:${players}`
-            : `${config.seed}:${size}:${players}`,
-          deckCodes: config.deckCodes,
-          strategies: config.strategies.slice(0, players),
-          durissimaMater: config.durissimaMater,
-          tournamentMode: config.tournamentMode === true,
-          durissimaEmergencyDrawBudget: config.durissimaEmergencyDrawBudget,
-          durissimaAfterPlayDrawBudget: config.durissimaAfterPlayDrawBudget,
-          randomizeTurnOrder: config.randomizeTurnOrder !== false,
-          shuffleStrategiesAmongSeats: config.shuffleStrategiesAmongSeats === true
-        });
-      }
+      if (!isPlayableSetup(size, players)) continue;
+      if (config.tournamentMode && players < 2) continue;
+      if (durissima && !MPCardsCore.isDurissimaSweepSetup(size, players)) continue;
+      else if (!allLegal && !MPCardsCore.isDefaultSweepSetup(size, players)) continue;
+      const deal = computeInitialDeal(size, players);
+      const cellId = `${size}x${players}`;
+      jobs.push({
+        id: stepId ? `${stepId}::${cellId}` : cellId,
+        cellId,
+        stepId: stepId || null,
+        size,
+        players,
+        initialHandSize: deal.cardsPerPlayer,
+        initialDrawCount: deal.drawCount,
+        overcrowdedDeal: deal.overcrowded,
+        count: config.count,
+        seed: stepId
+          ? `${config.seed}:${stepId}:${size}:${players}`
+          : `${config.seed}:${size}:${players}`,
+        deckCodes: config.deckCodes,
+        strategies: config.strategies.slice(0, players),
+        durissimaMater: config.durissimaMater,
+        tournamentMode: config.tournamentMode === true,
+        durissimaEmergencyDrawBudget: config.durissimaEmergencyDrawBudget,
+        durissimaAfterPlayDrawBudget: config.durissimaAfterPlayDrawBudget,
+        randomizeTurnOrder: config.randomizeTurnOrder !== false,
+        shuffleStrategiesAmongSeats: config.shuffleStrategiesAmongSeats === true
+      });
     }
   }
   return jobs;
@@ -497,6 +512,7 @@ function stepConfigFromWorkflowStep(step, shared, uiConfig) {
     lMax: Math.max(lMin, lMax),
     gMin: Math.min(gMin, gMax),
     gMax: Math.max(gMin, gMax),
+    allLegal: step.allLegal === true || shared?.allLegal === true,
     workers: uiConfig.workers,
     seed: uiConfig.seed,
     durissimaMater: step.durissimaMater ?? shared?.durissimaMater ?? false,
@@ -569,7 +585,8 @@ function applyWorkflowToUi(key) {
   const total = workflow.steps.reduce((sum, step) => {
     const cfg = stepConfigFromWorkflowStep(step, workflow.shared, ui);
     return sum + countValidJobs(cfg.lMin, cfg.lMax, cfg.gMin, cfg.gMax, {
-      tournamentMode: cfg.tournamentMode === true
+      tournamentMode: cfg.tournamentMode === true,
+      allLegal: cfg.allLegal === true
     }) * cfg.count;
   }, 0);
   setStatus(
@@ -1012,7 +1029,7 @@ function renderCellContent(type, stats) {
   box.appendChild(line(`Min: ${stats.turnMin ?? "-"}`));
   box.appendChild(line(`Media: ${avg.toFixed(1)}`));
   box.appendChild(line(`Max: ${stats.turnMax ?? "-"}`));
-  box.appendChild(line(`≥1 turno da 4: ${pct(stats.gamesWithFourCardTurn || 0, stats.done)}`));
+  box.appendChild(line(`>=1 turno da 4: ${pct(stats.gamesWithFourCardTurn || 0, stats.done)}`));
   box.appendChild(line(`Idea (5ª): ${pct(stats.gamesWithFiveCardTurn || 0, stats.done)}`));
   if (stats.ideaOffers > 0) {
     box.appendChild(line(`Idea usate: ${pct(stats.fiveCardTurns || 0, stats.ideaOffers)}`));
@@ -1026,7 +1043,7 @@ function renderCellContent(type, stats) {
   box.appendChild(line(`Min posate in partita (media): ${part.avgMinPlacementsPerGame.toFixed(2)}`));
   box.appendChild(line(`Partita con escluso (0 pose): ${part.zeroPlacementPlayerGamePct.toFixed(1)}%`));
   box.appendChild(line(`Partita con «1 sola posa»: ${part.onePlacementPlayerGamePct.toFixed(1)}%`));
-  box.appendChild(line(`Tutti ≥2 pose: ${part.everyoneAtLeastTwoPlacementsPct.toFixed(1)}%`));
+  box.appendChild(line(`Tutti >=2 pose: ${part.everyoneAtLeastTwoPlacementsPct.toFixed(1)}%`));
   if (stats.overcrowdedDeal && stats.initialHandSize != null) {
     box.appendChild(line(`Mano iniziale: ${stats.initialHandSize} · pesca: ${stats.initialDrawCount ?? 0}`));
   }
@@ -1286,15 +1303,15 @@ function formatSignedPct(value) {
 
 function sampleStrength(done) {
   if (done < 100) return { level: "low", text: "Campione piccolo (<100): interpretare con cautela." };
-  if (done < 1000) return { level: "medium", text: "Campione medio (100–999): trend indicativi." };
-  return { level: "high", text: "Campione ampio (≥1000): stime più affidabili." };
+  if (done < 1000) return { level: "medium", text: "Campione medio (100-999): trend indicativi." };
+  return { level: "high", text: "Campione ampio (>=1000): stime più affidabili." };
 }
 
 function scenarioOutcomeLabels(mode) {
   if (mode.durissima) {
     return {
       sectionTitle: "Completamento matrice per scenario",
-      sectionHint: "Durissima Mater attiva: % di partite in cui tutte le carte sono state posate (matrice L×L piena).",
+      sectionHint: "Durissima Mater attiva: % di partite in cui tutte le carte sono state posate (matrice LxL piena).",
       rowVerb: "completate",
       exportHeading: "Completamento matrice per scenario (dal più difficile):"
     };
@@ -1503,7 +1520,7 @@ function analyzePlayerPositions(stats, config, ctx) {
       spread: 0,
       skipped: true,
       verdict: ctx.durissima
-        ? "Bias di posizione non applicabile in Durissima Mater. Guarda completamento globale e tabella per scenario (L×G)."
+        ? "Bias di posizione non applicabile in Durissima Mater. Guarda completamento globale e tabella per scenario (LxG)."
         : "Bias di posizione non calcolabile: troppi stalli o poche partite con vincitore."
     };
   }
@@ -1773,11 +1790,11 @@ function formatAnalysisPlainText(snapshot) {
     "Dura Mater — riepilogo analisi simulatore",
     partial ? "(run parziale)" : "",
     `Partite aggregate: ${simulationsDone}`,
-    `Parametri: area ${formatAreaLabel(config.lMin)} – ${formatAreaLabel(config.lMax)}, giocatori ${config.gMin}–${config.gMax}, ${config.count} sim/caso`,
-    `Opzioni: inversione ai limiti DM, Durissima Mater ${config.durissimaMater ? "on (solo G=1 in sim)" : "off"}, Torneo ${config.tournamentMode ? "on" : "off"}, ordine iniziale ${config.randomizeTurnOrder !== false ? "casuale" : "fisso G1"}`,
+    `Parametri: area ${formatAreaLabel(config.lMin)} - ${formatAreaLabel(config.lMax)}, giocatori ${config.gMin}-${config.gMax}, ${config.count} sim/caso`,
+    `Opzioni: inversione ai limiti DM, Durissima Mater ${config.durissimaMater ? "on (G 1..2N, senza G_min)" : "off"}, Torneo ${config.tournamentMode ? "on" : "off"}, ordine iniziale ${config.randomizeTurnOrder !== false ? "casuale" : "fisso G1"}`,
     "",
     analysis.sample.text,
-    ...analysis.context.warnings.map(note => `⚠ ${note}`),
+    ...analysis.context.warnings.map(note => `[!] ${note}`),
     "",
     analysis.summary.options.durissimaMater
       ? "Modalità: Durissima Mater (matrice piena)."
@@ -1807,7 +1824,7 @@ function formatAnalysisPlainText(snapshot) {
     `Min pose in partita (media): ${analysis.summary.avgMinPlacementsPerGame.toFixed(2)}`,
     `Partite con almeno un escluso (0 pose): ${analysis.summary.zeroPlacementPlayerGamePct.toFixed(1)}%`,
     `Partite con almeno un «1 sola posa»: ${analysis.summary.onePlacementPlayerGamePct.toFixed(1)}%`,
-    `Partite con tutti ≥2 pose: ${analysis.summary.everyoneAtLeastTwoPlacementsPct.toFixed(1)}%`
+    `Partite con tutti >=2 pose: ${analysis.summary.everyoneAtLeastTwoPlacementsPct.toFixed(1)}%`
   ];
   if (analysis.scenarioCompletions.length) {
     const outcome = analysis.summary.scenarioOutcome;
@@ -1906,7 +1923,7 @@ function formatWorkflowStepSummary(step) {
     ? ""
     : ` · turno: ${step.analysis.initialTurn.verdict}`;
   const fourCard = a.gamesWithFourCardTurn > 0 || a.fourCardTurns > 0
-    ? ` · ≥1 turno da 4: ${a.fourCardGamePct.toFixed(1)}%`
+    ? ` · >=1 turno da 4: ${a.fourCardGamePct.toFixed(1)}%`
     : "";
   const idea = a.ideaOffers > 0 || a.gamesWithFiveCardTurn > 0
     ? ` · Idea: ${a.fiveCardGamePct.toFixed(1)}% (${a.ideaConversionPct.toFixed(0)}% conv.)`
@@ -2182,7 +2199,7 @@ function renderAnalysis(snapshot) {
      <p>Turni da 4 carte nel campione: <strong>${analysis.summary.fourCardTurns}</strong> (media <strong>${analysis.summary.avgFourCardTurnsPerGame.toFixed(2)}</strong> per partita)</p>
      <p>Idea (5ª carta): <strong>${analysis.summary.fiveCardGamePct.toFixed(1)}%</strong> partite (${analysis.summary.gamesWithFiveCardTurn}/${analysis.summary.simulations}) · offerte <strong>${analysis.summary.ideaOffers}</strong> · realizzate <strong>${analysis.summary.fiveCardTurns}</strong> (conv. <strong>${analysis.summary.ideaConversionPct.toFixed(1)}%</strong>)</p>
      <p>Carte posate/giocatore (media): <strong>${analysis.summary.avgCardsPlacedPerPlayer.toFixed(2)}</strong> · min pose in partita (media): <strong>${analysis.summary.avgMinPlacementsPerGame.toFixed(2)}</strong></p>
-     <p>Partite con escluso (0 pose): <strong>${analysis.summary.zeroPlacementPlayerGamePct.toFixed(1)}%</strong> · con «1 sola posa»: <strong>${analysis.summary.onePlacementPlayerGamePct.toFixed(1)}%</strong> · tutti ≥2 pose: <strong>${analysis.summary.everyoneAtLeastTwoPlacementsPct.toFixed(1)}%</strong></p>
+     <p>Partite con escluso (0 pose): <strong>${analysis.summary.zeroPlacementPlayerGamePct.toFixed(1)}%</strong> · con «1 sola posa»: <strong>${analysis.summary.onePlacementPlayerGamePct.toFixed(1)}%</strong> · tutti >=2 pose: <strong>${analysis.summary.everyoneAtLeastTwoPlacementsPct.toFixed(1)}%</strong></p>
      <p>Opzioni run: inversione ai limiti DM, ordine iniziale ${analysis.summary.options.randomizeTurnOrder ? "casuale (come partita reale)" : "fisso G1 primo (solo test)"}.</p>`
   );
   els.analysisContent.appendChild(summaryBlock);
@@ -2209,7 +2226,7 @@ function renderAnalysis(snapshot) {
     completionBlock.innerHTML = `<h3>${outcome.sectionTitle}</h3><p>${outcome.sectionHint}</p>`;
     completionBlock.appendChild(renderAnalysisList(
       analysis.scenarioCompletions.slice(0, 12),
-      row => `${row.id}: ${row.successPct.toFixed(1)}% ${outcome.rowVerb} (${row.successes}/${row.done}), stallo ${row.stallPct.toFixed(1)}%, turni ${row.avgTurns.toFixed(1)}, ≥2 pose ${row.everyoneAtLeastTwoPlacementsPct.toFixed(0)}%`
+      row => `${row.id}: ${row.successPct.toFixed(1)}% ${outcome.rowVerb} (${row.successes}/${row.done}), stallo ${row.stallPct.toFixed(1)}%, turni ${row.avgTurns.toFixed(1)}, >=2 pose ${row.everyoneAtLeastTwoPlacementsPct.toFixed(0)}%`
     ));
     els.analysisContent.appendChild(completionBlock);
   }
@@ -2371,7 +2388,7 @@ function updateProgress(state) {
   const perCase = state.config?.count;
   const cases = state.jobs?.length;
   const unit = state.config?.tournamentMode ? "tornei" : "simulazioni";
-  const detail = perCase && cases ? ` · ${cases} casi × ${perCase}/${unit === "tornei" ? "torneo" : "caso"}` : "";
+  const detail = perCase && cases ? ` · ${cases} casi  x  ${perCase}/${unit === "tornei" ? "torneo" : "caso"}` : "";
   els.progressText.textContent = `${done}/${total} ${unit}${detail}.`;
 }
 
@@ -2584,7 +2601,7 @@ function startSimulationRun(state, meta = {}) {
   const unit = config.tournamentMode ? "tornei" : "simulazioni";
   const label = meta.workflowLabel
     ? `Workflow «${meta.workflowLabel}»: ${state.total.toLocaleString("it-IT")} ${unit} in ${state.stepStates?.length || state.workflow?.steps?.length || "?"} step.`
-    : `In corso: ${plan.total.toLocaleString("it-IT")} ${unit} previste (${plan.cases} casi × ${plan.perCase}).`;
+    : `In corso: ${plan.total.toLocaleString("it-IT")} ${unit} previste (${plan.cases} casi  x  ${plan.perCase}).`;
   setStatus(label, "");
   els.run.disabled = true;
   if (els.runWorkflow) els.runWorkflow.disabled = true;
@@ -2731,8 +2748,18 @@ if (els.durissimaMater) {
   els.durissimaMater.addEventListener("change", () => {
     if (els.durissimaMater.checked) {
       if (els.tournamentMode) els.tournamentMode.checked = false;
-      clampConfigForDurissima({ gMin: 1, gMax: 1, durissimaMater: true, tournamentMode: false });
-      setStatus("Durissima Mater: simulazione limitata a 1 giocatore (collaborativa al tavolo).", "good");
+      const lMax = clampNumber(els.lMax.value, 3, 8, 5);
+      const cap = durissimaPlayerCap(lMax);
+      const gMax = Math.min(Math.max(clampNumber(els.gMax.value, 1, MAX_PLAYERS, cap), 1), cap);
+      clampConfigForDurissima({
+        lMax,
+        gMin: 1,
+        gMax,
+        durissimaMater: true,
+        tournamentMode: false,
+        allLegal: true
+      });
+      setStatus(`Durissima Mater: G da 1 a ${cap} (tutte le combinazioni legali, senza G_min).`, "good");
     }
     scheduleSavePrefs();
   });

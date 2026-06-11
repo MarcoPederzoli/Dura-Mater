@@ -307,27 +307,27 @@ testDurissimaPassOnlyAfterAtLeastOnePlacement();
 testMonteAfterFullRoundPassesEvenWithDrawPile();
 testDurissimaCoopPassDoesNotDrawWithPile();
 
-function testDurissimaDefaultSimpleRulesNoReactiveAids() {
+function testDurissimaNReshuffleDefaultWithPool() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
   const state = core.setupGame(deck, { size: 5, players: 3, random: () => 0, durissimaMater: true });
   assert.equal(state.durissimaReserve.length, 0);
   assert.equal(state.durissimaEmergencyDrawsLeft, 0);
-  assert.equal(state.durissimaVitaExtraPool, 0);
-  assert.equal(state.durissimaVitaExtraEnabled, false);
+  assert.equal(state.durissimaVitaExtraPool, 5);
+  assert.equal(core.durissimaVitaExtraPoolLeft(state), 5);
+  assert.equal(state.durissimaVitaExtraEnabled, true);
 }
 
-function testDurissimaVitaExtraOptInPoolEqualsMatrixSize() {
+function testDurissimaCorePureOptOutDisablesNReshuffle() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
   const state = core.setupGame(deck, {
     size: 5,
     players: 3,
     random: () => 0,
     durissimaMater: true,
-    durissimaVitaExtraEnabled: true
+    durissimaVitaExtraEnabled: false
   });
-  assert.equal(state.durissimaVitaExtraPool, 5);
-  assert.equal(core.durissimaVitaExtraPoolLeft(state), 5);
-  assert.equal(state.durissimaVitaExtraEnabled, true);
+  assert.equal(state.durissimaVitaExtraPool, 0);
+  assert.equal(state.durissimaVitaExtraEnabled, false);
 }
 
 function testDurissimaVitaExtraReshufflesAndRefillsHand() {
@@ -399,6 +399,35 @@ function testDurissimaMultiPassAfterVitaGoesToNextPlayer() {
   assert.equal(state.consecutivePasses, 1);
 }
 
+function testDurissimaPlannerReshufflesWhenOnlyBlockingMoves() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 1,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: true,
+    durissimaVitaExtraBudget: 1
+  });
+  state.board = [
+    { x: 0, y: 0, card: card("118"), playerId: 0 },
+    { x: 1, y: 0, card: card("227"), playerId: 0 },
+    { x: 0, y: 1, card: card("238"), playerId: 0 },
+    { x: 1, y: 1, card: card("247"), playerId: 0 },
+    { x: 2, y: 0, card: card("328"), playerId: 0 },
+    { x: 2, y: 1, card: card("336"), playerId: 0 },
+    { x: 0, y: 2, card: card("348"), playerId: 0 },
+    { x: 1, y: 2, card: card("356"), playerId: 0 }
+  ];
+  state.hands[0] = [card("118")];
+  const random = core.mulberry32(7);
+  const result = core.botStep(state, ["durissima-planner"], random);
+  assert.ok(
+    state.durissimaVitaExtraUsed[0] > 0 || result.played,
+    "il planner reshuffle a inizio turno o posa una mossa non bloccante"
+  );
+}
+
 function testDurissimaSoloAutoVitaExtraOnStuckWhenOptIn() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
   const state = core.setupGame(deck, {
@@ -432,7 +461,8 @@ function testDurissimaSoloStuckWithoutMovesIsLoss() {
     size: 3,
     players: 1,
     random: () => 0,
-    durissimaMater: true
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false
   });
   state.board = [
     { x: 0, y: 0, card: card("118"), playerId: 0 },
@@ -478,11 +508,12 @@ function testDurissimaSolitaireBufferExhaustedIsLoss() {
   assert.equal(result.lost || state.status === "stalled", true);
 }
 
-testDurissimaDefaultSimpleRulesNoReactiveAids();
-testDurissimaVitaExtraOptInPoolEqualsMatrixSize();
+testDurissimaNReshuffleDefaultWithPool();
+testDurissimaCorePureOptOutDisablesNReshuffle();
 testDurissimaVitaExtraReshufflesAndRefillsHand();
 testDurissimaVitaExtraPoolChainsUntilPlayableOrEmpty();
 testDurissimaMultiPassAfterVitaGoesToNextPlayer();
+testDurissimaPlannerReshufflesWhenOnlyBlockingMoves();
 testDurissimaSoloAutoVitaExtraOnStuckWhenOptIn();
 testDurissimaSoloStuckWithoutMovesIsLoss();
 testDurissimaTeamPlannerPlaysInCoop();
@@ -798,7 +829,26 @@ function testRecommendedMaxPlayersIsClassicFormat() {
   assert.equal(core.recommendedMaxPlayers(6), 6);
   assert.equal(core.recommendedMaxPlayers(7), 7);
   assert.equal(core.recommendedMaxPlayers(8), 8);
+  assert.equal(core.recommendedMinPlayers(3), 2);
+  assert.equal(core.recommendedMinPlayers(4), 2);
+  assert.equal(core.recommendedMinPlayers(5), 3);
+  assert.equal(core.recommendedMinPlayers(6), 3);
+  assert.equal(core.recommendedMinPlayers(7), 3);
+  assert.equal(core.recommendedMinPlayers(8), 4);
   assert.equal(core.isRecommendedSetup(5, 5), true);
+  assert.equal(core.isRecommendedSetup(5, 3), true);
+  assert.equal(core.isRecommendedSetup(5, 2), false);
+  assert.equal(core.isRecommendedSetup(7, 3), true);
+  assert.equal(core.isRecommendedSetup(7, 4), true);
+  assert.equal(core.isRecommendedSetup(7, 2), false);
+  assert.equal(core.durissimaMinPlayers(), 1);
+  assert.equal(core.isDurissimaSweepSetup(5, 1), true);
+  assert.equal(core.isDurissimaSweepSetup(5, 2), true);
+  assert.equal(core.isDefaultSweepSetup(5, 2), false);
+  assert.equal(core.isDefaultSweepSetup(5, 3), true);
+  assert.equal(core.isDefaultSweepSetup(7, 3), true);
+  assert.equal(core.isDefaultSweepSetup(5, 8), true);
+  assert.equal(core.isPlayableSetup(5, 2), true);
   assert.equal(core.isRecommendedSetup(5, 7), false);
   assert.equal(core.isRecommendedSetup(5, 8), false);
   assert.equal(core.isPlayableSetup(5, 8), true);

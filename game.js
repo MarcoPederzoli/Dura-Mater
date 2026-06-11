@@ -1782,14 +1782,13 @@ function renderActions() {
   const durissimaSolo = durissima && game.state.players === 1 && game.state.turnPlayed === 0;
   const canVita = durissima
     && game.state.turnPlayed === 0
-    && moves.length === 0
     && core.canUseDurissimaVitaExtra(game.state, game.state.currentPlayer);
   els.pass.style.display = isBotTurn() ? "none" : "inline-grid";
   els.botStep.style.display = isBotTurn() ? "inline-grid" : "none";
   els.pass.disabled = isBotTurn() || durissimaSolo;
   els.pass.className = moves.length === 0 || game.state.turnPlayed > 0 ? "warn" : "secondary";
   if (els.vitaExtra) {
-    els.vitaExtra.hidden = isBotTurn() || !canVita || game.state.players < 2;
+    els.vitaExtra.hidden = isBotTurn() || !canVita;
     els.vitaExtra.disabled = !canVita;
     els.vitaExtra.className = canVita ? "secondary" : "secondary";
   }

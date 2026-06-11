@@ -245,16 +245,48 @@ La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **NxN
 
 ## Durissima Mater
 
-Variante in cui l'obiettivo e' **completare la matrice NxN** (tutte le carte posate). Non conta chi finisce le carte per primo; la partita finisce quando la griglia e' piena.
+Modalita' separata dalla Dura competitiva: al tavolo e' **collaborativa** (un solo obiettivo comune); in solitario (`G = 1`) equivale a tenere tutte le carte insieme.
 
-- Al tavolo la Durissima e' **collaborativa** (un solo obiettivo comune). In solitario equivale a tenere tutte le carte insieme.
-- **Due o piu' giocatori (cooperativo):** unica differenza di pesca rispetto alla competitiva — si pesca **solo se nel turno si e' posata almeno una carta** (a fine turno, se il mazzo non e' vuoto). **Passare senza posare non fa pescare:** evita di accumulare carte «gratis» mentre si aspetta (nel coop piu' carte in mano sono un vantaggio, non uno svantaggio come in torneo). Passare senza posare resta lecito come scelta tattica (es. lasciare che un altro giocatore apra la strada per una carta difficile al turno successivo).
-- **Monte:** come in competitiva — **G pass consecutivi** senza posate → monte, **anche con tallone pieno** (vedi sopra).
-- **Pesca:** nessun buffer emergenza, nessuna vita extra, nessun reshuffle di mano.
-- **Informazione condivisa (cooperativo):** al tavolo mani e mazzo restano **coperti**. Con la **scheda di riferimento delle 64 carte** e il dialogo i giocatori costruiscono l'**universo noto**: si sa **quali** carte esistono ancora in partita (in qualche mano o nel mazzo), non **in che ordine** verranno pescate. Chi e' al turno puo' chiedere aiuto per le mosse; gli altri contribuiscono con la memoria condivisa dell'universo, ma **solo il giocatore attivo** puo' posare dalla propria mano. La simulazione coop usa `durissima-team-planner`: stesso universo noto, con bonus per mosse che **sbloccano** carte difficili nei turni successivi degli altri giocatori.
-- **Un solo giocatore (solitario):** a fine turno si pesca **solo se nel turno si e' posata almeno una carta** (se il mazzo non e' vuoto). Bloccati senza mosse legali all'inizio del turno → partita **persa** (nessun passo, nessun aiuto reattivo). *Da rivedere:* regola «monte» e blocco senza compagni — fuori dal torneo per ora (`promemoria.md`).
-- **Posare meno carte del massimo** nello stesso turno resta lecito e spesso strategico: dopo la prima posa si puo' **chiudere il turno** anche se si potevano posare altre carte.
-- Mano vuota **non** termina la partita: si continua finche' la matrice non e' completa o la partita non va a monte.
+### Variante di riferimento: **N reshuffle**
+
+Per le partite Durissima (tavolo, simulazione, bilanciamento) il riferimento ufficiale e' **N reshuffle**: regole **core** Durissima (sotto) + pool di **N reshuffle a partita** (N = dimensione griglia). In codice: `durissimaVitaExtraEnabled` (default **on** con `durissimaMater`; opt-out con `durissimaVitaExtraEnabled: false` per confronti «solo core»).
+
+La variante **senza** reshuffle resta documentata come **core puro** (storico probe giugno 2026); non e' il default prodotto Durissima.
+
+### Regole core Durissima
+
+Valgono **tutte le regole di Dura Mater** (codice carta, posa 1-4 + Idea, Dura Mater / inversioni assi, matrice NxN, monte a **G pass consecutivi** senza posate da nessuno, ecc.) con **sole due eccezioni**:
+
+| Aspetto | Dura Mater | Durissima |
+|---------|------------|-----------|
+| **Pesca** | A fine turno sempre (anche su pass) | **Solo se nel turno hai posato** almeno una carta |
+| **Vittoria** | Mano vuota (primo che svuota) | **Griglia piena** — tutte le carte della partita posate |
+
+Conseguenze del core (gia' coerenti col motore):
+
+- **Pass senza posare** resta lecito (scelta tattica in coop), ma **non fa pescare** — ne' in multi ne' in solitario.
+- **Mano vuota** non chiude la partita; si continua finche' la matrice e' completa o la partita va a **monte**.
+- **Monte:** come in Dura multi — G pass consecutivi senza posate, anche con tallone pieno.
+- **Posare meno carte del massimo** nello stesso turno resta lecito: dopo la prima posa si puo' chiudere il turno anche con altre mosse legali.
+
+**Cooperativo (2+ giocatori):** al tavolo mani e mazzo restano **coperti**. Con la scheda delle 64 carte e il dialogo si costruisce l'**universo noto** (quali carte esistono ancora, non l'ordine di pesca). Solo il giocatore attivo posa dalla propria mano. La simulazione coop usa `durissima-team-planner`.
+
+**Solitario (`G = 1`):** stesse eccezioni di pesca e vittoria. Bloccati senza mosse legali all'inizio del turno → partita **persa** (nessun passo nel core). *Da rivedere:* monte e stallo senza compagni (`promemoria.md`).
+
+### N reshuffle — regola operativa (riferimento Durissima)
+
+- **Quando:** solo **a inizio del proprio turno**, **prima** di posare la prima carta del turno (`turnPlayed = 0`). Dopo la prima posa del turno non si puo' piu' reshufflare fino al turno successivo.
+- **Condizione:** **non** dipende dall'avere o meno mosse legali. Si puo' reshufflare anche con mosse legali disponibili (scelta strategica in coop).
+- **Budget:** pool condiviso di **N reshuffle a partita** (N = dimensione griglia).
+- **Meccanica:** tutta la mano va nel tallone, si mescola, si ripescano carte fino alla dimensione mano iniziale.
+- **Costo:** ogni reshuffle consuma **1** dal pool.
+- **Alternativa al reshuffle:** posare (se si sceglie una mossa accettabile), **passare** (coop multi), o — solitario a pool esaurito — **sconfitta** se non resta alcuna mossa accettabile.
+- **Cooperativo:** al tavolo e' una decisione di gruppo: evitare una posa legale ma dannosa puo' essere motivo per reshufflare o passare invece di giocare.
+- **Simulazione:** bot `durissima-planner` / `durissima-team-planner` con reshuffle strategico a inizio turno (vedi `scripts/BILANCIAMENTO-PAUSA.md`).
+
+### Altre varianti (sperimentali, non riferimento)
+
+In valutazione o in pausa: **core puro** (senza reshuffle), **riserva** N, **buffer emergenza**, reshuffle selettivo (tenere parte della mano), ecc. Probe storici: `confronto-varianti-durissima.xlsx`, JSON in `tests/`.
 
 ## Giocabilita' (etichettatura provvisoria — giugno 2026)
 
@@ -268,17 +300,19 @@ Classificazione per il prodotto e per l'UI. I test di bilanciamento Durissima so
 
 ### Durissima Mater — formato consigliato `G = N` (cooperativo)
 
-| Livello | Griglia `NxN` | Etichetta | Note (simulazione, regole semplici attuali) |
+| Livello | Griglia `NxN` | Etichetta | Note (simulazione **N reshuffle**, giu 2026) |
 |---------|---------------|-----------|---------------------------------------------|
-| **Core** | 3x3, 4x4 | Giocabile | Completamento griglia ripetibile con pianificazione coordinata |
-| **Difficile** | 5x5 | Molto difficile | Sfida seria; successo raro anche con gioco ottimo |
+| **Core** | 3x3, 4x4 | Giocabile | Es. 3x3 G=N ~12%; 4x4 G=N ~10% (bot strategico) |
+| **Difficile** | 5x5 | Molto difficile | Es. G=N ~1-2%; vita med ~4,9/5 |
 | **Estremo** | 6x6 | Quasi impossibile | Non previsto come modalita' standard |
 | **Epico** | 7x7, 8x8 | Non standard / impossibile | Solo come sfida dichiarata, non come core |
 
 ### Durissima — altre configurazioni
 
+- **Ambito Durissima:** `G = 1 … 2N` — **tutte le combinazioni legali** (>= 3 carte a testa). **Nessun `G_min` competitivo** (`ceil(N/2)` vale solo per Dura/torneo).
+- **Massimo:** `G <= 2N` (come la competitiva); oltre non e' legale.
 - **Solitario** (`G = 1`): unica modalita' solitario del gioco (obiettivo **griglia piena**); bilanciamento in pausa (`scripts/BILANCIAMENTO-PAUSA.md`), non ancora in UI Dura.
-- **Sotto-G** (`G < N`) e **overcrowd** (`N < G <= 2N`) in Durissima: **extra estremo**; non fanno parte del formato consigliato coop.
+- **Sotto-G** (`1 < G < N`) e **overcrowd** (`N < G <= 2N`) in Durissima: varianti **extra**; il formato coop consigliato resta **`G = N`**.
 
 ## Torneo a punteggio (solo partita competitiva)
 
@@ -316,7 +350,7 @@ A differenza della partita libera (dove la prima mano vuota **termina** la parti
 | Evento | Punti |
 |--------|--------|
 | Giocatore **N‑esimo** che svuota la mano (con **k** giocatori ancora in gioco, incluso lui) | **k** |
-| **Idea:** posa della **quarta carta** nello stesso turno (con almeno una carta ancora in mano dopo la quarta) | **+1** subito, indipendentemente dal fatto che si posi o meno la quinta carta |
+| **Idea:** posa della **quarta carta** legale nello stesso turno | **+1** subito al momento della quarta posa; indipendentemente dal fatto che si giochi o meno la quinta carta |
 | **Monte:** ogni carta ancora **in mano** | **−1** per carta (chi è uscito: 0) |
 
 - Il punto Idea si assegna al momento della quarta posa legale del turno, non alla quinta.

@@ -1,0 +1,35 @@
+{
+  "format": "dura-mater-durissima-l3-probe",
+  "variant": "pool-N-strategic-bot",
+  "countPerCell": 400,
+  "exportedAt": "2026-06-11T12:54:46.380Z",
+  "cells": {
+    "3x1": {
+      "cell": "3x1",
+      "L": 3,
+      "G": 1,
+      "done": 400,
+      "wins": 90,
+      "stalls": 310,
+      "vitaUsedSum": 1024
+    },
+    "3x2": {
+      "cell": "3x2",
+      "L": 3,
+      "G": 2,
+      "done": 400,
+      "wins": 74,
+      "stalls": 326,
+      "vitaUsedSum": 978
+    },
+    "3x3": {
+      "cell": "3x3",
+      "L": 3,
+      "G": 3,
+      "done": 400,
+      "wins": 50,
+      "stalls": 350,
+      "vitaUsedSum": 1050
+    }
+  }
+}

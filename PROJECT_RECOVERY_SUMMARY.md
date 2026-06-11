@@ -35,7 +35,7 @@ Dura Mater/
 ├── simulator.js            # UI simulatore + Web Worker
 ├── simulator-workflows.js  # Catalogo workflow built-in
 ├── simulator-workflows-audit.js   # Workflow audit bilanciamento MASTER
-├── simulator-workflows-matrix.js  # Workflow Matrice 3×3 … 8×8
+├── simulator-workflows-matrix.js  # Workflow Matrice 3x3 … 8x8
 ├── workflows/              # JSON importabili (audit, esempi)
 ├── card-art.js             # codice → grafica/NN.jpg (da Carte.xlsx)
 ├── card-names.js           # Nomi italiani leggibili
@@ -64,7 +64,7 @@ Dura Mater/
 1. UI (`simulator.html` + `simulator.js`) raccoglie parametri (L, G, C, strategie, regole DM).
 2. Job in coda → **Web Worker** (Blob) con core inlined.
 3. Ogni partita → `MPCardsCore.simulateGame`.
-4. Aggregazione in matrici L×G + export JSON (workflow v2 con `steps[]`).
+4. Aggregazione in matrici L x G + export JSON (workflow v2 con `steps[]`).
 
 ---
 
@@ -72,7 +72,7 @@ Dura Mater/
 
 | File | Contenuto |
 |------|-----------|
-| **`mpcards-core.js`** | Cuore del progetto (~700 righe effettive nel template): mazzo `SIM_DECK_CODES`, decode carte, legalità posa, punteggio compatibilità, chiusura **Dura Mater** (ingombro N×N), inversione turni, modalità **Durissima Mater** (vittoria a matrice piena), pesca inizio/fine turno, strategie bot (`planner`, `hand-planner`, `prudent`, `chain-max`, …), `simulateGame`. |
+| **`mpcards-core.js`** | Cuore del progetto (~700 righe effettive nel template): mazzo `SIM_DECK_CODES`, decode carte, legalità posa, punteggio compatibilità, chiusura **Dura Mater** (ingombro N x N), inversione turni, modalità **Durissima Mater** (vittoria a matrice piena), pesca inizio/fine turno, strategie bot (`planner`, `hand-planner`, `prudent`, `chain-max`, …), `simulateGame`. |
 | **`index.html` + `game.js`** | Tavolo, mano compatta + fascia carte grandi con nomi, bot, undo/redo, import/export partita. |
 | **`simulator.html` + `simulator.js`** | Batch run, preset regole, varianti mazzo sperimentali, matrici risultato, menu **Workflow**, import/export JSON, audit guide nel export. |
 | **`simulator-workflows*.js`** | Definizioni scenari multi-step (sweep, posto vs strategia, audit MASTER ~191k partite, matrici L3–L8 ~58.8k partite totali). |
@@ -91,29 +91,29 @@ Dura Mater/
 
 ### Gioco (`index.html`)
 
-- Partite 1–8 giocatori, lato matrice N (3–8), filtro carte `VALORE ≤ N`.
+- Partite 1–8 giocatori, lato matrice N (3–8), filtro carte `VALORE <= N`.
 - UI con **grafica carte** (`object-fit: contain`), nomi da `card-names.js`.
 - Modalità manuale e **bot** con strategie configurabili.
 - **Undo / redo** e salvataggio partita (`game-state.js`).
-- **Dura Mater chiusa**: chiusura quando ingombro posate = N×N; **inversione ordine turni** dal giocatore che chiude.
+- **Dura Mater chiusa**: chiusura quando ingombro posate = N x N; **inversione ordine turni** dal giocatore che chiude.
 - Mazzo fisso ufficiale; `deck-manager.js` ridotto al mazzo **finale**.
 
 ### Motore (`mpcards-core.js`)
 
-- Regole posa: adiacenza, requisiti 1–4 nel turno, confini matrice N×N prima/dopo fissazione.
+- Regole posa: adiacenza, requisiti 1–4 nel turno, confini matrice N x N prima/dopo fissazione.
 - Strategie: `high-value`, `low-value`, `compatibility`, `greedy`, `adjacent`, `draw-random-finish-random`, `random`, `auto`, **`planner`**, **`hand-planner`**, **`prudent`**, **`chain-max`**.
 - Opzioni simulazione: `invertTurnOrderOnClose`, `drawAtTurnStart`, `durissimaMater`, `randomizeTurnOrder`, `shuffleStrategiesAmongSeats`.
 - `simulateGame` con metriche (vincitore, turni, chiusura DM, stalli, strategie effettive per posto).
 
 ### Simulatore (`simulator.html`)
 
-- Griglia L×G con C partite per cella; Web Worker; seed riproducibile.
+- Griglia L x G con C partite per cella; Web Worker; seed riproducibile.
 - Matrici: rendimento giocatore/strategia, turni, % Dura Mater chiusa.
 - Mazzo ufficiale + **variante sperimentale** (64 codici incollati).
 - **Workflow** multi-step con export JSON (`format: dura-mater-simulator-workflow-results`, v2):
   - Built-in: `full-sweep`, `standard-sweep`, `seat-strategy-*`, ecc.
   - **Audit bilanciamento MASTER** (`balance-audit-master`, ~191k partite).
-  - **Matrice 3×3 … 8×8** (4 modalità regole × G=1…L, shuffle strategie).
+  - **Matrice 3x3 … 8x8** (4 modalità regole  x  G=1…L, shuffle strategie).
 - Import JSON workflow (`workflows/*.json`).
 
 ### Test e tooling
@@ -179,7 +179,7 @@ Dura Mater/
 
 ### Bilanciamento (uso simulatore, non bug)
 
-- Eseguire workflow **Audit MASTER** o **Matrice L×N**, esportare JSON, analizzare con `auditGuide` / `matrixGuide`.
+- Eseguire workflow **Audit MASTER** o **Matrice L x N**, esportare JSON, analizzare con `auditGuide` / `matrixGuide`.
 - Interpretare **stalli alti** come difficoltà puzzle, non errore simulatore (`SIMULATOR.md`).
 
 ### Convenzioni agenti
@@ -206,10 +206,10 @@ Dura Mater/
 | Concetto | Dettaglio |
 |----------|-----------|
 | Codice carta | 3 cifre: 1ª=VALORE, 2ª=FORMA, 3ª=COLORE (1=Rosso … 8=Bianco) |
-| Mazzo partita | Carte con valore ≤ N → N×N carte |
+| Mazzo partita | Carte con valore <= N → N x N carte |
 | Vittoria competitiva | Primo senza carte in mano |
-| Dura Mater chiusa | Ingombro posate = N×N → inversione turni |
-| Durissima Mater | Vittoria quando matrice N×N è piena (tutte le celle) |
+| Dura Mater chiusa | Ingombro posate = N x N → inversione turni |
+| Durissima Mater | Vittoria quando matrice N x N è piena (tutte le celle) |
 
 ---
 

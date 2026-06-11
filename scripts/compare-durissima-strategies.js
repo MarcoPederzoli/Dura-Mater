@@ -36,7 +36,7 @@ function run(size, players, strategy, formatIndex, strategyIndex) {
 }
 
 process.stderr.write(
-  `\nConfronto strategie Durissima: ${FORMATS.length} formati × 2 strategie × ${N} partite\n\n`
+  `\nConfronto strategie Durissima: ${FORMATS.length} formati  x  2 strategie  x  ${N} partite\n\n`
 );
 
 for (let fi = 0; fi < FORMATS.length; fi++) {
