@@ -307,6 +307,128 @@ testDurissimaPassOnlyAfterAtLeastOnePlacement();
 testMonteAfterFullRoundPassesEvenWithDrawPile();
 testDurissimaCoopPassDoesNotDrawWithPile();
 
+function testDurissimaHandCapPassDrawsWhenBelowCap() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 2,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaHandDrawCap: true,
+    durissimaVitaExtraEnabled: false
+  });
+  assert.equal(core.durissimaUsesCompetitiveDraw(state), true);
+  assert.ok(state.drawPile.length > 0);
+  const pid = state.currentPlayer;
+  state.hands[pid].pop();
+  const handBefore = state.hands[pid].length;
+  assert.ok(handBefore < state.initialHandSize);
+  core.passTurn(state);
+  assert.equal(state.hands[pid].length, handBefore + 1);
+}
+
+function testDurissimaHandCapBlocksDrawAtCap() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
+  const state = core.setupGame(deck, {
+    size: 5,
+    players: 3,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaHandDrawCap: true,
+    durissimaVitaExtraEnabled: false
+  });
+  const pid = state.currentPlayer;
+  state.hands[pid] = state.hands[pid].slice(0, state.initialHandSize);
+  const pileBefore = state.drawPile.length;
+  core.passTurn(state);
+  assert.equal(state.hands[pid].length, state.initialHandSize);
+  assert.equal(state.drawPile.length, pileBefore);
+}
+
+function testDurissimaHandCap2NUsesGridSize() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 2,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaHandDrawCap: true,
+    durissimaHandDrawCapFactor: 2,
+    durissimaVitaExtraEnabled: false
+  });
+  assert.equal(core.durissimaHandDrawCapLimit(state), 6);
+  const pid = state.currentPlayer;
+  while (state.hands[pid].length < 6 && state.drawPile.length > 0) {
+    core.drawForPlayer(state, pid);
+  }
+  assert.equal(state.hands[pid].length, 6);
+  const pileBefore = state.drawPile.length;
+  core.drawForPlayer(state, pid);
+  assert.equal(state.hands[pid].length, 6);
+  assert.equal(state.drawPile.length, pileBefore);
+}
+
+function testDurissimaFreeDrawCoopPassDrawsWithNReshuffle() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 2,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaCompetitiveDraw: true
+  });
+  assert.equal(core.durissimaUsesCompetitiveDraw(state), true);
+  assert.equal(state.durissimaHandDrawCap, false);
+  assert.equal(state.durissimaVitaExtraEnabled, true);
+  assert.equal(state.durissimaVitaExtraPool, 3);
+  const pid = state.currentPlayer;
+  state.hands[pid].pop();
+  const handBefore = state.hands[pid].length;
+  core.passTurn(state);
+  assert.equal(state.hands[pid].length, handBefore + 1);
+}
+
+testDurissimaHandCapPassDrawsWhenBelowCap();
+testDurissimaHandCapBlocksDrawAtCap();
+testDurissimaHandCap2NUsesGridSize();
+function testDurissimaFreeDrawBotPassesWhenMonteSafe() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 2,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaCompetitiveDraw: true
+  });
+  const requirement = core.placementRequirement(state);
+  assert.ok(core.legalPlacements(state, state.currentPlayer, requirement).length > 0);
+  assert.equal(state.consecutivePasses, 0);
+  const random = core.mulberry32(42);
+  const result = core.botStep(state, ["durissima-team-planner", "durissima-team-planner"], random);
+  assert.equal(result.passed, true);
+  assert.equal(state.consecutivePasses, 1);
+}
+
+function testDurissimaFreeDrawBotPlacesWhenMonteThreat() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 2,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaCompetitiveDraw: true
+  });
+  state.consecutivePasses = 1;
+  const random = core.mulberry32(42);
+  const result = core.botStep(state, ["durissima-team-planner", "durissima-team-planner"], random);
+  assert.equal(result.played, true);
+  assert.equal(state.consecutivePasses, 0);
+}
+
+testDurissimaFreeDrawCoopPassDrawsWithNReshuffle();
+testDurissimaFreeDrawBotPassesWhenMonteSafe();
+testDurissimaFreeDrawBotPlacesWhenMonteThreat();
+
 function testDurissimaNReshuffleDefaultWithPool() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
   const state = core.setupGame(deck, { size: 5, players: 3, random: () => 0, durissimaMater: true });
@@ -328,6 +450,42 @@ function testDurissimaCorePureOptOutDisablesNReshuffle() {
   });
   assert.equal(state.durissimaVitaExtraPool, 0);
   assert.equal(state.durissimaVitaExtraEnabled, false);
+}
+
+function testDurissimaSelectiveReshuffleKeepsCardsAndRefills() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);
+  const state = core.setupGame(deck, {
+    size: 4,
+    players: 1,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: true,
+    durissimaVitaExtraBudget: 1
+  });
+  const keepUid = state.hands[0][0].uid;
+  const keepCode = state.hands[0][0].code;
+  assert.equal(
+    core.tryDurissimaVitaExtra(state, 0, core.mulberry32(99), { keepUids: [keepUid] }),
+    true
+  );
+  assert.equal(state.hands[0].length, 4);
+  assert.equal(state.hands[0].some(card => card.uid === keepUid), true);
+  assert.equal(state.hands[0].some(card => card.code === keepCode), true);
+  assert.equal(state.durissimaVitaExtraPool, 0);
+}
+
+function testDurissimaSelectiveReshuffleRequiresAtLeastOneChange() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 1,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: true
+  });
+  const allUids = state.hands[0].map(card => card.uid);
+  assert.equal(core.tryDurissimaVitaExtra(state, 0, core.mulberry32(1), { keepUids: allUids }), false);
+  assert.equal(state.durissimaVitaExtraPool, 3);
 }
 
 function testDurissimaVitaExtraReshufflesAndRefillsHand() {
@@ -486,6 +644,245 @@ function testDurissimaTeamPlannerPlaysInCoop() {
   assert.equal(result.played || result.passed || result.ended, true);
 }
 
+function testDurissimaGnIdealDetectsPoolDeal() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 3,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false
+  });
+  assert.equal(core.isDurissimaGnIdeal(state), true);
+  assert.equal(state.initialDrawCount, 0);
+}
+
+function testDurissimaGlobalPlannerPlaysLegalGnMove() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 3,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false
+  });
+  const strategies = ["durissima-global-planner", "durissima-global-planner", "durissima-global-planner"];
+  const result = core.botStep(state, strategies, core.mulberry32(1));
+  assert.equal(result.played, true);
+}
+
+function testDurissimaGlobalPlannerSolvesGn3x3() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const random = core.mulberry32(42);
+  const result = core.simulateGame(deck, {
+    size: 3,
+    players: 3,
+    random,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false,
+    randomizeTurnOrder: true,
+    strategies: ["durissima-global-planner", "durissima-global-planner", "durissima-global-planner"]
+  });
+  assert.equal(result.status, "success");
+}
+
+function testDurissimaGlobalPlannerPlaysLegalGn5x5() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
+  const state = core.setupGame(deck, {
+    size: 5,
+    players: 5,
+    random: core.mulberry32(1),
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false,
+    randomizeTurnOrder: true
+  });
+  assert.equal(core.isDurissimaGnIdeal(state), true);
+  const strategies = Array.from({ length: 5 }, () => "durissima-global-planner");
+  const result = core.botStep(state, strategies, core.mulberry32(1));
+  assert.equal(result.played, true);
+}
+
+function testDurissimaGlobalPlannerSearchBudgetTiers() {
+  assert.equal(core.gnPerMoveNodesForSize(3), 15000);
+  assert.equal(core.gnPerMoveNodesForSize(4), 20000);
+  assert.equal(core.gnMaxNodesForSize(4), 200000);
+  assert.equal(core.gnPerMoveNodesForSize(5), 35000);
+  assert.equal(core.gnMaxNodesForSize(5), 500000);
+  assert.equal(core.gnShallowMaxDepth(5), 8);
+  assert.equal(core.gnShallowNodesPerMove(5), 6000);
+}
+
+function testGnTieredSearchOnlyAboveL5() {
+  assert.equal(core.gnCriticalEmptyThreshold(5), 10);
+  assert.equal(core.gnCriticalEmptyThreshold(8), 26);
+  const deck5 = core.simulationDeck().filter(card => Number(card.value) <= 5);
+  const state5 = core.setupGame(deck5, {
+    size: 5,
+    players: 5,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false
+  });
+  assert.equal(core.gnIsCriticalPosition(state5), true);
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 8);
+  const state = core.setupGame(deck, {
+    size: 8,
+    players: 8,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false
+  });
+  assert.equal(core.gnIsCriticalPosition(state), false);
+  while (state.board.length < 42) {
+    state.board.push({
+      x: state.board.length % 8,
+      y: Math.floor(state.board.length / 8),
+      playerId: 0,
+      card: deck[state.board.length]
+    });
+  }
+  assert.equal(core.gnIsCriticalPosition(state), true);
+}
+
+function testGnIdealFillMatchingRejectsDeadLastCell() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
+  const state = core.setupGame(deck, {
+    size: 5,
+    players: 5,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false
+  });
+  const byCode = code => deck.find(c => c.code === code);
+  const place = (x, y, card) => state.board.push({ x, y, playerId: 0, card });
+  const c587 = byCode(587);
+  const c456 = byCode(456);
+  const c238 = byCode(238);
+  const c227 = byCode(227);
+  const c118 = byCode(118);
+  place(3, 2, c587);
+  place(2, 3, c456);
+  place(4, 3, c238);
+  place(3, 4, c227);
+  state.hands = [[], [], [], [c118], []];
+  assert.equal(core.gnIdealFillMatchingPossible(state), false);
+}
+
+function testGnPruneReservedCardMisuse() {
+  const deck = core.simulationDeck();
+  const byCode = code => deck.find(c => c.code == code);
+  const state = core.setupGame(deck, {
+    size: 5,
+    players: 5,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false
+  });
+  const placements = [
+    [0, 0, "554"], [1, 0, "588"], [2, 0, "577"], [1, 1, "548"], [2, 1, "478"], [0, 1, "564"],
+    [1, 2, "586"], [2, 2, "486"], [0, 2, "575"], [3, 2, "587"], [3, 1, "467"], [3, 0, "247"],
+    [4, 1, "445"]
+  ];
+  for (const [x, y, code] of placements) {
+    state.board.push({ x, y, playerId: 0, card: byCode(code) });
+  }
+  state.hands = [
+    [byCode(428), byCode(238)],
+    [byCode(336), byCode(456), byCode(367)],
+    [byCode(227), byCode(437), byCode(538)],
+    [byCode(348), byCode(118)],
+    [byCode(328), byCode(356)]
+  ];
+  state.drawPile = [];
+  const reserved = byCode(538);
+  const reservations = core.gnCardReservations(state);
+  assert.ok(reservations.has(reserved.uid));
+  assert.equal(reservations.get(reserved.uid).x, 0);
+  assert.equal(reservations.get(reserved.uid).y, 3);
+  const misuse = [
+    { card: reserved, cardUid: reserved.uid, x: 0, y: 1 },
+    { card: reserved, cardUid: reserved.uid, x: 0, y: 3 }
+  ];
+  const pruned = core.gnPruneReservedCardMisuse(state, misuse);
+  assert.equal(pruned.length, 1);
+  assert.equal(pruned[0].x, 0);
+  assert.equal(pruned[0].y, 3);
+}
+
+function testGn5x5PatchPhasesAdvance() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
+  const state = core.setupGame(deck, {
+    size: 5,
+    players: 5,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false
+  });
+  const corner3 = core.gnSelectBestPatchGoal(state);
+  assert.equal(corner3.w, 3);
+  assert.equal(corner3.ox, 0);
+  let i = 0;
+  for (let y = 0; y < 3; y++) {
+    for (let x = 0; x < 3; x++) {
+      state.board.push({ x, y, playerId: 0, card: deck[i++] });
+    }
+  }
+  const second = core.gnSelectBestPatchGoal(state);
+  assert.ok(second.w === 3 || second.w === 4);
+  for (let y = second.oy; y < second.oy + 3; y++) {
+    for (let x = second.ox; x < second.ox + 3; x++) {
+      if (x < 3 && y < 3) continue;
+      state.board.push({ x, y, playerId: 0, card: deck[i++] });
+    }
+  }
+  while (state.board.length < 20) {
+    state.board.push({
+      x: state.board.length % 5,
+      y: Math.floor(state.board.length / 5),
+      playerId: 0,
+      card: deck[i++]
+    });
+  }
+  assert.equal(core.gnSelectBestPatchGoal(state), null);
+}
+
+function testGnPatchGoalOnLargeBoard() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 8);
+  const state = core.setupGame(deck, {
+    size: 8,
+    players: 8,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false
+  });
+  state.board.push({ x: 0, y: 0, playerId: 0, card: deck[0] });
+  state.board.push({ x: 1, y: 0, playerId: 1, card: deck[1] });
+  const patch = core.gnSelectBestPatchGoal(state);
+  assert.ok(patch);
+  assert.ok(patch.w === 3 || patch.w === 4);
+  assert.ok(patch.ox <= 1 && patch.oy === 0);
+}
+
+function testGnPatchGuidedMoveStaysInPatch() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 8);
+  const state = core.setupGame(deck, {
+    size: 8,
+    players: 8,
+    random: core.mulberry32(12),
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false,
+    randomizeTurnOrder: true
+  });
+  state.board.push({ x: 2, y: 2, playerId: 0, card: deck[0] });
+  state.board.push({ x: 3, y: 2, playerId: 1, card: deck[1] });
+  state._gnPlannerPatchGoal = { ox: 2, oy: 2, w: 3, h: 3 };
+  const strategies = Array.from({ length: 8 }, () => "durissima-global-planner");
+  const result = core.botStep(state, strategies, core.mulberry32(12));
+  assert.equal(result.played, true);
+  const last = state.board[state.board.length - 1];
+  assert.ok(last.x >= 2 && last.x <= 4 && last.y >= 2 && last.y <= 4);
+}
+
 function testDurissimaMultiNoEmergencyBuffer() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
   const state = core.setupGame(deck, { size: 5, players: 3, random: () => 0, durissimaMater: true });
@@ -510,6 +907,8 @@ function testDurissimaSolitaireBufferExhaustedIsLoss() {
 
 testDurissimaNReshuffleDefaultWithPool();
 testDurissimaCorePureOptOutDisablesNReshuffle();
+testDurissimaSelectiveReshuffleKeepsCardsAndRefills();
+testDurissimaSelectiveReshuffleRequiresAtLeastOneChange();
 testDurissimaVitaExtraReshufflesAndRefillsHand();
 testDurissimaVitaExtraPoolChainsUntilPlayableOrEmpty();
 testDurissimaMultiPassAfterVitaGoesToNextPlayer();
@@ -517,6 +916,17 @@ testDurissimaPlannerReshufflesWhenOnlyBlockingMoves();
 testDurissimaSoloAutoVitaExtraOnStuckWhenOptIn();
 testDurissimaSoloStuckWithoutMovesIsLoss();
 testDurissimaTeamPlannerPlaysInCoop();
+testDurissimaGnIdealDetectsPoolDeal();
+testDurissimaGlobalPlannerPlaysLegalGnMove();
+testDurissimaGlobalPlannerSolvesGn3x3();
+testDurissimaGlobalPlannerPlaysLegalGn5x5();
+testDurissimaGlobalPlannerSearchBudgetTiers();
+testGnTieredSearchOnlyAboveL5();
+testGnIdealFillMatchingRejectsDeadLastCell();
+testGnPruneReservedCardMisuse();
+testGn5x5PatchPhasesAdvance();
+testGnPatchGoalOnLargeBoard();
+testGnPatchGuidedMoveStaysInPatch();
 testDurissimaMultiNoEmergencyBuffer();
 testDurissimaSolitaireBufferExhaustedIsLoss();
 
