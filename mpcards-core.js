@@ -1698,6 +1698,9 @@ const MPCARDS_CORE_SOURCE = `
       } else if (fillRatio >= 0.6) {
         moveLimit = Math.floor(baseMoveLimit * 1.5);
       }
+      if (state.size === 6 && isDurissimaGnIdeal(state) && gnEmptyCellsInIdealGrid(state) <= 8) {
+        moveLimit = Math.max(moveLimit, Math.floor(baseMoveLimit * 2.2));
+      }
       moveLimit = Math.min(gameLeft, Math.max(moveLimit, Math.floor(gameLeft * 0.22)));
     } else if (reserve > 0 && spent > ctx.maxNodes - reserve) {
       moveLimit = Math.floor(baseMoveLimit * 0.5);
@@ -3000,7 +3003,10 @@ const MPCARDS_CORE_SOURCE = `
         const center = gnEdgeGapCenter(gnIdealRightColEmpty(state), "y");
         score -= Math.abs(move.y - center) * 80;
       }
-      if (gnIsGridCorner(state, move.x, move.y)) {
+      const reserved = gnCardReservations(state).get(move.card.uid);
+      if (reserved && reserved.x === move.x && reserved.y === move.y) {
+        score += 5000;
+      } else if (gnIsGridCorner(state, move.x, move.y)) {
         score += gnEndgameCornerCloseActive(state) ? 2500 : -1800;
       }
     }
@@ -3202,6 +3208,37 @@ const MPCARDS_CORE_SOURCE = `
     return gnCellPoolFillers(state, below.x, below.y).length > 0;
   }
 
+  /** Detentore filler unico su bordo: gioca subito (es. 666@(5,2)). */
+  function gnTrySoleEdgeFillerMove(state, playerId) {
+    if (!isDurissimaGnIdeal(state) || state.size < 6 || state.turnPlayed !== 0) return null;
+    if (gnEmptyCellsInIdealGrid(state) > 11) return null;
+    const requirement = placementRequirement(state);
+    const moves = legalPlacements(state, playerId, requirement);
+    if (!moves.length) return null;
+    const edge = state.size - 1;
+    let best = null;
+    let bestScore = -1;
+    for (const cell of gnIdealEmptyCellList(state)) {
+      if (cell.y !== edge && cell.x !== edge) continue;
+      const uids = gnCellLegalFillersAtReq(state, cell.x, cell.y, 1);
+      if (uids.size !== 1) continue;
+      const uid = [...uids][0];
+      if (!(state.hands[playerId] || []).some(card => card.uid === uid)) continue;
+      const hit = moves.find(move => move.x === cell.x && move.y === cell.y && move.card.uid === uid);
+      if (!hit) continue;
+      let score = 500;
+      if (cell.x === edge) score += 200;
+      if (cell.y === edge) score += 150;
+      const safe = !gnMoveBreaksIdealFillPlan(state, playerId, hit);
+      if (safe) score += 400;
+      if (score > bestScore) {
+        bestScore = score;
+        best = hit;
+      }
+    }
+    return best;
+  }
+
   /** Riserva legale solo ora: qualsiasi altra prima mossa la fa perdere al req+1. */
   /** Bordo req=1 condiviso: gioca la propria carta per non consumare il filler dell'altro (es. 336 su (1,5)). */
   function gnShouldYieldForSoleEdgeFiller(state, playerId) {
@@ -3261,17 +3298,32 @@ const MPCARDS_CORE_SOURCE = `
 
   function gnTryFragileReservedMove(state, playerId) {
     if (!isDurissimaGnIdeal(state) || state.size < 6 || state.turnPlayed !== 0) return null;
+    if (state.size === 6 && gnEmptyCellsInIdealGrid(state) <= 8) return null;
+    if (state.size === 5 && gnEmptyCellsInIdealGrid(state) <= gnEndgameExactThreshold(5)) return null;
     const requirement = placementRequirement(state);
     const moves = legalPlacements(state, playerId, requirement);
     if (!moves.length) return null;
     const reserved = gnReservedLegalMoves(state, playerId, moves);
+    const edge = state.size - 1;
     for (const rm of reserved) {
       const others = moves.filter(move =>
         move.cardUid !== rm.cardUid || move.x !== rm.x || move.y !== rm.y
       );
       if (!others.length) continue;
       const fragile = others.every(other => !gnReservedSurvivesFirstPlay(state, playerId, rm, other));
-      if (fragile && gnReservedMacroStepViable(state, playerId, rm)) return rm;
+      if (!fragile || !gnReservedMacroStepViable(state, playerId, rm)) continue;
+      if (gnClosingEdgeSweepActive(state)) {
+        const colAlts = moves.filter(move =>
+          move.card.uid === rm.card.uid && move.x === edge && move.y > 0 && move.y < edge
+          && !gnMoveBreaksIdealFillPlan(state, playerId, move)
+        );
+        if (colAlts.length) {
+          return colAlts
+            .map(move => ({ move, score: gnRankReservedMove(state, move) }))
+            .sort((a, b) => b.score - a.score)[0].move;
+        }
+      }
+      return rm;
     }
     return null;
   }
@@ -3400,10 +3452,47 @@ const MPCARDS_CORE_SOURCE = `
       if (reserved.length > 1) return gnPickReservedPool(state, playerId, reserved);
     }
     moves = gnPruneFatalMoves(state, playerId, moves);
+    if (state.turnPlayed === 0) {
+      const pruned = gnPruneUnfillableIdealMoves(state, playerId, moves);
+      if (pruned.length) moves = pruned;
+    }
     if (moves.length === 1) return moves[0];
     const forced = gnSingletonForcedKeys(state, moves);
     if (!forced.size) return null;
     return gnPickBestForcedSingletonMove(state, moves, forced);
+  }
+
+  function gnTryEndgameSolverAction(state) {
+    if (!isDurissimaGnIdeal(state) || state.turnPlayed !== 0) return null;
+    const emptyCells = gnEmptyCellsInIdealGrid(state);
+    if (emptyCells > gnEndgameExactThreshold(state.size)) return null;
+    state._gnPlannerPatchGoal = null;
+    if (state.size <= 5 || (state.size === 6 && emptyCells <= 8)) {
+      const exact = solveGnBestAction(state);
+      if (exact) return exact;
+    } else if (state.size <= 8) {
+      const shallow = solveGnShallowBestAction(state);
+      if (shallow) return shallow;
+    }
+    return null;
+  }
+
+  /** Relay non deve superare il solver quando la chiusura e' critica (6x6, <=8 vuoti). */
+  function gnTryRelayOrEndgameAction(state, playerId) {
+    if (isDurissimaGnIdeal(state) && state.turnPlayed === 0) {
+      const empty = gnEmptyCellsInIdealGrid(state);
+      const useExact = state.size === 6 && empty <= 8;
+      if (useExact) {
+        const exact = solveGnBestAction(state);
+        if (exact) {
+          if (exact.type !== "move" || gnReservedMacroStepViable(state, playerId, exact.move)) {
+            return exact;
+          }
+        }
+      }
+    }
+    const relay = gnTrySharedEdgeRelayMove(state, playerId);
+    return relay ? { type: "move", move: relay } : null;
   }
 
   function chooseDurissimaGlobalAction(state, playerId, random) {
@@ -3418,8 +3507,11 @@ const MPCARDS_CORE_SOURCE = `
     const preserveSetup = gnTryPreserveReservedSetupMove(state, playerId);
     if (preserveSetup) return { type: "move", move: preserveSetup };
 
-    const relayMove = gnTrySharedEdgeRelayMove(state, playerId);
-    if (relayMove) return { type: "move", move: relayMove };
+    const relayAction = gnTryRelayOrEndgameAction(state, playerId);
+    if (relayAction) return relayAction;
+
+    const soleFillerMove = gnTrySoleEdgeFillerMove(state, playerId);
+    if (soleFillerMove) return { type: "move", move: soleFillerMove };
 
     if (gnShouldYieldForSoleEdgeFiller(state, playerId)) {
       return { type: "stop" };
@@ -3473,14 +3565,8 @@ const MPCARDS_CORE_SOURCE = `
 
     const emptyCells = gnEmptyCellsInIdealGrid(state);
     if (isDurissimaGnIdeal(state) && emptyCells <= gnEndgameExactThreshold(state.size)) {
-      state._gnPlannerPatchGoal = null;
-      let endgameAction = null;
-      if (state.size <= 5 || (state.size === 6 && emptyCells <= 8)) {
-        endgameAction = solveGnBestAction(state);
-      } else if (state.size <= 8) {
-        endgameAction = solveGnShallowBestAction(state);
-      }
-      if (endgameAction) return endgameAction;
+      const endgameRetry = gnTryEndgameSolverAction(state);
+      if (endgameRetry) return endgameRetry;
       const endgameFallback = chooseDurissimaGlobalBestHeuristicMove(state, playerId);
       if (endgameFallback) return { type: "move", move: endgameFallback };
     }
