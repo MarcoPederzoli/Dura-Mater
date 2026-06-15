@@ -2241,7 +2241,19 @@ const MPCARDS_CORE_SOURCE = `
         const key = move.cardUid + "@" + move.x + "," + move.y;
         if (forced.has(key)
           && (state.turnPlayed > 0 || gnReservedMacroStepViable(state, playerId, move))) {
-          score += 50000;
+          let bonus = 50000;
+          if (state.turnPlayed > 0) {
+            const reservations = gnCardReservations(state);
+            const cell = reservations.get(move.card.uid);
+            if (cell && cell.x === move.x && cell.y === move.y) {
+              const alt = moves.some(other =>
+                other.x === move.x && other.y === move.y && other.card.uid !== move.card.uid
+                && !gnMoveBreaksIdealFillPlan(state, playerId, other)
+              );
+              if (alt) bonus = 0;
+            }
+          }
+          score += bonus;
         }
         return { move, score };
       })
@@ -2761,6 +2773,49 @@ const MPCARDS_CORE_SOURCE = `
     return { type: "move", move: ranked[0].move };
   }
 
+  /**
+   * Coppia sicura stessa cella, rank locale ravvicinato: preferisci la seconda
+   * (evita overfit euristico globale su scelte equivalenti in apertura media).
+   */
+  function gnTrySameCellAmbiguousPairMove(state, playerId, topMove) {
+    if (!topMove || !isDurissimaGnIdeal(state) || state.turnPlayed === 0) return null;
+    const empty = gnEmptyCellsInIdealGrid(state);
+    if (empty < 18 || empty > 24 || state.board.length > 17) return null;
+    const requirement = placementRequirement(state);
+    const safe = legalPlacements(state, playerId, requirement)
+      .filter(move => !gnMoveBreaksIdealFillPlan(state, playerId, move));
+    const pair = safe.filter(move => move.x === topMove.x && move.y === topMove.y);
+    if (pair.length !== 2) return null;
+    const ranked = pair
+      .map(move => ({ move, score: gnMoveRank(state, playerId, move, { useMorphology: true }) }))
+      .sort((a, b) => b.score - a.score);
+    if (ranked[0].score - ranked[1].score < 2.5) return ranked[1].move;
+    return null;
+  }
+
+  /** Stessa carta, piu celle sicure: unica opzione su ultima riga ideale. */
+  function gnRepickSameCardSingleBottomRow(state, playerId, move) {
+    if (!move || !isDurissimaGnIdeal(state) || state.turnPlayed !== 0) return move;
+    const empty = gnEmptyCellsInIdealGrid(state);
+    if (empty < 12 || empty > 20) return move;
+    const edge = state.size - 1;
+    const requirement = placementRequirement(state);
+    const safe = legalPlacements(state, playerId, requirement)
+      .filter(m => !gnMoveBreaksIdealFillPlan(state, playerId, m));
+    const group = safe.filter(m => m.card.uid === move.card.uid);
+    if (group.length < 2) return move;
+    const bottom = group.filter(m => m.y === edge && m.x === edge - 1);
+    if (bottom.length !== 1 || move.y === edge) return move;
+    return bottom[0];
+  }
+
+  function gnFinalizeGlobalMoveAction(state, playerId, action) {
+    if (!action || action.type !== "move" || !action.move) return action;
+    const repick = gnRepickSameCardSingleBottomRow(state, playerId, action.move);
+    if (repick.x === action.move.x && repick.y === action.move.y) return action;
+    return { type: "move", move: repick };
+  }
+
   function chooseDurissimaGlobalBestHeuristicMove(state, playerId) {
     const ctx = gnSearchContextForState(state);
     const branchLimit = gnAdaptiveBranchLimit(state, ctx.branchLimit);
@@ -2768,7 +2823,10 @@ const MPCARDS_CORE_SOURCE = `
       useMorphology: true,
       useGlobalHeuristic: true
     });
-    return moves.length ? moves[0] : null;
+    if (!moves.length) return null;
+    const ambiguous = gnTrySameCellAmbiguousPairMove(state, playerId, moves[0]);
+    if (ambiguous) return ambiguous;
+    return moves[0];
   }
 
   /** Mosse obbligate (singleton / unica legale): sempre, senza DFS. */
@@ -3335,6 +3393,7 @@ const MPCARDS_CORE_SOURCE = `
       .filter(entry => entry.fillers.size === 2)
       .sort((a, b) => gnPoolOptionsForCell(state, a.cell.x, a.cell.y)
         - gnPoolOptionsForCell(state, b.cell.x, b.cell.y));
+    const relayCandidates = [];
     for (const entry of edgeCells) {
       const cell = entry.cell;
       const fillers = entry.fillers;
@@ -3348,11 +3407,16 @@ const MPCARDS_CORE_SOURCE = `
           }
           if (holder < 0 || holder === playerId) continue;
           if (gnCardIdealPlacementCount(state, uid) > 4) continue;
-          return move;
+          relayCandidates.push(move);
         }
       }
     }
-    return null;
+    if (!relayCandidates.length) return null;
+    const safeRelay = relayCandidates.filter(move => !gnMoveBreaksIdealFillPlan(state, playerId, move));
+    if (safeRelay.length) return safeRelay[0];
+    const safeAny = moves.filter(move => !gnMoveBreaksIdealFillPlan(state, playerId, move));
+    if (safeAny.length) return null;
+    return relayCandidates[0];
   }
 
   function gnTryFragileReservedMove(state, playerId) {
@@ -3381,6 +3445,10 @@ const MPCARDS_CORE_SOURCE = `
             .map(move => ({ move, score: gnRankReservedMove(state, move) }))
             .sort((a, b) => b.score - a.score)[0].move;
         }
+      }
+      if (gnMoveBreaksIdealFillPlan(state, playerId, rm)) {
+        const safeAny = moves.filter(move => !gnMoveBreaksIdealFillPlan(state, playerId, move));
+        if (safeAny.length) return null;
       }
       return rm;
     }
@@ -3494,6 +3562,31 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   function gnPickReservedCellBypassMove(state, playerId, reserved, moves) {
+    if (!reserved.length) return null;
+    if (reserved.length === 1) {
+      const rm = reserved[0];
+      if (!gnMoveBreaksIdealFillPlan(state, playerId, rm)) return null;
+      const reservations = gnCardReservations(state);
+      const cellKey = coordKey(rm.x, rm.y);
+      const bypass = moves.filter(move => {
+        if (coordKey(move.x, move.y) !== cellKey) return false;
+        const cell = reservations.get(move.card.uid);
+        return !cell || cell.x !== move.x || cell.y !== move.y;
+      });
+      if (!bypass.length) return null;
+      if (bypass.length === 1) return bypass[0];
+      return bypass
+        .slice()
+        .sort((a, b) => {
+          const ca = gnCardIdealPlacementCount(state, a.card.uid);
+          const cb = gnCardIdealPlacementCount(state, b.card.uid);
+          if (ca !== cb) return ca - cb;
+          const pa = gnPoolOptionsForCell(state, a.x, a.y);
+          const pb = gnPoolOptionsForCell(state, b.x, b.y);
+          if (pa !== pb) return pb - pa;
+          return gnMoveRank(state, playerId, a, {}) - gnMoveRank(state, playerId, b, {});
+        })[0];
+    }
     if (reserved.length !== 2) return null;
     if (reserved[0].x === reserved[1].x && reserved[0].y === reserved[1].y) return null;
     if (state.board.length < 8 || state.board.length > 10 || gnEmptyCellsInIdealGrid(state) > 28) return null;
@@ -3532,6 +3625,12 @@ const MPCARDS_CORE_SOURCE = `
       }
       if (reserved.length === 1) {
         if (state.turnPlayed === 0 && !gnReservedMacroStepViable(state, playerId, reserved[0])) return null;
+        if (state.turnPlayed === 0 && gnMoveBreaksIdealFillPlan(state, playerId, reserved[0])) {
+          const safe = moves.filter(move => !gnMoveBreaksIdealFillPlan(state, playerId, move));
+          const bypass = gnPickReservedCellBypassMove(state, playerId, reserved, safe);
+          if (bypass) return bypass;
+          if (safe.length) return null;
+        }
         return reserved[0];
       }
       if (reserved.length > 1) {
@@ -3589,7 +3688,7 @@ const MPCARDS_CORE_SOURCE = `
             ? gnMoveBreaksIdealFillPlan(state, playerId, relay)
             : true;
           if (!solverBreaks && relayBreaks) return { type: "move", move: exact.move };
-          if (gnReservedMacroStepViable(state, playerId, exact.move)) {
+          if (!solverBreaks && gnReservedMacroStepViable(state, playerId, exact.move)) {
             return { type: "move", move: exact.move };
           }
         }
@@ -3700,22 +3799,22 @@ const MPCARDS_CORE_SOURCE = `
 
     if (!gnIsCriticalPosition(state)) {
       const shallowAction = solveGnShallowBestAction(state);
-      if (shallowAction) return shallowAction;
+      if (shallowAction) return gnFinalizeGlobalMoveAction(state, playerId, shallowAction);
       const move = chooseDurissimaGlobalBestHeuristicMove(state, playerId);
-      if (move) return { type: "move", move };
+      if (move) return gnFinalizeGlobalMoveAction(state, playerId, { type: "move", move });
       return { type: "stop" };
     }
 
     if (state.size >= 6) {
       const shallowCritical = solveGnShallowBestAction(state);
-      if (shallowCritical) return shallowCritical;
+      if (shallowCritical) return gnFinalizeGlobalMoveAction(state, playerId, shallowCritical);
     }
 
     const solverAction = solveGnBestAction(state);
-    if (solverAction) return solverAction;
+    if (solverAction) return gnFinalizeGlobalMoveAction(state, playerId, solverAction);
 
     const move = chooseDurissimaGlobalBestHeuristicMove(state, playerId);
-    if (move) return { type: "move", move };
+    if (move) return gnFinalizeGlobalMoveAction(state, playerId, { type: "move", move });
     return { type: "stop" };
   }
 
