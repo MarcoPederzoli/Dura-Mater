@@ -2239,7 +2239,10 @@ const MPCARDS_CORE_SOURCE = `
       .map(move => {
         let score = gnMoveRank(state, playerId, move, options);
         const key = move.cardUid + "@" + move.x + "," + move.y;
-        if (forced.has(key)) score += 50000;
+        if (forced.has(key)
+          && (state.turnPlayed > 0 || gnReservedMacroStepViable(state, playerId, move))) {
+          score += 50000;
+        }
         return { move, score };
       })
       .sort((a, b) => b.score - a.score);
@@ -3490,6 +3493,32 @@ const MPCARDS_CORE_SOURCE = `
     return gnPickBestForcedSingletonMove(state, pool, forcedKeys);
   }
 
+  function gnPickReservedCellBypassMove(state, playerId, reserved, moves) {
+    if (reserved.length !== 2) return null;
+    if (reserved[0].x === reserved[1].x && reserved[0].y === reserved[1].y) return null;
+    if (state.board.length < 8 || state.board.length > 10 || gnEmptyCellsInIdealGrid(state) > 28) return null;
+    const reservations = gnCardReservations(state);
+    const reservedCells = new Set(reserved.map(move => coordKey(move.x, move.y)));
+    const bypass = moves.filter(move => {
+      if (!reservedCells.has(coordKey(move.x, move.y))) return false;
+      const cell = reservations.get(move.card.uid);
+      return !cell || cell.x !== move.x || cell.y !== move.y;
+    });
+    if (!bypass.length) return null;
+    if (bypass.length === 1) return bypass[0];
+    return bypass
+      .slice()
+      .sort((a, b) => {
+        const ca = gnCardIdealPlacementCount(state, a.card.uid);
+        const cb = gnCardIdealPlacementCount(state, b.card.uid);
+        if (ca !== cb) return ca - cb;
+        const pa = gnPoolOptionsForCell(state, a.x, a.y);
+        const pb = gnPoolOptionsForCell(state, b.x, b.y);
+        if (pa !== pb) return pb - pa;
+        return gnMoveRank(state, playerId, a, {}) - gnMoveRank(state, playerId, b, {});
+      })[0];
+  }
+
   function gnTryForcedMove(state, playerId) {
     const requirement = placementRequirement(state);
     let moves = legalPlacements(state, playerId, requirement);
@@ -3505,7 +3534,19 @@ const MPCARDS_CORE_SOURCE = `
         if (state.turnPlayed === 0 && !gnReservedMacroStepViable(state, playerId, reserved[0])) return null;
         return reserved[0];
       }
-      if (reserved.length > 1) return gnPickReservedPool(state, playerId, reserved);
+      if (reserved.length > 1) {
+        if (state.turnPlayed === 0) {
+          const safe = moves.filter(move => !gnMoveBreaksIdealFillPlan(state, playerId, move));
+          const viable = reserved.filter(move => gnReservedMacroStepViable(state, playerId, move));
+          if (!viable.length) {
+            const bypass = gnPickReservedCellBypassMove(state, playerId, reserved, safe);
+            if (bypass) return bypass;
+          } else {
+            return gnPickReservedPool(state, playerId, viable);
+          }
+        }
+        return gnPickReservedPool(state, playerId, reserved);
+      }
     }
     moves = gnPruneFatalMoves(state, playerId, moves);
     if (state.turnPlayed === 0) {
@@ -3566,7 +3607,11 @@ const MPCARDS_CORE_SOURCE = `
 
     if (state.turnPlayed > 0 && isDurissimaGnIdeal(state)) {
       const reqMoves = legalPlacements(state, playerId, requirement);
-      const safeTurn = reqMoves.filter(move => !gnMoveBreaksIdealFillPlan(state, playerId, move));
+      let safeTurn = reqMoves.filter(move => !gnMoveBreaksIdealFillPlan(state, playerId, move));
+      if (state.size >= 6 && gnEmptyCellsInIdealGrid(state) <= 14 && safeTurn.length) {
+        const noMisuse = safeTurn.filter(move => !gnMoveMisusesHeldReservation(state, playerId, move));
+        if (noMisuse.length) safeTurn = noMisuse;
+      }
       if (reqMoves.length && !safeTurn.length) return { type: "stop" };
     }
 
