@@ -846,6 +846,48 @@ function testGn5x5PatchPhasesAdvance() {
   assert.equal(core.gnSelectBestPatchGoal(state), null);
 }
 
+function testGn7x7PatchCornerOrder() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 7);
+  const state = core.setupGame(deck, {
+    size: 7,
+    players: 7,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false
+  });
+  const center = core.gn7x7Center3();
+  const first = core.gnSelectBestPatchGoal(state);
+  assert.equal(first.w, 3);
+  assert.equal(first.ox, center.ox);
+  assert.equal(first.oy, center.oy);
+  let i = 0;
+  for (let y = center.oy; y < center.oy + 3; y++) {
+    for (let x = center.ox; x < center.ox + 3; x++) {
+      state.board.push({ x, y, playerId: 0, card: deck[i++] });
+    }
+  }
+  for (const rect of core.gn7x7PatchPhaseOrder().slice(1)) {
+    const goal = core.gnSelectBestPatchGoal(state);
+    assert.equal(goal.w, 3);
+    assert.equal(goal.ox, rect.ox);
+    assert.equal(goal.oy, rect.oy);
+    for (let y = rect.oy; y < rect.oy + 3; y++) {
+      for (let x = rect.ox; x < rect.ox + 3; x++) {
+        if (state.board.some(e => e.x === x && e.y === y)) continue;
+        state.board.push({ x, y, playerId: 0, card: deck[i++] });
+      }
+    }
+  }
+  for (let y = 0; y < 7; y++) {
+    for (let x = 0; x < 7; x++) {
+      if (state.board.some(e => e.x === x && e.y === y)) continue;
+      state.board.push({ x, y, playerId: 0, card: deck[i++] });
+    }
+  }
+  assert.ok(core.gn7x7PatchPlanComplete(state));
+  assert.equal(core.gnSelectBestPatchGoal(state), null);
+}
+
 function testGnPatchGoalOnLargeBoard() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 8);
   const state = core.setupGame(deck, {
@@ -925,6 +967,7 @@ testGnTieredSearchOnlyAboveL5();
 testGnIdealFillMatchingRejectsDeadLastCell();
 testGnPruneReservedCardMisuse();
 testGn5x5PatchPhasesAdvance();
+testGn7x7PatchCornerOrder();
 testGnPatchGoalOnLargeBoard();
 testGnPatchGuidedMoveStaysInPatch();
 testDurissimaMultiNoEmergencyBuffer();
