@@ -17,6 +17,8 @@ const nums = argv.filter(a => /^\d+$/.test(a)).map(Number);
 const L = nums[0] || 6;
 const seed = nums[1] ?? 2;
 const forceStep = nums[2] || 39;
+const morph = argv.find(a => a === "4quad" || a === "9patch" || a === "phased");
+if (morph && L === 8) process.env.GN_8X8_MORPH = morph;
 
 const deck = C.simulationDeck();
 const random = C.mulberry32(C.hashSeed(`gn-bot-check:${L}:${seed}`));

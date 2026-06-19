@@ -888,6 +888,36 @@ function testGn7x7PatchCornerOrder() {
   assert.equal(core.gnSelectBestPatchGoal(state), null);
 }
 
+function testGn8x8PatchQuadOrder() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 8);
+  const state = core.setupGame(deck, {
+    size: 8,
+    players: 8,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false
+  });
+  const first = core.gnSelectBestPatchGoal(state);
+  assert.equal(first.w, 4);
+  assert.equal(first.ox, 0);
+  assert.equal(first.oy, 0);
+  let i = 0;
+  for (const rect of core.gn8x8Quad4Order()) {
+    const goal = core.gnSelectBestPatchGoal(state);
+    assert.equal(goal.w, 4);
+    assert.equal(goal.ox, rect.ox);
+    assert.equal(goal.oy, rect.oy);
+    for (let y = rect.oy; y < rect.oy + 4; y++) {
+      for (let x = rect.ox; x < rect.ox + 4; x++) {
+        if (state.board.some(e => e.x === x && e.y === y)) continue;
+        state.board.push({ x, y, playerId: 0, card: deck[i++] });
+      }
+    }
+  }
+  assert.ok(core.gn8x8PatchPlanComplete(state));
+  assert.equal(core.gnSelectBestPatchGoal(state), null);
+}
+
 function testGnPatchGoalOnLargeBoard() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 8);
   const state = core.setupGame(deck, {
@@ -968,6 +998,7 @@ testGnIdealFillMatchingRejectsDeadLastCell();
 testGnPruneReservedCardMisuse();
 testGn5x5PatchPhasesAdvance();
 testGn7x7PatchCornerOrder();
+testGn8x8PatchQuadOrder();
 testGnPatchGoalOnLargeBoard();
 testGnPatchGuidedMoveStaysInPatch();
 testDurissimaMultiNoEmergencyBuffer();

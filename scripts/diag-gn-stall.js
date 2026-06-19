@@ -1,11 +1,16 @@
 "use strict";
 
 const path = require("node:path");
+const L = Number(process.argv[2]) || 6;
+const seed = process.argv[3] !== undefined ? Number(process.argv[3]) : 0;
+const morph = process.argv[4];
+if (morph) {
+  if (L === 7) process.env.GN_7X7_MORPH = morph;
+  if (L === 8) process.env.GN_8X8_MORPH = morph;
+}
 require(path.join(__dirname, "..", "mpcards-core.js"));
 
 const C = globalThis.MPCardsCore;
-const L = Number(process.argv[2]) || 6;
-const seed = process.argv[3] !== undefined ? Number(process.argv[3]) : 0;
 
 const deck = C.simulationDeck();
 const random = C.mulberry32(C.hashSeed(`gn-bot-check:${L}:${seed}`));
