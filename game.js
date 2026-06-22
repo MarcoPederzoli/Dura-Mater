@@ -1039,7 +1039,7 @@ function playManualMove(move) {
       return `${baseLabel} ${playerLabel(player)} chiude il turno.`;
     }
     if (nextState.status === "playing" && core.canOfferIdea(nextState, player)) {
-      return `${baseLabel} Idea: puoi posare una quinta carta (requisito base).`;
+      return `${baseLabel} Idea: quinta carta a faccia in giu' (jolly = buco/bordo).`;
     }
     return baseLabel;
   });
@@ -1828,8 +1828,7 @@ function renderSummary() {
     ["Strategia", game.modes[player] === "bot" ? core.strategyLabel(game.strategies[player]) : "Manuale"],
     ["Mazzo pesca", state.drawPile.length],
     ["Carte giocate nel turno", state.turnPlayed],
-    ...(core.canOfferIdea(state, player) ? [["Idea", "Quinta carta disponibile"]] : []),
-    ...(core.canOfferIdea(state, player) ? [["Idea", "Quinta carta disponibile"]] : []),
+    ...(core.canOfferIdea(state, player) ? [["Idea", "Quinta carta cieca (jolly)"]] : []),
     ["Passaggi consecutivi", state.consecutivePasses],
     ...(tournament
       ? state.tournamentScores.map((score, index) => [

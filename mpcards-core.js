@@ -459,21 +459,50 @@ const MPCARDS_CORE_SOURCE = `
     return Array.from(cells.values());
   }
 
+  function isIdeaBlindBoardEntry(entry) {
+    return entry && entry.ideaBlind === true;
+  }
+
+  function isIdeaBlindTurn(state) {
+    return state && state.turnPlayed === 4;
+  }
+
   function placementScore(state, card, x, y) {
     const map = boardMap(state.board);
     const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
     let matches = 0;
     let neighbors = 0;
     let compatibleNeighbors = 0;
+    let traitAnchorNeighbors = 0;
     for (const dir of dirs) {
       const adjacent = map.get(coordKey(x + dir.x, y + dir.y));
       if (!adjacent) continue;
+      if (isIdeaBlindBoardEntry(adjacent)) continue;
       neighbors++;
       const shared = sharedProperties(card, adjacent.card);
       matches += shared;
-      if (shared > 0) compatibleNeighbors++;
+      if (shared > 0) {
+        compatibleNeighbors++;
+        traitAnchorNeighbors++;
+      }
     }
-    return { matches, neighbors, compatibleNeighbors };
+    return { matches, neighbors, compatibleNeighbors, traitAnchorNeighbors };
+  }
+
+  /** Salvo prima carta assoluta e posa Idea cieca: serve almeno un vicino scoperto con tratto in comune. */
+  function placementPassesTraitAnchor(state, score) {
+    if (!state || state.board.length === 0) return true;
+    if (isIdeaBlindTurn(state)) return true;
+    return score.traitAnchorNeighbors >= 1;
+  }
+
+  function placementIsLegal(state, card, x, y, requirement) {
+    if (state.board.length === 0) return true;
+    const score = placementScore(state, card, x, y);
+    if (isIdeaBlindTurn(state)) return score.neighbors >= 1;
+    if (score.neighbors < requirement) return false;
+    if (score.compatibleNeighbors !== score.neighbors) return false;
+    return placementPassesTraitAnchor(state, score);
   }
 
   function isDurissimaReserveEnabled(state) {
@@ -502,7 +531,9 @@ const MPCARDS_CORE_SOURCE = `
       if (bounds.width > state.size || bounds.height > state.size) continue;
       for (const source of playableCardSources(state, playerId)) {
         const score = placementScore(state, source.card, cell.x, cell.y);
-        if (state.board.length === 0 || (score.neighbors >= requirement && score.compatibleNeighbors === score.neighbors)) {
+        const ideaBlind = isIdeaBlindTurn(state);
+        const legal = placementIsLegal(state, source.card, cell.x, cell.y, requirement);
+        if (legal) {
           moves.push({
             cardUid: source.card.uid,
             card: source.card,
@@ -511,7 +542,8 @@ const MPCARDS_CORE_SOURCE = `
             y: cell.y,
             matches: score.matches,
             neighbors: score.neighbors,
-            compatibleNeighbors: score.compatibleNeighbors
+            compatibleNeighbors: score.compatibleNeighbors,
+            ideaBlind: ideaBlind || undefined
           });
         }
       }
@@ -542,7 +574,8 @@ const MPCARDS_CORE_SOURCE = `
         x: entry.x,
         y: entry.y,
         playerId: entry.playerId,
-        card: cloneCardSnapshot(entry.card)
+        card: cloneCardSnapshot(entry.card),
+        ideaBlind: entry.ideaBlind === true || undefined
       })),
       hands,
       durissimaReserve: (source.durissimaReserve || []).map(cloneCardSnapshot),
@@ -564,7 +597,8 @@ const MPCARDS_CORE_SOURCE = `
       if (cardIndex < 0) return false;
       card = hand.splice(cardIndex, 1)[0];
     }
-    sim.board.push({ x: move.x, y: move.y, card, playerId });
+    const ideaBlind = sim.turnPlayed === 4;
+    sim.board.push({ x: move.x, y: move.y, card, playerId, ideaBlind: ideaBlind || undefined });
     sim.turnPlayed++;
     return true;
   }
@@ -635,8 +669,7 @@ const MPCARDS_CORE_SOURCE = `
     if (map.has(coordKey(x, y))) return false;
     const bounds = boardBounds(sim.board, [{ x, y }]);
     if (bounds.width > sim.size || bounds.height > sim.size) return false;
-    const score = placementScore(sim, card, x, y);
-    return sim.board.length === 0 || (score.neighbors >= requirement && score.compatibleNeighbors === score.neighbors);
+    return placementIsLegal(sim, card, x, y, requirement);
   }
 
   /** Pool informativo Durissima (modello sim/bot): universo noto = mani + mazzo, ordine pesca ignoto; al tavolo mani e mazzo sono coperti. */
@@ -813,7 +846,8 @@ const MPCARDS_CORE_SOURCE = `
     const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
     let n = 0;
     for (const dir of dirs) {
-      if (map.has(coordKey(x + dir.x, y + dir.y))) n++;
+      const entry = map.get(coordKey(x + dir.x, y + dir.y));
+      if (entry && !isIdeaBlindBoardEntry(entry)) n++;
     }
     return n;
   }
@@ -1840,7 +1874,8 @@ const MPCARDS_CORE_SOURCE = `
         x: entry.x,
         y: entry.y,
         playerId: entry.playerId,
-        card: cloneCardSnapshot(entry.card)
+        card: cloneCardSnapshot(entry.card),
+        ideaBlind: entry.ideaBlind === true || undefined
       })),
       turnOrder: (state.turnOrder || []).slice(),
       winner: state.winner,
@@ -4737,6 +4772,118 @@ const MPCARDS_CORE_SOURCE = `
     return (state.hands[playerId] || []).length < durissimaHandDrawCapLimit(state);
   }
 
+  function isDurissimaScartiNReshuffle(state) {
+    return isDurissimaMater(state) && state.durissimaScartiNReshuffle === true;
+  }
+
+  function durissimaScartiShuffleSeed(state, tag) {
+    return hashSeed(
+      "scarti:" + tag + ":" + state.turns + ":" + state.currentPlayer + ":" +
+      (state.durissimaDiscardRecyclesUsed || 0) + ":" + state.board.length
+    );
+  }
+
+  function durissimaRecycleDiscardPileIfNeeded(state, random) {
+    if (!isDurissimaScartiNReshuffle(state)) return false;
+    if ((state.drawPile || []).length > 0) return false;
+    const discard = state.durissimaDiscardPile || [];
+    if (!discard.length) return false;
+    if ((state.durissimaDiscardRecyclesLeft || 0) <= 0) return false;
+    const rng = random || mulberry32(durissimaScartiShuffleSeed(state, "recycle"));
+    state.drawPile = shuffle(discard.slice(), rng);
+    state.durissimaDiscardPile = [];
+    state.durissimaDiscardRecyclesLeft--;
+    state.durissimaDiscardRecyclesUsed = (state.durissimaDiscardRecyclesUsed || 0) + 1;
+    return true;
+  }
+
+  function chooseDurissimaDiscardUid(state, playerId, random, strategy) {
+    const hand = state.hands[playerId] || [];
+    if (!hand.length) return null;
+    const requirement = placementRequirement(state);
+    if (requirement === null || (requirement > 4 && requirement !== 1)) {
+      return hand[Math.floor((random || (() => 0))() * hand.length)].uid;
+    }
+    const morph = gnMorphologyForSize(state.size);
+    let bestUid = hand[0].uid;
+    let bestPlacements = Infinity;
+    let bestFlex = -Infinity;
+    for (const card of hand) {
+      const placements = legalPlacements(state, playerId, requirement)
+        .filter(move => move.cardUid === card.uid).length;
+      const flex = morph.cardMorph(card).flexibility;
+      if (
+        placements < bestPlacements ||
+        (placements === bestPlacements && flex > bestFlex) ||
+        (placements === bestPlacements && flex === bestFlex && (random || (() => 0))() < 0.5)
+      ) {
+        bestPlacements = placements;
+        bestFlex = flex;
+        bestUid = card.uid;
+      }
+    }
+    return bestUid;
+  }
+
+  function durissimaDiscardFromHand(state, playerId, cardUid) {
+    if (!isDurissimaScartiNReshuffle(state)) return false;
+    const hand = state.hands[playerId] || [];
+    const index = hand.findIndex(card => card.uid === cardUid);
+    if (index < 0) return false;
+    const [card] = hand.splice(index, 1);
+    if (!state.durissimaDiscardPile) state.durissimaDiscardPile = [];
+    state.durissimaDiscardPile.push(card);
+    return true;
+  }
+
+  function durissimaScartiDrawOne(state, playerId, random, strategy) {
+    if (!isDurissimaScartiNReshuffle(state)) return drawForPlayer(state, playerId);
+    const cap = durissimaHandDrawCapLimit(state);
+    const hand = state.hands[playerId] || [];
+    if (hand.length >= cap) {
+      const uid = chooseDurissimaDiscardUid(state, playerId, random, strategy);
+      if (!uid || !durissimaDiscardFromHand(state, playerId, uid)) return false;
+    }
+    durissimaRecycleDiscardPileIfNeeded(state, random);
+    return drawForPlayer(state, playerId);
+  }
+
+  function durissimaRefillHandToCap(state, playerId, random, strategy) {
+    if (!isDurissimaScartiNReshuffle(state)) return 0;
+    const cap = durissimaHandDrawCapLimit(state);
+    let drawn = 0;
+    while ((state.hands[playerId] || []).length < cap) {
+      if (!durissimaScartiDrawOne(state, playerId, random, strategy)) break;
+      drawn++;
+    }
+    return drawn;
+  }
+
+  function durissimaScartiCycleOnce(state, playerId, random, strategy) {
+    if (!isDurissimaScartiNReshuffle(state)) return false;
+    const hand = state.hands[playerId] || [];
+    if (!hand.length) return false;
+    return durissimaScartiDrawOne(state, playerId, random, strategy);
+  }
+
+  function resolveDurissimaScartiStuck(state, random, options) {
+    options = options || {};
+    const playerId = state.currentPlayer;
+    const strategy = options.strategy;
+    const maxCycles = Math.max(8, (state.size || 3) * (state.hands[playerId] || []).length * 2);
+    for (let i = 0; i < maxCycles; i++) {
+      if (hasLegalPlacementsNow(state, playerId)) return "cycled";
+      if (!durissimaScartiCycleOnce(state, playerId, random, strategy)) break;
+    }
+    if (hasLegalPlacementsNow(state, playerId)) return "cycled";
+    if (state.players === 1) {
+      state.status = "stalled";
+      return "lost";
+    }
+    passTurn(state);
+    return "passed";
+  }
+
   function isBoardComplete(state) {
     if (isDurissimaGnIdeal(state)) {
       return gnFilledCellsInIdealGrid(state) >= state.size * state.size;
@@ -4790,6 +4937,7 @@ const MPCARDS_CORE_SOURCE = `
   /** Variante di riferimento Durissima: «N reshuffle» attivo salvo opt-out esplicito. */
   function defaultDurissimaVitaExtraEnabled(options) {
     if (options.durissimaMater !== true) return false;
+    if (options.durissimaScartiNReshuffle === true) return false;
     if (options.durissimaVitaExtraEnabled === false) return false;
     return true;
   }
@@ -4887,7 +5035,8 @@ const MPCARDS_CORE_SOURCE = `
         x: entry.x,
         y: entry.y,
         playerId: entry.playerId,
-        card: cloneCardSnapshot(entry.card)
+        card: cloneCardSnapshot(entry.card),
+        ideaBlind: entry.ideaBlind === true || undefined
       })),
       hands: state.hands.map(hand => (hand || []).map(cloneCardSnapshot)),
       drawPile: (state.drawPile || []).map(cloneCardSnapshot),
@@ -5068,6 +5217,9 @@ const MPCARDS_CORE_SOURCE = `
 
   function resolveDurissimaStuck(state, random, options) {
     options = options || {};
+    if (isDurissimaScartiNReshuffle(state)) {
+      return resolveDurissimaScartiStuck(state, random, options);
+    }
     const playerId = state.currentPlayer;
     const wantVita = options.useVitaExtra === true
       || (options.useVitaExtra !== false && state.players === 1);
@@ -5115,9 +5267,15 @@ const MPCARDS_CORE_SOURCE = `
       widthAxisFixed: state.widthAxisFixed === true,
       heightAxisFixed: state.heightAxisFixed === true
     };
-    state.board.push({ x: legalMove.x, y: legalMove.y, card, playerId });
-    state.consecutivePasses = 0;
     const ideaPlacement = state.turnPlayed === 4;
+    state.board.push({
+      x: legalMove.x,
+      y: legalMove.y,
+      card,
+      playerId,
+      ideaBlind: ideaPlacement || undefined
+    });
+    state.consecutivePasses = 0;
     state.turnPlayed++;
     state.lastMove = {
       playerId,
@@ -5125,8 +5283,9 @@ const MPCARDS_CORE_SOURCE = `
       x: legalMove.x,
       y: legalMove.y,
       matches: legalMove.matches,
-      requirement: ideaPlacement ? 1 : state.turnPlayed,
-      idea: ideaPlacement
+      requirement: ideaPlacement ? 0 : state.turnPlayed,
+      idea: ideaPlacement,
+      ideaBlind: ideaPlacement || undefined
     };
     handleTurnOrderAfterPlacement(state, playerId, milestoneBefore);
     if (isDurissimaMater(state)) {
@@ -5176,7 +5335,16 @@ const MPCARDS_CORE_SOURCE = `
       );
     }
     if (shouldDrawOnPass(state)) {
-      drawForPlayer(state, state.currentPlayer);
+      if (isDurissimaScartiNReshuffle(state)) {
+        durissimaScartiDrawOne(
+          state,
+          state.currentPlayer,
+          mulberry32(durissimaScartiShuffleSeed(state, "pass")),
+          null
+        );
+      } else {
+        drawForPlayer(state, state.currentPlayer);
+      }
     }
     state.consecutivePasses++;
     const canStall = !isDurissimaMater(state) || !isBoardComplete(state);
@@ -5191,6 +5359,9 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   function drawForPlayer(state, playerId) {
+    if (isDurissimaScartiNReshuffle(state)) {
+      durissimaRecycleDiscardPileIfNeeded(state);
+    }
     if (state.drawPile.length === 0) return false;
     if (!durissimaHandBelowDrawCap(state, playerId)) return false;
     state.hands[playerId].push(state.drawPile.shift());
@@ -5214,11 +5385,20 @@ const MPCARDS_CORE_SOURCE = `
     recordTurnPlacements(state);
     const playerId = state.currentPlayer;
     const handEmpty = (state.hands[playerId] || []).length === 0;
-    if (state.status === "playing" && state.turnPlayed > 0 && !handEmpty) {
-      if (isDurissimaMater(state) && state.players === 1 && !durissimaUsesCompetitiveDraw(state)) {
-        tryDurissimaAfterPlayDraw(state, playerId);
-      } else {
-        drawForPlayer(state, playerId);
+    if (state.status === "playing") {
+      if (isDurissimaScartiNReshuffle(state)) {
+        durissimaRefillHandToCap(
+          state,
+          playerId,
+          mulberry32(durissimaScartiShuffleSeed(state, "refill")),
+          null
+        );
+      } else if (state.turnPlayed > 0 && !handEmpty) {
+        if (isDurissimaMater(state) && state.players === 1 && !durissimaUsesCompetitiveDraw(state)) {
+          tryDurissimaAfterPlayDraw(state, playerId);
+        } else {
+          drawForPlayer(state, playerId);
+        }
       }
     }
     state.turns++;
@@ -5292,6 +5472,7 @@ const MPCARDS_CORE_SOURCE = `
   function setupGame(deck, options) {
     const size = options.size;
     const players = options.players;
+    const scartiMode = options.durissimaScartiNReshuffle === true;
     const deal = computeInitialDeal(size, players);
     if (deal.cardsPerPlayer < MIN_INITIAL_HAND) {
       throw new Error(
@@ -5339,10 +5520,14 @@ const MPCARDS_CORE_SOURCE = `
       firstAxisInversionDone: false,
       turnDirection: 1,
       durissimaMater: options.durissimaMater === true,
-      durissimaCompetitiveDraw: options.durissimaCompetitiveDraw === true,
-      durissimaHandDrawCap: options.durissimaHandDrawCap === true,
+      durissimaScartiNReshuffle: scartiMode,
+      durissimaDiscardPile: scartiMode ? [] : null,
+      durissimaDiscardRecyclesLeft: scartiMode ? size : null,
+      durissimaDiscardRecyclesUsed: 0,
+      durissimaCompetitiveDraw: scartiMode || options.durissimaCompetitiveDraw === true,
+      durissimaHandDrawCap: scartiMode || options.durissimaHandDrawCap === true,
       durissimaHandDrawCapFactor: options.durissimaHandDrawCapFactor,
-      durissimaHandDrawCapMax: options.durissimaHandDrawCapMax,
+      durissimaHandDrawCapMax: scartiMode ? size : options.durissimaHandDrawCapMax,
       drawOnlyAfterPlacement: options.drawOnlyAfterPlacement === true,
       tournamentMode,
       tournamentScores: tournamentMode ? Array.from({ length: players }, () => 0) : null,
@@ -5360,8 +5545,8 @@ const MPCARDS_CORE_SOURCE = `
       durissimaEmergencyDrawsUsed: 0,
       durissimaAfterPlayDrawsUsed: 0,
       durissimaVitaExtraEnabled: defaultDurissimaVitaExtraEnabled(options),
-      durissimaStrategicVitaExtra: options.durissimaStrategicVitaExtra !== false,
-      durissimaSelectiveReshuffle: options.durissimaSelectiveReshuffle !== false,
+      durissimaStrategicVitaExtra: scartiMode ? false : options.durissimaStrategicVitaExtra !== false,
+      durissimaSelectiveReshuffle: scartiMode ? false : options.durissimaSelectiveReshuffle !== false,
       durissimaVitaExtraPool: defaultDurissimaVitaExtraPool(size, options),
       durissimaVitaExtraUsed: Array.from({ length: players }, () => 0),
       randomizeTurnOrder,
@@ -5402,13 +5587,15 @@ const MPCARDS_CORE_SOURCE = `
               useVitaExtra: true,
               strategy: playerStrategy
             });
-            if (stuck === "vita_extra") {
+            if (stuck === "vita_extra" || stuck === "cycled") {
               const retry = chooseAction(state, playerId, playerStrategy, random);
               if (retry.type === "move") {
                 applyPlacement(state, playerId, retry.move);
-                if (state.status !== "playing") return { played: true, move: retry.move, vitaExtra: true };
+                if (state.status !== "playing") {
+                  return { played: true, move: retry.move, vitaExtra: stuck === "vita_extra", cycled: stuck === "cycled" };
+                }
                 if (state.turnPlayed >= 5) endTurn(state);
-                return { played: true, move: retry.move, vitaExtra: true };
+                return { played: true, move: retry.move, vitaExtra: stuck === "vita_extra", cycled: stuck === "cycled" };
               }
             }
             return {
@@ -5668,6 +5855,9 @@ const MPCARDS_CORE_SOURCE = `
       durissimaReserveRemaining: (state.durissimaReserve || []).length,
       durissimaVitaExtraUsed: (state.durissimaVitaExtraUsed || []).reduce((sum, n) => sum + n, 0),
       durissimaVitaExtraPoolRemaining: durissimaVitaExtraPoolLeft(state),
+      durissimaDiscardRecyclesUsed: state.durissimaDiscardRecyclesUsed || 0,
+      durissimaDiscardRecyclesLeft: state.durissimaDiscardRecyclesLeft,
+      durissimaDiscardPileSize: (state.durissimaDiscardPile || []).length,
       boardComplete: isBoardComplete(state),
       maxPlacementsInTurn: placementStats.maxInTurn,
       fourCardTurns: placementStats.byCount[4],
@@ -5732,6 +5922,8 @@ const MPCARDS_CORE_SOURCE = `
     validatePlacement,
     placementRequirement,
     canOfferIdea,
+    isIdeaBlindTurn,
+    isIdeaBlindBoardEntry,
     applyPlacement,
     isDurissimaMater,
     isDurissimaGnIdeal,
@@ -5786,8 +5978,13 @@ const MPCARDS_CORE_SOURCE = `
     solveGnShallowBestAction,
     solveGnStateOutcome,
     durissimaUsesCompetitiveDraw,
+    isDurissimaScartiNReshuffle,
     durissimaHandDrawCapLimit,
     durissimaHandBelowDrawCap,
+    durissimaRecycleDiscardPileIfNeeded,
+    durissimaDiscardFromHand,
+    durissimaScartiDrawOne,
+    durissimaRefillHandToCap,
     isBoardComplete,
     maybeCompleteDurissima,
     durissimaMoveIsFatal,

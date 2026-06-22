@@ -194,21 +194,30 @@ La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **NxN
   - quarta carta posata nel turno: requisito 4
 - La prima carta assoluta della partita e' un'eccezione: puo' essere posata senza adiacenze.
 
-## Idea (quinta carta)
+## Idea (quinta carta cieca)
 
 - Se in un turno un giocatore posa **quattro carte legali** e ha ancora almeno una carta in mano, realizza un'**Idea**: puo' posare **una quinta carta** nello stesso turno, subito dopo la quarta, **senza pescare** tra le due pose.
-- La quinta carta segue solo il vincolo fondamentale di compatibilita': deve essere adiacente ortogonalmente ad almeno una carta in gioco e condividere almeno una caratteristica con **ogni** carta adiacente ortogonalmente (equivalente al requisito 1 del turno, non al requisito 4).
 - La quinta carta e' **opzionale**: il giocatore puo' chiudere il turno dopo la quarta posa.
 - Dopo la quinta carta (o dopo aver chiuso il turno senza usarla), il turno termina normalmente (pesca di fine turno inclusa, se prevista).
 - Se la quarta carta svuota la mano (vittoria) o non restano carte in mano, l'Idea non si applica.
 
-## Idea (quinta carta)
+### Quinta carta a faccia in giu' (jolly topologico)
 
-- Se in un turno un giocatore posa **quattro carte legali** e ha ancora almeno una carta in mano, realizza un'**Idea**: puo' posare **una quinta carta** nello stesso turno, subito dopo la quarta, **senza pescare** tra le due pose.
-- La quinta carta segue solo il vincolo fondamentale di compatibilita': deve essere adiacente ortogonalmente ad almeno una carta in gioco e condividere almeno una caratteristica con **ogni** carta adiacente ortogonalmente (equivalente al requisito 1 del turno, non al requisito 4).
-- La quinta carta e' **opzionale**: il giocatore puo' chiudere il turno dopo la quarta posa.
-- Dopo la quinta carta (o dopo aver chiuso il turno senza usarla), il turno termina normalmente (pesca di fine turno inclusa, se prevista).
-- Se la quarta carta svuota la mano (vittoria) o non restano carte in mano, l'Idea non si applica.
+- Si posa **a faccia in giu'**, adiacente ortogonalmente ad **almeno una** carta gia' in gioco, rispettando **ingombro e limiti della Dura Mater** come ogni altra posa.
+- **Nessun vincolo di compatibilita'** (valore, forma, colore) con le carte che tocca al momento della posa.
+- Conta come una carta qualsiasi per **chiusura del primo limite**, **chiusura della Dura Mater** (ingombro NxN) e **inversioni** collegate.
+- Ai fini dei **legami tra carte** (grado di posa, vicini compatibili, ancoraggio su carta scoperta), la cella jolly e' un **buco** nella griglia: **non** conta come vicino occupato, come il bordo esterno. La casella resta occupata per ingombro e limiti.
+- Nelle posate **successive**, sul lato che confina con la carta coperta **non** si richiede alcun tratto in comune (come il bordo esterno della griglia). Sugli altri lati, regole normali.
+- **Non** si puo' posare una carta **solo** adiacente a una o piu' carte jolly: serve sempre **almeno un** vicino **scoperto** con cui condividere almeno un tratto (oltre al jolly, se presente). L'unica eccezione in tutta la partita resta la **prima carta assoluta** (posa libera).
+
+### Informazione sulla carta coperta
+
+| Modalita' | Chi conosce la carta |
+|-----------|----------------------|
+| Dura competitiva / torneo | Solo chi la posa |
+| Durissima cooperativa | Tutti (come il resto dell'universo noto) |
+
+Implementazione motore: flag `ideaBlind` sulla cella del tabellone (`mpcards-core.js`).
 
 ## Matrice di gioco
 
@@ -269,7 +278,7 @@ Conseguenze del core (gia' coerenti col motore):
 - **Monte:** come in Dura multi — G pass consecutivi senza posate, anche con tallone pieno.
 - **Posare meno carte del massimo** nello stesso turno resta lecito: dopo la prima posa si puo' chiudere il turno anche con altre mosse legali.
 
-**Cooperativo (2+ giocatori):** al tavolo mani e mazzo restano **coperti**. Con la scheda delle 64 carte e il dialogo si costruisce l'**universo noto** (quali carte esistono ancora, non l'ordine di pesca). Solo il giocatore attivo posa dalla propria mano. La simulazione coop usa `durissima-team-planner`.
+**Cooperativo (2+ giocatori):** al tavolo mani e mazzo restano **coperti**. Con la scheda delle 64 carte e il dialogo si costruisce l'**universo noto** (quali carte esistono ancora, non l'ordine di pesca). Solo il giocatore attivo posa dalla propria mano. La simulazione coop usa `durissima-team-planner`; per **G=N senza tallone** (probe bilanciamento) usa `durissima-global-planner` (solver DFS + morfologia cubo, vedi `scripts/BILANCIAMENTO-PAUSA.md`).
 
 **Solitario (`G = 1`):** stesse eccezioni di pesca e vittoria. Bloccati senza mosse legali all'inizio del turno → partita **persa** (nessun passo nel core). *Da rivedere:* monte e stallo senza compagni (`promemoria.md`).
 
@@ -278,7 +287,8 @@ Conseguenze del core (gia' coerenti col motore):
 - **Quando:** solo **a inizio del proprio turno**, **prima** di posare la prima carta del turno (`turnPlayed = 0`). Dopo la prima posa del turno non si puo' piu' reshufflare fino al turno successivo.
 - **Condizione:** **non** dipende dall'avere o meno mosse legali. Si puo' reshufflare anche con mosse legali disponibili (scelta strategica in coop).
 - **Budget:** pool condiviso di **N reshuffle a partita** (N = dimensione griglia).
-- **Meccanica:** tutta la mano va nel tallone, si mescola, si ripescano carte fino alla dimensione mano iniziale.
+- **Meccanica (tavolo):** le carte scelte per il cambio vanno nel tallone; si mescola; si ripescano carte fino alla **mano iniziale** (come al deal).
+- **Reshuffle selettivo (sim / bot):** si possono **tenere** una o piu' carte in mano, ma **almeno una** deve essere rimessa nel tallone (reshuffle «totale» = non tenere nulla). Poi mescola e ripesca fino a ripristinare la mano iniziale. Obiettivo: **non** rimettere nel tallone carte rigide o senza uscita che peggiorerebbero le pesche future; in mano si trattengono, nel tallone vanno soprattutto carte flessibili o da scambiare.
 - **Costo:** ogni reshuffle consuma **1** dal pool.
 - **Alternativa al reshuffle:** posare (se si sceglie una mossa accettabile), **passare** (coop multi), o — solitario a pool esaurito — **sconfitta** se non resta alcuna mossa accettabile.
 - **Cooperativo:** al tavolo e' una decisione di gruppo: evitare una posa legale ma dannosa puo' essere motivo per reshufflare o passare invece di giocare.
@@ -286,7 +296,11 @@ Conseguenze del core (gia' coerenti col motore):
 
 ### Altre varianti (sperimentali, non riferimento)
 
-In valutazione o in pausa: **core puro** (senza reshuffle), **riserva** N, **buffer emergenza**, reshuffle selettivo (tenere parte della mano), ecc. Probe storici: `confronto-varianti-durissima.xlsx`, JSON in `tests/`.
+In valutazione o in pausa: **core puro** (senza reshuffle), **riserva** N, **buffer emergenza**, ecc. Probe storici: `confronto-varianti-durissima.xlsx`, JSON in `tests/`.
+
+**Hand-cap (giu 2026, in pausa):** senza N reshuffle; pesca competitiva + tetto mano (N o `2N`). Probe: `--hand-cap` / `--hand-cap-2n`.
+
+**Free-draw + N reshuffle (giu 2026, in prova):** pesca come **competitiva** (niente «solo se posi») + pool **N reshuffle** con reshuffle selettivo bot. Coop: bot passa a inizio turno per pescare finche' `consecutivePasses < G - 1`, poi posa per evitare il monte. In codice: `durissimaCompetitiveDraw: true` (vita extra default on). Probe: `node scripts/durissima-grid-probe.js 3 400 --free-draw`.
 
 ## Giocabilita' (etichettatura provvisoria — giugno 2026)
 

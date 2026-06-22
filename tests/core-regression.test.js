@@ -429,6 +429,70 @@ testDurissimaFreeDrawCoopPassDrawsWithNReshuffle();
 testDurissimaFreeDrawBotPassesWhenMonteSafe();
 testDurissimaFreeDrawBotPlacesWhenMonteThreat();
 
+function testDurissimaScartiUsesStandardInitialDeal() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);
+  const state = core.setupGame(deck, {
+    size: 4,
+    players: 4,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaScartiNReshuffle: true
+  });
+  const deal = core.computeInitialDeal(4, 4);
+  assert.equal(state.durissimaScartiNReshuffle, true);
+  assert.equal(state.durissimaVitaExtraEnabled, false);
+  assert.equal(state.durissimaHandDrawCap, true);
+  assert.equal(core.durissimaHandDrawCapLimit(state), 4);
+  assert.equal(state.durissimaDiscardRecyclesLeft, 4);
+  assert.equal(state.initialHandSize, deal.cardsPerPlayer);
+  assert.equal(state.initialDrawCount, deal.drawCount);
+  assert.equal(state.hands[0].length, 4);
+  assert.equal(state.drawPile.length, 0);
+}
+
+function testDurissimaScarti3x3SolitarioStandardDeal() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 1,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaScartiNReshuffle: true
+  });
+  assert.equal(state.hands[0].length, 3);
+  assert.equal(state.drawPile.length, 6);
+  assert.equal(state.durissimaDiscardRecyclesLeft, 3);
+}
+
+function testDurissimaScartiRefillAndRecycle() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const state = core.setupGame(deck, {
+    size: 3,
+    players: 1,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaScartiNReshuffle: true
+  });
+  const pid = state.currentPlayer;
+  assert.equal(state.drawPile.length, 6);
+  state.hands[pid] = state.hands[pid].slice(0, 1);
+  core.durissimaRefillHandToCap(state, pid, () => 0.5, null);
+  assert.equal(state.hands[pid].length, 3);
+  state.drawPile = [];
+  const discardUid = state.hands[pid][0].uid;
+  core.durissimaDiscardFromHand(state, pid, discardUid);
+  assert.equal(state.durissimaDiscardPile.length, 1);
+  assert.equal(state.hands[pid].length, 2);
+  const recycled = core.durissimaRecycleDiscardPileIfNeeded(state, () => 0.25);
+  assert.equal(recycled, true);
+  assert.equal(state.drawPile.length, 1);
+  assert.equal(state.durissimaDiscardRecyclesLeft, 2);
+}
+
+testDurissimaScartiUsesStandardInitialDeal();
+testDurissimaScarti3x3SolitarioStandardDeal();
+testDurissimaScartiRefillAndRecycle();
+
 function testDurissimaNReshuffleDefaultWithPool() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
   const state = core.setupGame(deck, { size: 5, players: 3, random: () => 0, durissimaMater: true });
@@ -1205,7 +1269,9 @@ function testIdeaFifthCardAfterFourPlacements() {
   core.applyPlacement(state, 0, move);
   assert.equal(state.turnPlayed, 5);
   assert.equal(state.lastMove.idea, true);
-  assert.equal(state.lastMove.requirement, 1);
+  assert.equal(state.lastMove.ideaBlind, true);
+  assert.equal(state.lastMove.requirement, 0);
+  assert.equal(state.board[state.board.length - 1].ideaBlind, true);
   assert.throws(
     () => core.validatePlacement(state, 0, move),
     /limite di pose|Partita non in corso/
@@ -1245,6 +1311,69 @@ function testIdeaOffersCountedOnFourthPlacement() {
 }
 
 testIdeaOffersCountedOnFourthPlacement();
+
+function testIdeaBlindAllowsPlacementWithoutSharedTrait() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);
+  const state = core.setupGame(deck, { size: 4, players: 2, random: () => 0 });
+  state.board = [
+    { x: 0, y: 0, card: card("118"), playerId: 0 },
+    { x: 1, y: 0, card: card("227"), playerId: 0 },
+    { x: 0, y: 1, card: card("238"), playerId: 0 },
+    { x: 1, y: 1, card: card("247"), playerId: 0 }
+  ];
+  state.hands[0] = [card("586")];
+  state.turnPlayed = 0;
+  const normal = core.legalPlacements(state, 0, 1).filter(m => m.cardUid === card("586").uid);
+  assert.equal(normal.length, 0, "586 should not place with trait rules");
+  state.turnPlayed = 4;
+  const ideaMoves = core.legalPlacements(state, 0, 1)
+    .filter(m => m.cardUid === card("586").uid);
+  assert.ok(ideaMoves.length > 0, "idea blind should allow 586 adjacent without traits");
+  assert.equal(ideaMoves[0].ideaBlind, true);
+}
+
+function testPlacementBesideIdeaBlindNeedsTraitAnchor() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);
+  const state = core.setupGame(deck, { size: 4, players: 2, random: () => 0 });
+  state.board = [
+    { x: 0, y: 0, card: card("118"), playerId: 0 },
+    { x: 1, y: 0, card: card("586"), playerId: 0, ideaBlind: true },
+    { x: 2, y: 0, card: card("227"), playerId: 0 },
+    { x: 0, y: 1, card: card("238"), playerId: 0 }
+  ];
+  state.turnPlayed = 0;
+  state.hands[0] = [card("328")];
+  const anchored = core.legalPlacements(state, 0, 1).filter(m => m.x === 1 && m.y === 1);
+  assert.ok(anchored.length > 0, "328 below blind 586 is ok with trait anchor 238 (color)");
+  state.board = [{ x: 0, y: 0, card: card("586"), playerId: 0, ideaBlind: true }];
+  state.hands[0] = [card("328")];
+  const soloJolly = core.legalPlacements(state, 0, 1).filter(m => m.x === 0 && m.y === 1);
+  assert.equal(soloJolly.length, 0, "cannot place only adjacent to idea blind");
+}
+
+function testIdeaBlindDoesNotCountAsOccupiedNeighbor() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);
+  const state = core.setupGame(deck, { size: 4, players: 2, random: () => 0 });
+  state.board = [
+    { x: 0, y: 0, card: card("118"), playerId: 0 },
+    { x: 1, y: 0, card: card("227"), playerId: 0 },
+    { x: 2, y: 0, card: card("328"), playerId: 0 },
+    { x: 0, y: 1, card: card("586"), playerId: 0, ideaBlind: true },
+    { x: 2, y: 1, card: card("247"), playerId: 0 }
+  ];
+  state.turnPlayed = 0;
+  state.hands[0] = [card("238")];
+  const score = core.placementScore(state, card("238"), 1, 1);
+  assert.equal(score.neighbors, 2, "jolly must not count as occupied neighbor");
+  assert.equal(score.compatibleNeighbors, 2);
+  const thirdReq = core.legalPlacements(state, 0, 3)
+    .filter(m => m.x === 1 && m.y === 1 && m.cardUid === card("238").uid);
+  assert.equal(thirdReq.length, 0, "two real neighbors are not enough when requirement is 3");
+}
+
+testIdeaBlindAllowsPlacementWithoutSharedTrait();
+testPlacementBesideIdeaBlindNeedsTraitAnchor();
+testIdeaBlindDoesNotCountAsOccupiedNeighbor();
 
 function testComputeInitialDealOvercrowded() {
   assert.deepEqual(core.computeInitialDeal(5, 7), {
