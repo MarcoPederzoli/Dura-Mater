@@ -1000,6 +1000,7 @@ const MPCARDS_CORE_SOURCE = `
     return (
       frontier * 14 +
       chainDepth * 22 +
+      durissimaIdeaDepthBonus(state, playerId, chainDepth) +
       followUp * 4 +
       move.matches * 2 +
       durissimaCornerEdgeFitBonus(move.card, expectedDegree) +
@@ -1036,6 +1037,112 @@ const MPCARDS_CORE_SOURCE = `
   function durissimaPreferSafePlays(state) {
     const remaining = state.size * state.size - state.board.length;
     return remaining > Math.max(2, Math.ceil(state.size * 0.75));
+  }
+
+  function durissimaPursueIdea(state) {
+    return isDurissimaMater(state) && state.durissimaPursueIdea !== false;
+  }
+
+  function durissimaHandCards(state, playerId) {
+    return (state.hands[playerId] || []).length;
+  }
+
+  /** Griglie grandi: serve tabellone abbastanza denso per catene da 2-4 nel turno. */
+  function durissimaBoardReadyForIdeaChain(state) {
+    if (!state || !state.board.length) return false;
+    if (state.size < 6) return true;
+    return state.board.length >= Math.ceil(state.size * 1.5);
+  }
+
+  function durissimaIdeaSizeScale(state) {
+    if (!state || state.size < 6) return 1;
+    return 1 + (state.size - 5) * 0.45;
+  }
+
+  /** Almeno 4 carte mano+turno per puntare a un turno da 4 (+ Idea opzionale). */
+  function durissimaCanPursueIdeaThisTurn(state, playerId) {
+    if (!durissimaPursueIdea(state)) return false;
+    if (durissimaHandCards(state, playerId) + (state.turnPlayed || 0) < 4) return false;
+    return durissimaBoardReadyForIdeaChain(state);
+  }
+
+  function durissimaIdeaDepthBonus(state, playerId, chainDepth) {
+    if (!durissimaCanPursueIdeaThisTurn(state, playerId)) return 0;
+    const played = state.turnPlayed || 0;
+    if (chainDepth <= played) return 0;
+    let bonus = (chainDepth - played) * 140;
+    if (chainDepth >= 4) bonus += 220;
+    if (chainDepth >= 5) bonus += 400;
+    return bonus * durissimaIdeaSizeScale(state);
+  }
+
+  /** Punteggio posa jolly: ponte interno con ancoraggio e lati verso vuoto (buco utile). */
+  function durissimaIdeaJollyBridgeScore(state, move) {
+    if (!isIdeaBlindTurn(state)) return 0;
+    const map = boardMap(state.board);
+    const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
+    let realNeighbors = 0;
+    let score = 0;
+    for (const dir of dirs) {
+      const adj = map.get(coordKey(move.x + dir.x, move.y + dir.y));
+      if (!adj) {
+        score += 18;
+        continue;
+      }
+      if (!isIdeaBlindBoardEntry(adj)) realNeighbors++;
+    }
+    if (realNeighbors >= 1 && realNeighbors <= 2) score += 95;
+    const bounds = boardBounds(state.board, [{ x: move.x, y: move.y }]);
+    const relX = move.x - bounds.minX;
+    const relY = move.y - bounds.minY;
+    if (relX > 0 && relY > 0 && relX < bounds.width - 1 && relY < bounds.height - 1) {
+      score += 55;
+    }
+    if (state.size >= 6) score += 35;
+    return score;
+  }
+
+  /** Massimizza profondita' catena (fino a 5 con Idea) quando conviene puntare all'Idea. */
+  function chooseDurissimaIdeaPursuitPlacement(state, playerId, random, branchLimit, teamMode) {
+    const requirement = placementRequirement(state);
+    const moves = legalPlacements(state, playerId, requirement);
+    if (!moves.length) return null;
+    const preferSafe = durissimaPreferSafePlays(state);
+    const sample = moves.length > branchLimit ? shuffle(moves, random).slice(0, branchLimit) : moves;
+
+    if (isIdeaBlindTurn(state)) {
+      let bestBridge = -Infinity;
+      let bestMoves = [];
+      for (const move of sample) {
+        const bridge = durissimaIdeaJollyBridgeScore(state, move);
+        if (bridge > bestBridge) {
+          bestBridge = bridge;
+          bestMoves = [move];
+        } else if (bridge === bestBridge) {
+          bestMoves.push(move);
+        }
+      }
+      if (bestMoves.length) return bestMoves[Math.floor(random() * bestMoves.length)];
+    }
+
+    const budget = { count: 0, max: PLANNER_MAX_NODES };
+    let bestDepth = -1;
+    let bestMoves = [];
+    for (const move of sample) {
+      const sim = cloneSimState(state, playerId);
+      if (!applyPlacementSim(sim, playerId, move)) continue;
+      const depth = maxChainPlays(sim, playerId, branchLimit, random, budget);
+      const allowFatal = durissimaCanPursueIdeaThisTurn(state, playerId) && depth >= 4;
+      if (preferSafe && durissimaMoveIsFatal(state, playerId, move) && !allowFatal) continue;
+      if (depth > bestDepth) {
+        bestDepth = depth;
+        bestMoves = [move];
+      } else if (depth === bestDepth) {
+        bestMoves.push(move);
+      }
+    }
+    if (!bestMoves.length) return null;
+    return bestMoves[Math.floor(random() * bestMoves.length)];
   }
 
   function choosePlacementDurissima(state, playerId, requirement, random, branchLimit, teamMode, options) {
@@ -4378,6 +4485,21 @@ const MPCARDS_CORE_SOURCE = `
     if (state.turnPlayed >= 4 && requirement > 4) return { type: "stop" };
     if (state.turnPlayed < 4 && requirement > 4) return { type: "stop" };
 
+    if (state.turnPlayed === 4 && canOfferIdea(state, playerId)) {
+      const ideaMove = chooseDurissimaIdeaPursuitPlacement(
+        state, playerId, random, PLANNER_BRANCH_LIMIT + 2, true
+      );
+      if (ideaMove) return { type: "move", move: ideaMove };
+    }
+
+    if (durissimaCanPursueIdeaThisTurn(state, playerId) && state.turnPlayed > 0 && state.turnPlayed < 4) {
+      const chainMove = chooseDurissimaIdeaPursuitPlacement(
+        state, playerId, random, PLANNER_BRANCH_LIMIT + 4, true
+      )
+        || choosePlacementPlanner(state, playerId, requirement, random, PLANNER_BRANCH_LIMIT + 4);
+      if (chainMove) return { type: "move", move: chainMove };
+    }
+
     if (isDurissimaGnIdeal(state)) {
       const reqMoves = legalPlacements(state, playerId, requirement);
       let safeTurn = reqMoves.filter(move => !gnMoveBreaksIdealFillPlan(state, playerId, move));
@@ -4386,7 +4508,8 @@ const MPCARDS_CORE_SOURCE = `
         if (noMisuse.length) safeTurn = noMisuse;
       }
       if (reqMoves.length && !safeTurn.length && state.turnPlayed > 0) {
-        return { type: "stop" };
+        const ideaChainOk = state.size >= 6 && durissimaCanPursueIdeaThisTurn(state, playerId);
+        if (!ideaChainOk) return { type: "stop" };
       }
     }
     const fragileReserved = gnTryFragileReservedMove(state, playerId);
@@ -4576,6 +4699,12 @@ const MPCARDS_CORE_SOURCE = `
 
     const preferSafe = durissimaPreferSafePlays(state);
     function pickBest() {
+      if (durissimaCanPursueIdeaThisTurn(state, playerId)) {
+        const chainMove = chooseDurissimaIdeaPursuitPlacement(
+          state, playerId, random, branchLimit, teamMode
+        );
+        if (chainMove) return chainMove;
+      }
       return choosePlacementDurissima(
         state, playerId, placementRequirement(state), random, branchLimit, teamMode
       );
@@ -4696,6 +4825,30 @@ const MPCARDS_CORE_SOURCE = `
     const requirement = placementRequirement(state);
     if (state.turnPlayed >= 4 && requirement > 4) return { type: "stop" };
     if (state.turnPlayed < 4 && requirement > 4) return { type: "stop" };
+    if (
+      durissimaCanPursueIdeaThisTurn(state, playerId) &&
+      isDurissimaPlannerStrategy(strategy) &&
+      state.turnPlayed > 0 &&
+      state.turnPlayed < 4
+    ) {
+      const teamMode = strategy !== "durissima-planner";
+      const chainMove = chooseDurissimaIdeaPursuitPlacement(
+        state, playerId, random, PLANNER_BRANCH_LIMIT + 4, teamMode
+      )
+        || choosePlacementPlanner(state, playerId, requirement, random, PLANNER_BRANCH_LIMIT + 4);
+      if (chainMove) return { type: "move", move: chainMove };
+    }
+    if (
+      state.turnPlayed === 4 &&
+      canOfferIdea(state, playerId) &&
+      isDurissimaPlannerStrategy(strategy)
+    ) {
+      const teamMode = strategy !== "durissima-planner";
+      const ideaMove = chooseDurissimaIdeaPursuitPlacement(
+        state, playerId, random, PLANNER_BRANCH_LIMIT + 2, teamMode
+      );
+      if (ideaMove) return { type: "move", move: ideaMove };
+    }
     if (
       strategy === "draw-random-finish-random" &&
       state.turnPlayed > 0 &&
@@ -5520,6 +5673,9 @@ const MPCARDS_CORE_SOURCE = `
       firstAxisInversionDone: false,
       turnDirection: 1,
       durissimaMater: options.durissimaMater === true,
+      durissimaPursueIdea: options.durissimaMater === true
+        ? options.durissimaPursueIdea !== false
+        : false,
       durissimaScartiNReshuffle: scartiMode,
       durissimaDiscardPile: scartiMode ? [] : null,
       durissimaDiscardRecyclesLeft: scartiMode ? size : null,
@@ -5988,6 +6144,9 @@ const MPCARDS_CORE_SOURCE = `
     isBoardComplete,
     maybeCompleteDurissima,
     durissimaMoveIsFatal,
+    durissimaPursueIdea,
+    durissimaCanPursueIdeaThisTurn,
+    chooseDurissimaIdeaPursuitPlacement,
     tryDurissimaEmergencyDraw,
     tryDurissimaAfterPlayDraw,
     isDurissimaVitaExtraEnabled,

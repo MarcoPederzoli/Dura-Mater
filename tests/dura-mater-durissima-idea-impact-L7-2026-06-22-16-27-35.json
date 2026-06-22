@@ -1,0 +1,83 @@
+{
+  "format": "durissima-idea-impact-probe",
+  "L": 7,
+  "count": 80,
+  "workers": 6,
+  "gList": [
+    1
+  ],
+  "modes": [
+    "current",
+    "legacy-neighbor",
+    "pre-jolly"
+  ],
+  "durationMs": 104480,
+  "rows": [
+    {
+      "mode": "current",
+      "L": 7,
+      "G": 1,
+      "done": 80,
+      "wins": 0,
+      "ideaOffers": 9,
+      "fiveCardTurns": 9,
+      "fourCardTurns": 0,
+      "placedSum": 3658,
+      "turnsSum": 2197,
+      "vitaSum": 560,
+      "summary": {
+        "winPct": "0.00%",
+        "ideaOffersPerGame": "0.113",
+        "fiveCardTurnsPerGame": "0.113",
+        "fourCardTurnsPerGame": "0.000",
+        "avgPlaced": "45.73",
+        "avgTurns": "27.5",
+        "avgVita": "7.00"
+      }
+    },
+    {
+      "mode": "legacy-neighbor",
+      "L": 7,
+      "G": 1,
+      "done": 80,
+      "wins": 0,
+      "ideaOffers": 0,
+      "fiveCardTurns": 0,
+      "fourCardTurns": 0,
+      "placedSum": 3682,
+      "turnsSum": 2248,
+      "vitaSum": 560,
+      "summary": {
+        "winPct": "0.00%",
+        "ideaOffersPerGame": "0.000",
+        "fiveCardTurnsPerGame": "0.000",
+        "fourCardTurnsPerGame": "0.000",
+        "avgPlaced": "46.02",
+        "avgTurns": "28.1",
+        "avgVita": "7.00"
+      }
+    },
+    {
+      "mode": "pre-jolly",
+      "L": 7,
+      "G": 1,
+      "done": 80,
+      "wins": 0,
+      "ideaOffers": 4,
+      "fiveCardTurns": 4,
+      "fourCardTurns": 0,
+      "placedSum": 3667,
+      "turnsSum": 2313,
+      "vitaSum": 560,
+      "summary": {
+        "winPct": "0.00%",
+        "ideaOffersPerGame": "0.050",
+        "fiveCardTurnsPerGame": "0.050",
+        "fourCardTurnsPerGame": "0.000",
+        "avgPlaced": "45.84",
+        "avgTurns": "28.9",
+        "avgVita": "7.00"
+      }
+    }
+  ]
+}

@@ -1569,9 +1569,38 @@ function testSimulateTournamentCompletes() {
   assert.equal(result.tournamentScores.length, 2);
 }
 
+function testDurissimaIdeaPursuitRaisesIdeaOffers() {
+  const random = core.mulberry32(core.hashSeed("idea-freq:5:1:durissima-planner"));
+  let ideas = 0;
+  for (let i = 0; i < 300; i++) {
+    const result = core.simulateGame(deck, {
+      size: 5,
+      players: 1,
+      random,
+      strategies: ["durissima-planner"],
+      durissimaMater: true,
+      durissimaPursueIdea: true,
+      randomizeTurnOrder: true
+    });
+    ideas += result.ideaOffers || 0;
+  }
+  assert.ok(ideas > 0, "expected Idea offers when durissimaPursueIdea is enabled");
+}
+
+function testDurissimaIdeaPursuitCanBeDisabled() {
+  assert.equal(
+    core.durissimaPursueIdea(core.setupGame(deck, {
+      size: 5, players: 1, random: () => 0, durissimaMater: true, durissimaPursueIdea: false
+    })),
+    false
+  );
+}
+
 testTournamentTurnOrderRotatesStarter();
 testTournamentMontePenalties();
 testTournamentFinishAwardsDescendingPoints();
 testSimulateTournamentCompletes();
+testDurissimaIdeaPursuitRaisesIdeaOffers();
+testDurissimaIdeaPursuitCanBeDisabled();
 
 console.log("core regression tests passed");
