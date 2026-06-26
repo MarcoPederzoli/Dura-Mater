@@ -100,6 +100,14 @@ Canonical (carta 0 fissa in (0,0)): 3x3 -> 32; 4x4 -> 179.648; 5x5 -> lower boun
 
 ---
 
+## 2026-06-26 — Memoria a carico zero sull'utente
+
+**Ipotesi:** l'utente non deve ricordare frasi rituali («leggi promemoria», «aggiorna SESSIONI»).
+**Decisione:** protocollo obbligatorio in `C:\Users\marco\.grok\AGENTS.md` + `AGENTS.md` progetto: agente legge memoria all'avvio e scrive a fine lavoro senza istruzioni esplicite.
+**Non rifare:** chiedere all'utente di compensare la memoria della chat.
+
+---
+
 ## 2026-06-26 — Architettura memoria progetto
 
 **Ipotesi:** Git da solo non basta a ricordare ipotesi scartate e test gia' fatti; serve un diario committato.

@@ -14,24 +14,32 @@ Progetto SPA statica per **Dura Mater** (codice legacy: MPCards).
 - Dopo modifiche: proporre messaggio di commit all’utente; commit + push **solo dopo approvazione**.
 - Messaggi in italiano, brevi e specifici. Convenzione rivedibile su richiesta utente.
 
-## Memoria del progetto (obbligatorio)
+## Memoria del progetto (obbligatorio — zero carico sull'utente)
 
-La chat e' effimera. La memoria persistente del ragionamento sta nei file markdown, committati su Git.
+Vedi anche `C:\Users\marco\.grok\AGENTS.md` sezione «Memoria progetti». L'utente **non** deve ricordare nulla; l'agente esegue il protocollo **autonomamente**.
 
 | File | Ruolo |
 |------|--------|
 | `promemoria.md` | Fotografia **attuale**: focus, vincoli, cosa e' chiuso. Max ~2 pagine. |
 | `SESSIONI.md` | **Diario cronologico**: ipotesi, test, risultato, decisione, «non rifare». |
 | `results/INDICE.md` | Dove sono gli artefatti pesanti (json, xlsx) esclusi da Git. |
-| `scripts/TODO-SOLVER-DURISSIMA.md` | Checklist e divieti operativi (probe, solver). |
+| `scripts/TODO-SOLVER-DURISSIMA.md` | Divieti operativi (probe, solver) — leggere all'avvio. |
 
-**All'inizio di una sessione non banale:** leggere `promemoria.md` e le ultime voci di `SESSIONI.md`.
+### All'avvio (prima azione, ogni sessione)
 
-**A fine sessione significativa** (cambio ipotesi, probe con numeri, decisione su regole):
-1. Aggiungere voce in `SESSIONI.md` (formato in testa al file).
-2. Se ci sono artefatti nuovi in `results/` o `tests/`, aggiornare `results/INDICE.md`.
-3. Compattare `promemoria.md` se cambiano focus o divieti.
-4. Proporre commit **docs** (anche senza cambi codice), es. `docs: sessione YYYY-MM-DD titolo breve`.
+1. Leggere `promemoria.md`, ultime **5** voci di `SESSIONI.md`, `scripts/TODO-SOLVER-DURISSIMA.md`.
+2. Poi procedere con la richiesta dell'utente (qualsiasi sia — non serve che menzioni i file memoria).
+
+### A fine lavoro (automatico se c'e' stato lavoro sul progetto)
+
+1. Voce in `SESSIONI.md` (formato in testa al file).
+2. Aggiornare `results/INDICE.md` se nuovi artefatti in `results/` o `tests/`.
+3. Aggiornare `promemoria.md` se cambiano focus o divieti.
+4. Proporre commit **docs**; commit/push solo dopo approvazione utente.
+
+### Divieto
+
+Non chiedere all'utente di «ricordarsi» di leggere o aggiornare questi file.
 
 ## Deploy
 

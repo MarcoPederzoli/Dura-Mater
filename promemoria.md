@@ -1,6 +1,8 @@
-# Promemoria — Dura Mater (sessioni future con l’IA)
+# Promemoria — Dura Mater
 
-Carica questo file all’inizio di una nuova chat (es. «Leggi `promemoria.md` e continuiamo»).
+**Per l'utente:** apri `grok` in questa cartella e di' cosa vuoi fare. Non serve ricordare file memoria — l'agente legge e aggiorna tutto da solo (`AGENTS.md`).
+
+**Per l'agente:** leggere questo file e `SESSIONI.md` (ultime 5 voci) **prima** di ogni lavoro sul progetto.
 
 ## Percorso e vincoli
 
@@ -94,12 +96,12 @@ npm test
 
 La chat Grok non e' persistente: il diario e' `SESSIONI.md` (su Git).
 
-## Come riprendere
+## Come riprendere (utente)
 
-1. Aprire la cartella `D:\Grok\projects\Dura Mater` e lanciare `grok`.
-2. Nuova chat: «Leggi `promemoria.md`, le ultime voci di `SESSIONI.md` e `RULES.md`; poi [task].»
-3. Modificare solo file in questa cartella; aggiornare `RULES.md` se cambiano le regole.
-4. A fine sessione: chiedere all'agente di aggiornare `SESSIONI.md` e proporre commit docs.
+1. `cd` in questa cartella, `grok`.
+2. Dire il task in linguaggio naturale («continuiamo il solver», «fixa il test X», ecc.).
+3. L'agente carica contesto da questo file, `SESSIONI.md` e `RULES.md` **senza che tu lo chieda**.
+4. A fine lavoro l'agente aggiorna `SESSIONI.md` e propone commit — **non devi ricordartelo**.
 
 ## Giocabilità (provvisoria, giugno 2026)
 
