@@ -1,10 +1,13 @@
 node_modules/
+terminals/
+agent-tools/
 .partykit-static/
 
 .env
 .env.*
 
-results/
+results/*
+!results/INDICE.md
 scripts/.heavy-probe.lock
 scripts/.mpcards-core-*.js
 

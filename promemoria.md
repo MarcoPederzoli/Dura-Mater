@@ -83,11 +83,23 @@ npm test
 4. Nomi carte e ordine colori corretti (3ª cifra).
 5. Regola **Dura Mater chiusa** + inversione turni; criterio chiusura corretto su **ingombro NxN**.
 
+## Memoria del ragionamento
+
+| File | Quando leggerlo |
+|------|-----------------|
+| `promemoria.md` | Stato **oggi** (questo file) |
+| `SESSIONI.md` | Storia ipotesi/test/decisioni — **leggere le ultime voci** |
+| `results/INDICE.md` | Dove trovare json/xlsx di probe |
+| `scripts/TODO-SOLVER-DURISSIMA.md` | Cosa **non** rifare (probe, solver) |
+
+La chat Grok non e' persistente: il diario e' `SESSIONI.md` (su Git).
+
 ## Come riprendere
 
-1. Aprire la cartella `D:\Grok\projects\Dura Mater` in Cursor.
-2. Nuova chat: «Leggi `promemoria.md` e `RULES.md`; poi [task].»
+1. Aprire la cartella `D:\Grok\projects\Dura Mater` e lanciare `grok`.
+2. Nuova chat: «Leggi `promemoria.md`, le ultime voci di `SESSIONI.md` e `RULES.md`; poi [task].»
 3. Modificare solo file in questa cartella; aggiornare `RULES.md` se cambiano le regole.
+4. A fine sessione: chiedere all'agente di aggiornare `SESSIONI.md` e proporre commit docs.
 
 ## Giocabilità (provvisoria, giugno 2026)
 
@@ -99,8 +111,10 @@ npm test
 ## Focus attuale
 
 - **Dura:** competitiva + torneo — regole e UI complete per questa modalità.
-- **Prossimo:** **Durissima** (coop `G = N`, poi solitario quando si riprende il bilanciamento).
+- **Prossimo:** **Durissima** — prima **Solver Livello A** (CSP incastro), poi scheduler B, poi bot pipeline. Dettaglio in `SESSIONI.md` (2026-06-23).
+- **Non ora:** bilanciamento reshuffle/pool/vite; nuovi probe pesanti senza mandato esplicito.
 - **Da definire (torneo):** punteggio bersaglio per G molto alto (es. 16).
+- **Editore:** integrare tabella configurazioni finali in `Analisi-Mazzo-Dura-Mater.docx`.
 
 ## Da sistemare (regole)
 
@@ -115,4 +129,4 @@ npm test
 
 ---
 
-*Ultimo aggiornamento promemoria: giugno 2026 — progetto ~v0.1.2.*
+*Ultimo aggiornamento promemoria: 2026-06-26 — progetto ~v0.1.2.*
