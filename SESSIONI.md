@@ -100,6 +100,13 @@ Canonical (carta 0 fissa in (0,0)): 3x3 -> 32; 4x4 -> 179.648; 5x5 -> lower boun
 
 ---
 
+## 2026-06-26 — Fisico vs software: due cartelle
+
+**Contesto:** gioco da tavolo gia' in `Dropbox\...\17 - DURA MATER` (grafica, stampa, Word). Repo software in `C:\Dev\Dura-Mater`.
+**Decisione:** track separati documentati; hub e promemoria fisico creati in Dropbox. Non merge automatico xlsx/PSD con `Carte.xlsx`/`grafica/`.
+
+---
+
 ## 2026-06-26 — Spostamento su C:\Dev (SSD)
 
 **Decisione:** repo da `D:\Grok\projects\Dura Mater` a `C:\Dev\Dura-Mater`. D: e' HDD lento; codice su SSD. Dropbox solo per hub e documenti.

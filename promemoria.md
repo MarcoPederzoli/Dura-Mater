@@ -7,7 +7,7 @@
 ## Percorso e vincoli
 
 - **Cartella di lavoro:** `C:\Dev\Dura-Mater` (SSD locale, fuori Dropbox)
-- Avvio consigliato: hub `Dropbox\Grok` + «lavoriamo su Dura Mater», oppure `cd` qui e `grok`.
+- Avvio consigliato: hub `Dropbox\Grok` + «Dura Mater **software**» (non «fisico»), oppure `cd` qui e `grok`.
 - **Non** usare `DaClaude` (rimossa).
 - SPA statica: **nessuna build obbligatoria**. Aprire `index.html` nel browser.
 
@@ -19,7 +19,15 @@
 - Convenzione attuale **rivedibile** (es. in futuro più libertà all’agente sui messaggi).
 - Se `git push` fallisce per autenticazione scaduta, segnalarlo all’utente (ri-login GitHub Credential Manager).
 
-## Cos’è il progetto
+## Progetto gemello — gioco fisico (Dropbox, separato)
+
+Sviluppo **cartaceo** (grafica, stampa, regolamento Word, xlsx assegnazione carte):
+
+`C:\Users\marco\Dropbox\Personale\FunStuff\Miei Giochi da Tavolo\17 - DURA MATER`
+
+Ha il suo `promemoria.md` e `SESSIONI.md`. **Non** confondere con questo repo: qui e' solo **software** (simulatore, probe, `RULES.md` in codice). Allineare i due solo su richiesta esplicita.
+
+## Cos’è il progetto (software)
 
 Simulatore / gioco locale del gioco da tavolo **Dura Mater** (nel codice compare ancora il nome legacy **MPCards**).
 
