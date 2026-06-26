@@ -17,7 +17,7 @@ Il repository è una **SPA statica** (nessuna build obbligatoria) che serve a:
 
 Il **solver/generatore mazzi** originale (`PROMPT.md`) è **obsoleto e rimosso**: il mazzo stampato è **fisso** in `SIM_DECK_CODES`.
 
-**Percorso di lavoro:** `D:\Grok\projects\Dura Mater`  
+**Percorso di lavoro:** `C:\Dev\Dura-Mater`  
 **Repository:** https://github.com/MarcoPederzoli/Dura-Mater.git — branch `master`
 
 ---
@@ -192,7 +192,7 @@ Dura Mater/
 
 ## 7. Come riprendere il lavoro
 
-1. Aprire `D:\Grok\projects\Dura Mater` in Cursor.
+1. Aprire `C:\Dev\Dura-Mater` (o avviare Grok da hub `Dropbox\Grok`).
 2. Leggere `promemoria.md`, `RULES.md`, `SIMULATOR.md` e questo file.
 3. Eseguire `npm test` nella root.
 4. Aprire `simulator.html` nel browser per test workflow; `index.html` per smoke test gioco.

@@ -6,8 +6,9 @@
 
 ## Percorso e vincoli
 
-- **Cartella unica di lavoro:** `D:\Grok\projects\Dura Mater`
-- **Non** cercare su tutto il disco; **non** usare `DaClaude` (rimossa, tutto è nella cartella sopra).
+- **Cartella di lavoro:** `C:\Dev\Dura-Mater` (SSD locale, fuori Dropbox)
+- Avvio consigliato: hub `Dropbox\Grok` + «lavoriamo su Dura Mater», oppure `cd` qui e `grok`.
+- **Non** usare `DaClaude` (rimossa).
 - SPA statica: **nessuna build obbligatoria**. Aprire `index.html` nel browser.
 
 ## Git / GitHub
@@ -69,7 +70,7 @@ Nomi leggibili (es. «Cinque di Lampi Viola»): `card-names.js` — regole di de
 ## Test e deploy
 
 ```bash
-cd "D:\Grok\projects\Dura Mater"
+cd "C:\Dev\Dura-Mater"
 npm test
 ```
 

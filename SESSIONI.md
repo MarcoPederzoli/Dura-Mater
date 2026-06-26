@@ -100,6 +100,12 @@ Canonical (carta 0 fissa in (0,0)): 3x3 -> 32; 4x4 -> 179.648; 5x5 -> lower boun
 
 ---
 
+## 2026-06-26 — Spostamento su C:\Dev (SSD)
+
+**Decisione:** repo da `D:\Grok\projects\Dura Mater` a `C:\Dev\Dura-Mater`. D: e' HDD lento; codice su SSD. Dropbox solo per hub e documenti.
+
+---
+
 ## 2026-06-26 — Memoria a carico zero sull'utente
 
 **Ipotesi:** l'utente non deve ricordare frasi rituali («leggi promemoria», «aggiorna SESSIONI»).
