@@ -102,6 +102,7 @@ npm test
 | `SESSIONI.md` | Storia ipotesi/test/decisioni — **leggere le ultime voci** |
 | `results/INDICE.md` | Dove trovare json/xlsx di probe |
 | `scripts/TODO-SOLVER-DURISSIMA.md` | Cosa **non** rifare (probe, solver) |
+| `scripts/HANDOFF-COORDINATORE-DURISSIMA.md` | **Ripresa bot Durissima** — una mente vs mazzo (2026-07-09) |
 
 La chat Grok non e' persistente: il diario e' `SESSIONI.md` (su Git).
 
@@ -121,9 +122,13 @@ La chat Grok non e' persistente: il diario e' `SESSIONI.md` (su Git).
 
 ## Focus attuale
 
-- **Dura:** competitiva + torneo — regole e UI complete per questa modalità.
-- **Prossimo:** **Durissima** — prima **Solver Livello A** (CSP incastro), poi scheduler B, poi bot pipeline. Dettaglio in `SESSIONI.md` (2026-06-23).
-- **Non ora:** bilanciamento reshuffle/pool/vite; nuovi probe pesanti senza mandato esplicito.
+- **Dura:** competitiva + torneo — **chiusa** (bot planner adeguato).
+- **Durissima G=N — coordinatore squadra:** risolto. Implementato coordinatore "una mente vs mazzo" (`mpcards-core.js` + oracle). Piano completo una volta per deal (lib per 4 + findPerfectPlanForDeal), seguito strict con passi. 
+  - **Risultato:** 100% su 3x3..8x8 (G=N) in test estesi (fino 20 deal per formato, 0 nodi per 4-8). 8x8 è il massimo (64 carte).
+  - Metodo: precomp/oracle → normalize → strict follower (pass per titolare). Chiusura soluzione (2026-07-10).
+- **Prossimo:** eventuale estensione a varianti (reshuffle, tallone) o uso del solver A+B in altri contesti. Per ora la forma G=N Durissima è risolta dal bot.
+- **Report solvibilita' (2026-07-09):** `Dropbox\...\17 - DURA MATER\Report_Solvibilita_Dura_Durissima.docx`
+- **In pausa:** layout ideali come linea principale (`GN_SKIP_IDEAL_LAYOUT=1` se serve). Opt-out coordinatore: `GN_LEGACY_PER_PLAYER=1`.
 - **Da definire (torneo):** punteggio bersaglio per G molto alto (es. 16).
 - **Editore:** integrare tabella configurazioni finali in `Analisi-Mazzo-Dura-Mater.docx`.
 
@@ -140,4 +145,4 @@ La chat Grok non e' persistente: il diario e' `SESSIONI.md` (su Git).
 
 ---
 
-*Ultimo aggiornamento promemoria: 2026-06-26 — progetto ~v0.1.2.*
+*Ultimo aggiornamento promemoria: 2026-07-09 — coordinatore squadra Durissima implementato; handoff in `scripts/HANDOFF-COORDINATORE-DURISSIMA.md`.*

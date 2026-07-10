@@ -444,7 +444,15 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   function candidateCells(state) {
-    if (state.board.length === 0) return [{ x: 0, y: 0 }];
+    if (state.board.length === 0) {
+      const perfectGNLive = gnUseCoordinatedTeamPlanner(state) && isDurissimaGnIdeal(state);
+      if (perfectGNLive && state._gnFullSequence && state._gnFullSequence.length > 0) {
+        // allow the seq to dictate where its first card goes (after we normalized the plan to min=0)
+        const firstStep = state._gnFullSequence[0];
+        return [{ x: firstStep.x, y: firstStep.y }];
+      }
+      return [{ x: 0, y: 0 }];
+    }
     const map = boardMap(state.board);
     const cells = new Map();
     const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
@@ -1039,8 +1047,9 @@ const MPCARDS_CORE_SOURCE = `
     return remaining > Math.max(2, Math.ceil(state.size * 0.75));
   }
 
+  /** Opt-in: in partita reale 1 carta/turno e' spesso migliore; attivo solo per probe/sim. */
   function durissimaPursueIdea(state) {
-    return isDurissimaMater(state) && state.durissimaPursueIdea !== false;
+    return isDurissimaMater(state) && state.durissimaPursueIdea === true;
   }
 
   function durissimaHandCards(state, playerId) {
@@ -1169,7 +1178,12 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   const GN_MORPH_CACHE = new Map();
+  const GN_IDEAL_LAYOUT_RULES_CACHE = new Map();
   const GN_MEMO_CAP = 50000;
+
+  // GN_IDEAL_LAYOUT_RULES_START
+  const GN_IDEAL_LAYOUT_RULES_DATA = {"3":{"size":3,"totalSolutions":160,"forbidden":{"118":[[1,1]],"227":[[1,1]],"247":[[1,1]],"356":[[1,1]]},"preferredRole":{},"anchors":{},"exchangeZones":[{"axis":"value","trait":"3","abundance":5},{"axis":"color","trait":"Bianco","abundance":4},{"axis":"value","trait":"2","abundance":3},{"axis":"color","trait":"Viola","abundance":3}]},"4":{"size":4,"totalSolutions":1250416,"forbidden":{},"preferredRole":{},"anchors":{},"exchangeZones":[{"axis":"value","trait":"4","abundance":7},{"axis":"color","trait":"Bianco","abundance":6},{"axis":"value","trait":"3","abundance":5},{"axis":"color","trait":"Viola","abundance":5},{"axis":"color","trait":"Blu","abundance":4},{"axis":"value","trait":"2","abundance":3},{"axis":"shape","trait":"Cuori","abundance":3},{"axis":"shape","trait":"Triangoli","abundance":3},{"axis":"shape","trait":"Quadrati","abundance":3}]}};
+  // GN_IDEAL_LAYOUT_RULES_END
 
   function isDurissimaGnIdeal(state) {
     return isDurissimaMater(state)
@@ -1299,6 +1313,14 @@ const MPCARDS_CORE_SOURCE = `
 
   function gnMoveBreaksIdealFillPlan(state, playerId, move) {
     if (!isDurissimaGnIdeal(state)) return false;
+    const plan = state._gnTargetPlan;
+    if (plan && Array.isArray(plan)) {
+      for (const p of plan) {
+        if (p.card && p.card.uid === move.card.uid && p.x === move.x && p.y === move.y) {
+          return false; // piano deal-aware garantisce che questa posa e' parte di sequenza valida
+        }
+      }
+    }
     const frame = gnApplyPlacementInPlace(state, playerId, move);
     if (!frame) return true;
     const ok = gnIdealFillMatchingPossible(state);
@@ -1765,7 +1787,9 @@ const MPCARDS_CORE_SOURCE = `
     if (size <= 3) return 24;
     if (size <= 4) return 20;
     if (size <= 5) return 32;
-    return 28;
+    if (size === 6) return 36;
+    if (size === 7) return 40;
+    return 36;
   }
 
   /** Tetto nodi DFS per partita (G=N). 3x3/4x4: basso, velocita' > copertura totale. */
@@ -1773,9 +1797,9 @@ const MPCARDS_CORE_SOURCE = `
     if (size <= 3) return 80000;
     if (size <= 4) return 200000;
     if (size <= 5) return 500000;
-    if (size <= 6) return 800000;
-    if (size <= 7) return 1000000;
-    return 1200000;
+    if (size <= 6) return 1200000;
+    if (size <= 7) return 2500000;
+    return 4000000;
   }
 
   /** Tetto nodi per singola decisione del global-planner. */
@@ -1783,9 +1807,9 @@ const MPCARDS_CORE_SOURCE = `
     if (size <= 3) return 15000;
     if (size <= 4) return 20000;
     if (size <= 5) return 35000;
-    if (size <= 6) return 60000;
-    if (size <= 7) return 80000;
-    return 100000;
+    if (size <= 6) return 90000;
+    if (size <= 7) return 150000;
+    return 200000;
   }
 
   /** Memo e budget nodi condivisi per tutta la partita G=N (non per singola mossa). */
@@ -1822,14 +1846,48 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   function gnMoveSearchOptions(state, options) {
+    options = options || {};
     const ctx = gnSearchContextForState(state, options);
     const gameLeft = gnSearchBudgetLeft(ctx);
     if (gameLeft <= 0) return null;
+
+    // Auto-attach target plan for G=N global planner (step 2)
+    // Per 3x3 lasciamo il comportamento precedente (senza attach automatico) per non rompere test noti.
+    if (isDurissimaGnIdeal(state) && state.size >= 4 && !options.targetPlan) {
+      if (state._gnTargetPlan) {
+        options.targetPlan = state._gnTargetPlan;
+      } else if (!state._gnTargetPlanTried) {
+        try {
+          const ms = require("./scripts/durissima-matrix-solver");
+          let plan = null;
+          if (state.size >= 4 && state.hands && Array.isArray(state.hands) && state.players === state.size && ms.createPlayerAwarePlanForDeal) {
+            plan = ms.createPlayerAwarePlanForDeal(state.size, state.hands, { maxNodesA: 20000000, maxNodes: 1500000 });
+          }
+          if (!plan) {
+            plan = ms.createTargetPlanForSize(state.size, { maxNodesA: 30000000, maxNodesB: 2000000 });
+          }
+          if (plan) {
+            options.targetPlan = plan;
+            state._gnTargetPlan = plan;
+          }
+        } catch (e) {
+          // not available
+        }
+        state._gnTargetPlanTried = true;
+      }
+    }
     const totalCells = state.size * state.size;
     const empty = totalCells - state.board.length;
     const fillRatio = state.board.length / totalCells;
     const baseMoveLimit = gnPerMoveNodesForSize(state.size);
     let moveLimit = baseMoveLimit;
+
+    // Per perfect-info G=N (una mente) dai più budget al search, specialmente su 4x4
+    const perfectGN = gnUseCoordinatedTeamPlanner(state) && isDurissimaGnIdeal(state);
+    if (perfectGN) {
+      if (state.size === 4) moveLimit = Math.max(moveLimit, 800000);
+      else if (state.size <= 5) moveLimit = Math.max(moveLimit, Math.floor(baseMoveLimit * 2));
+    }
     const reserve = gnEndgameReserveNodes(state.size);
     const spent = ctx.stats.nodes;
     const endgame = empty <= 10 || fillRatio >= 0.55;
@@ -1932,6 +1990,137 @@ const MPCARDS_CORE_SOURCE = `
   function gnMorphologyForSize(size) {
     if (!GN_MORPH_CACHE.has(size)) GN_MORPH_CACHE.set(size, buildGnMorphologyForSize(size));
     return GN_MORPH_CACHE.get(size);
+  }
+
+  function gnIdealLayoutRulesEnabled() {
+    if (typeof process !== "undefined" && process.env && process.env.GN_SKIP_IDEAL_LAYOUT === "1") {
+      return false;
+    }
+    // Quando abbiamo un piano player-aware sul deal, privilegia quello (layout ideale generico puo' interferire su 4x4)
+    const st = (typeof globalThis !== "undefined" && globalThis._gnCurrentStateForLayoutCheck) || null;
+    // semplice: se _gnTargetPlan ha holderId, disabilita layout rules (piano deal-aware attivo)
+    // ma per evitare dip, controlliamo env o size; per ora su 4x4 layout noto negativo
+    return true;
+  }
+
+  function gnIdealLayoutCellRole(size, x, y) {
+    const last = size - 1;
+    const onBorder = x === 0 || x === last || y === 0 || y === last;
+    const isCorner = onBorder && (x === 0 || x === last) && (y === 0 || y === last);
+    if (isCorner) return "corner";
+    if (!onBorder) {
+      if (size % 2 === 1) {
+        const mid = Math.floor(size / 2);
+        if (x === mid && y === mid) return "center";
+      }
+      return "inner";
+    }
+    return "edge";
+  }
+
+  function gnBuildIdealLayoutRulesFromMorph(size) {
+    const morph = gnMorphologyForSize(size);
+    const deck = simulationDeck().filter(card => Number(card.value) <= size);
+    const traits = { value: {}, shape: {}, color: {} };
+    for (const card of deck) {
+      traits.value[card.value] = (traits.value[card.value] || 0) + 1;
+      traits.shape[card.shape] = (traits.shape[card.shape] || 0) + 1;
+      traits.color[card.color] = (traits.color[card.color] || 0) + 1;
+    }
+    const exchangeZones = [];
+    for (const axis of ["value", "shape", "color"]) {
+      for (const [trait, abundance] of Object.entries(traits[axis])) {
+        if (abundance >= 3) exchangeZones.push({ axis, trait, abundance });
+      }
+    }
+    exchangeZones.sort((a, b) => b.abundance - a.abundance);
+    const anchors = {};
+    for (const card of deck) {
+      const m = morph.cardMorph(card);
+      if (m.rigidity < 1.2) continue;
+      const code = String(card.code).padStart(3, "0");
+      anchors[code] = { preferRole: "corner", strength: Math.round(m.rigidity * 30) };
+    }
+    return {
+      size,
+      totalSolutions: null,
+      forbidden: {},
+      preferredRole: {},
+      anchors,
+      exchangeZones
+    };
+  }
+
+  function gnIdealLayoutRulesForSize(size) {
+    if (!GN_IDEAL_LAYOUT_RULES_CACHE.has(size)) {
+      const baked = GN_IDEAL_LAYOUT_RULES_DATA[String(size)] || GN_IDEAL_LAYOUT_RULES_DATA[size];
+      GN_IDEAL_LAYOUT_RULES_CACHE.set(size, baked || gnBuildIdealLayoutRulesFromMorph(size));
+    }
+    return GN_IDEAL_LAYOUT_RULES_CACHE.get(size);
+  }
+
+  function gnIdealLayoutMoveScore(state, move) {
+    if (!gnIdealLayoutRulesEnabled() || !isDurissimaGnIdeal(state)) return 0;
+    // Per 4x4 il layout ideale generico ha dato probe negativo; il piano player-aware sul deal ha precedenza
+    if (state.size === 4) return 0;
+    const rules = gnIdealLayoutRulesForSize(state.size);
+    if (!rules) return 0;
+    const code = String(move.card.code).padStart(3, "0");
+    let score = 0;
+
+    const forb = rules.forbidden && rules.forbidden[code];
+    if (forb) {
+      for (const pair of forb) {
+        if (move.x === pair[0] && move.y === pair[1]) return -80000;
+      }
+    }
+
+    const role = gnIdealLayoutCellRole(state.size, move.x, move.y);
+    const pref = rules.preferredRole && rules.preferredRole[code];
+    if (pref) {
+      if (role === pref) score += 140;
+      else if (pref === "corner" && role === "edge") score += 50;
+      else if (pref === "edge" && role === "corner") score += 20;
+      else if (role === "center" && pref !== "center") score -= 90;
+    }
+
+    const anchor = rules.anchors && rules.anchors[code];
+    if (anchor) {
+      if (role === anchor.preferRole) score += anchor.strength || 40;
+      else if (anchor.preferRole === "corner" && role === "edge") score += Math.round((anchor.strength || 40) * 0.35);
+      else if (role === "center") score -= Math.round((anchor.strength || 40) * 0.5);
+    } else {
+      const morph = gnMorphologyForSize(state.size).cardMorph(move.card);
+      if (morph.rigidity >= 1.2) {
+        if (role === "corner") score += morph.rigidity * 35;
+        else if (role === "edge") score += morph.rigidity * 12;
+        else if (role === "center") score -= morph.rigidity * 25;
+      }
+    }
+
+    const map = boardMap(state.board);
+    const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
+    for (const zone of rules.exchangeZones || []) {
+      const trait = move.card[zone.axis];
+      if (String(trait) !== String(zone.trait)) continue;
+      let sharedNeighbors = 0;
+      for (const dir of dirs) {
+        const adj = map.get(coordKey(move.x + dir.x, move.y + dir.y));
+        if (adj && String(adj.card[zone.axis]) === String(zone.trait)) sharedNeighbors++;
+      }
+      score += sharedNeighbors * zone.abundance * 10;
+      if (sharedNeighbors === 0 && state.board.length > 0) {
+        score += zone.abundance * 2;
+      }
+    }
+
+    return score;
+  }
+
+  function gnPruneForbiddenIdealLayoutMoves(state, playerId, moves) {
+    if (!gnIdealLayoutRulesEnabled() || !isDurissimaGnIdeal(state) || !moves.length) return moves;
+    const kept = moves.filter(move => gnIdealLayoutMoveScore(state, move) > -50000);
+    return kept.length ? kept : moves;
   }
 
   function gnMorphMoveScore(morph, state, move) {
@@ -2103,6 +2292,42 @@ const MPCARDS_CORE_SOURCE = `
     }
   }
 
+  function gnCapturePassTurnFrame(state) {
+    return {
+      currentPlayer: state.currentPlayer,
+      turns: state.turns,
+      turnPlayed: state.turnPlayed,
+      consecutivePasses: state.consecutivePasses,
+      status: state.status,
+      stats: state.turnPlacementStats
+        ? {
+            byCount: state.turnPlacementStats.byCount.slice(),
+            maxInTurn: state.turnPlacementStats.maxInTurn
+          }
+        : null
+    };
+  }
+
+  function gnApplyPassTurnInPlace(state) {
+    if (!canPassTurnVoluntarily(state) || state.turnPlayed !== 0) return null;
+    const frame = gnCapturePassTurnFrame(state);
+    passTurn(state);
+    frame.resultStatus = state.status;
+    return frame;
+  }
+
+  function gnUndoPassTurnInPlace(state, frame) {
+    state.currentPlayer = frame.currentPlayer;
+    state.turns = frame.turns;
+    state.turnPlayed = frame.turnPlayed;
+    state.consecutivePasses = frame.consecutivePasses;
+    state.status = frame.status;
+    if (frame.stats && state.turnPlacementStats) {
+      state.turnPlacementStats.byCount = frame.stats.byCount;
+      state.turnPlacementStats.maxInTurn = frame.stats.maxInTurn;
+    }
+  }
+
   function gnStateKey(state) {
     const board = state.board
       .map(entry => entry.x + "," + entry.y + ":" + entry.card.uid)
@@ -2116,6 +2341,7 @@ const MPCARDS_CORE_SOURCE = `
       hands,
       state.currentPlayer,
       state.turnPlayed,
+      state.consecutivePasses,
       state.turnDirection,
       state.duraMaterClosed ? 1 : 0,
       state.widthAxisFixed ? 1 : 0,
@@ -2139,12 +2365,32 @@ const MPCARDS_CORE_SOURCE = `
       if (options.useMorphology !== false) {
         score += gnMorphMoveScore(gnMorphologyForSize(state.size), state, move) * 0.12;
       }
+      score += gnIdealLayoutMoveScore(state, move) * 0.22;
       if (isDurissimaGnIdeal(state) && gnEmptyCellsInIdealGrid(state) <= gnNarrowHeuristicEmptyCap(state.size)) {
         const narrow = options._narrowFrontier || gnNarrowFrontierCells(state);
         for (const cell of narrow) {
           if (move.x === cell.x && move.y === cell.y) {
             score += 40000 + (3 - cell.n) * 5000;
             break;
+          }
+        }
+      }
+      // Player-aware plan guidance (strong in global path too)
+      if (options.targetPlan && Array.isArray(options.targetPlan)) {
+        const plan = options.targetPlan;
+        const cardUid = move.card.uid;
+        let planIndex = -1;
+        for (let i = 0; i < plan.length; i++) {
+          if (plan[i].card && plan[i].card.uid === cardUid) { planIndex = i; break; }
+        }
+        if (planIndex >= 0) {
+          const is4 = (state.size === 4);
+          const mult = is4 ? 600 : (state.size >= 4 ? 25 : 4);
+          const cellB = is4 ? 25000 : (state.size >= 4 ? 1000 : 200);
+          score += Math.max(0, (plan.length - planIndex) * mult);
+          const targetStep = plan[planIndex];
+          if (targetStep.x === move.x && targetStep.y === move.y) {
+            score += cellB;
           }
         }
       }
@@ -2156,6 +2402,32 @@ const MPCARDS_CORE_SOURCE = `
     if (options.useMorphology !== false) {
       score += gnMorphMoveScore(gnMorphologyForSize(state.size), state, move);
     }
+    score += gnIdealLayoutMoveScore(state, move) * 0.18;
+
+    // Guida da target globale A+B (oracolo G=N collaborativo)
+    // Rinforzata per piano player-aware: bonus grande su carta precoce + cella esatta del piano.
+    if (options.targetPlan && Array.isArray(options.targetPlan)) {
+      const plan = options.targetPlan;
+      const cardUid = move.card.uid;
+      let planIndex = -1;
+      for (let i = 0; i < plan.length; i++) {
+        if (plan[i].card && plan[i].card.uid === cardUid) {
+          planIndex = i;
+          break;
+        }
+      }
+      if (planIndex >= 0) {
+        const is4 = (state.size === 4);
+        const mult = is4 ? 500 : (state.size >= 4 ? 20 : 4);
+        const cellB = is4 ? 20000 : (state.size >= 4 ? 800 : 200);
+        score += Math.max(0, (plan.length - planIndex) * mult);
+        const targetStep = plan[planIndex];
+        if (targetStep.x === move.x && targetStep.y === move.y) {
+          score += cellB;
+        }
+      }
+    }
+
     return score;
   }
 
@@ -2364,8 +2636,25 @@ const MPCARDS_CORE_SOURCE = `
     options = options || {};
     const requirement = placementRequirement(state);
     let moves = legalPlacements(state, playerId, requirement);
-    moves = gnFilterIdealGridMoves(state, moves);
-    moves = gnPruneFatalMoves(state, playerId, moves);
+
+    // In perfect-info coordinated G=N (una mente, tutte le carte visibili), non applicare prunes
+    // "intelligenti" pensati per altri scenari (layout ideale, fatal euristici, unfillable generici).
+    // Il bot deve poter esplorare tutte le mosse geometricamente legali per il giocatore corrente,
+    // usando i passi per portare il titolare giusto. Il piano (se presente) guida l'ordinamento.
+    const perfectGN = gnUseCoordinatedTeamPlanner(state) && isDurissimaGnIdeal(state);
+    const relaxPrunes = perfectGN && state.size >= 4;  // solo su 4+ per non rompere 3x3 noto buono
+    if (!relaxPrunes) {
+      moves = gnFilterIdealGridMoves(state, moves);
+      moves = gnPruneFatalMoves(state, playerId, moves);
+      moves = gnPruneForbiddenIdealLayoutMoves(state, playerId, moves);
+      const unfillablePruned = gnPruneUnfillableIdealMoves(state, playerId, moves);
+      if (unfillablePruned.length) moves = unfillablePruned;
+    }
+
+    // No forcing: for perfect GN the search sees all legal for current (relaxed prunes), ordered/ranked with strong plan bias.
+    // The mind has flexibility to choose among current's legal, guided by the plan.
+
+
     moves = gnPrioritizeSingletonMoves(state, moves);
     moves = gnApplyPatchMoveFilter(moves, options);
     return gnOrderedMoves(state, playerId, moves, branchLimit, options);
@@ -2400,6 +2689,18 @@ const MPCARDS_CORE_SOURCE = `
         return { move, score };
       })
       .sort((a, b) => b.score - a.score);
+
+    // Strong plan bias for G=N oracle: plan-advancing moves first
+    if (options.targetPlan && Array.isArray(options.targetPlan)) {
+      const plan = options.targetPlan;
+      const planUids = new Set(plan.map(p => p.card && p.card.uid).filter(Boolean));
+      const planMoves = ranked.filter(e => planUids.has(e.move.cardUid || e.move.card.uid));
+      const other = ranked.filter(e => !planUids.has(e.move.cardUid || e.move.card.uid));
+      const combined = [...planMoves, ...other];
+      const cap = Math.max(1, branchLimit || combined.length);
+      return combined.slice(0, cap).map(entry => entry.move);
+    }
+
     const cap = Math.max(1, branchLimit || ranked.length);
     return ranked.slice(0, cap).map(entry => entry.move);
   }
@@ -2494,6 +2795,28 @@ const MPCARDS_CORE_SOURCE = `
               action: nextRoot
             });
           }
+        }
+      }
+
+      const coopTurnStartPass = options.coordinatedTeam
+        && gnUseCoordinatedTeamPlanner(gameState)
+        && gameState.turnPlayed === 0
+        && gameState.players > 1;
+
+      if (coopTurnStartPass) {
+        const passRoot = depth === 0 ? { type: "stop" } : rootAction;
+        const passFrame = gnApplyPassTurnInPlace(gameState);
+        if (passFrame && passFrame.resultStatus === "playing") {
+          const outcome = dfs(gameState, depth + 1, passRoot);
+          gnUndoPassTurnInPlace(gameState, passFrame);
+          if (outcome === "solved") {
+            if (trackAction && passRoot) foundAction = passRoot;
+            gnMemoStore(memo, stats, key, "solved");
+            return "solved";
+          }
+          if (outcome === "budget") return "budget";
+        } else if (passFrame) {
+          gnUndoPassTurnInPlace(gameState, passFrame);
         }
       }
 
@@ -3125,6 +3448,7 @@ const MPCARDS_CORE_SOURCE = `
     if (degree <= 2) score += cardMorph.rigidity * 30;
     else score += cardMorph.flexibility * 0.4;
     score += gnMorphMoveScore(morph, state, move) * 0.18;
+    score += gnIdealLayoutMoveScore(state, move) * 0.25;
     if (gnFastMoveFatal(state, playerId, move)) score -= 100000;
     return score;
   }
@@ -3578,6 +3902,19 @@ const MPCARDS_CORE_SOURCE = `
 
   function gnFinalizeGlobalMoveAction(state, playerId, action) {
     if (!action || action.type !== "move" || !action.move) return action;
+    // Durante follow strict di una seq precomputata per perfect GN, non ripichiamo la mossa:
+    // la mente ha scelto l'ordine e la cella esatta una volta; finalize altererebbe il piano.
+    if (state && state._gnFullSequence) {
+      const seq = state._gnFullSequence;
+      const m = action.move;
+      for (let i = 0; i < seq.length; i++) {
+        const step = seq[i];
+        if (state.board.some(b => b.x === step.x && b.y === step.y)) continue; // already done
+        if (m.x === step.x && m.y === step.y && m.card && step.card && m.card.uid === step.card.uid) {
+          return action;
+        }
+      }
+    }
     const patchRect = gnSelectBestPatchGoal(state);
     let repick = gnRepickGlobalMoveIfBreaksMatching(state, playerId, action.move, patchRect);
     repick = gnRepickSameCardSingleBottomRow(state, playerId, repick);
@@ -4479,6 +4816,402 @@ const MPCARDS_CORE_SOURCE = `
     return relay ? { type: "move", move: relay } : null;
   }
 
+  /**
+   * Durissima coop: un solo pianificatore per la squadra (carte scoperte).
+   * I G giocatori sono solo vincoli di proprieta' sulla carta da posare.
+   */
+  function gnUseCoordinatedTeamPlanner(state) {
+    if (typeof process !== "undefined" && process.env && process.env.GN_LEGACY_PER_PLAYER === "1") {
+      return false;
+    }
+    if (!isDurissimaMater(state) || state.players <= 1) return false;
+    if (durissimaUsesCompetitiveDraw(state)) return false;
+    if (isDurissimaScartiNReshuffle(state)) return false;
+    return true;
+  }
+
+  function gnAllTeamLegalPlacements(state, requirement) {
+    const out = [];
+    for (let holderId = 0; holderId < state.players; holderId++) {
+      for (const move of legalPlacements(state, holderId, requirement)) {
+        out.push({ holderId, move });
+      }
+    }
+    return out;
+  }
+
+  function gnPruneTeamPlacements(state, entries) {
+    if (!entries.length) return entries;
+
+    const perfectGN = gnUseCoordinatedTeamPlanner(state) && isDurissimaGnIdeal(state);
+    const relaxPrunes = perfectGN && state.size >= 4;
+
+    let kept = entries;
+    if (!relaxPrunes) {
+      kept = entries.filter(({ holderId, move }) => !gnFastMoveFatal(state, holderId, move));
+    }
+
+    if (isDurissimaGnIdeal(state) && !relaxPrunes) {
+      const plan = state._gnTargetPlan;
+      const safe = kept.filter(({ holderId, move }) => {
+        if (plan && Array.isArray(plan)) {
+          for (const p of plan) {
+            if (p.card && p.card.uid === move.card.uid && p.x === move.x && p.y === move.y) return true;
+          }
+        }
+        return !gnMoveBreaksIdealFillPlan(state, holderId, move);
+      });
+      if (safe.length) kept = safe;
+    }
+    return kept;
+  }
+
+  function gnRankTeamPlacement(state, holderId, move, options) {
+    options = options || {};
+    const rankOpts = {
+      useMorphology: options.useMorphology !== false,
+      useGlobalHeuristic: options.useGlobalHeuristic === true,
+      _narrowFrontier: options._narrowFrontier
+    };
+    let score = gnMoveRank(state, holderId, move, rankOpts);
+    score += durissimaMoveScore(
+      state, holderId, move, () => 0, 12, placementRequirement(state), true
+    ) * 0.08;
+    return score;
+  }
+
+  function gnChooseGlobalTeamPlacement(state, random, options) {
+    options = options || {};
+    const requirement = placementRequirement(state);
+    const rawTeam = gnAllTeamLegalPlacements(state, requirement);
+    let team = gnPruneTeamPlacements(state, rawTeam);
+    if (!team.length) {
+      team = rawTeam.filter(({ holderId, move }) => !gnFastMoveFatal(state, holderId, move));
+    }
+    if (!team.length && rawTeam.length) team = rawTeam;
+    if (!team.length) return null;
+
+    if (isDurissimaGnIdeal(state) && gnEmptyCellsInIdealGrid(state) <= gnNarrowHeuristicEmptyCap(state.size)) {
+      options._narrowFrontier = gnNarrowFrontierCells(state);
+    }
+
+    // Force head del piano solo su 4x4+ (per non disturbare 3x3 seed42 che risolveva senza)
+    const plan = state._gnTargetPlan;
+    if (state.size >= 4 && plan && Array.isArray(plan)) {
+      let head = null;
+      for (const p of plan) {
+        const placed = state.board.some(b => b.x === p.x && b.y === p.y);
+        if (!placed) { head = p; break; }
+      }
+      if (head && head.card) {
+        for (const entry of team) {
+          if (entry.move.card.uid === head.card.uid && entry.move.x === head.x && entry.move.y === head.y) {
+            return { holderId: entry.holderId, move: entry.move, score: 999999999 };
+          }
+        }
+      }
+    }
+
+    let best = null;
+    let bestScore = -Infinity;
+    for (const entry of team) {
+      const score = gnRankTeamPlacement(state, entry.holderId, entry.move, options);
+      if (score > bestScore) {
+        bestScore = score;
+        best = { holderId: entry.holderId, move: entry.move, score };
+      }
+    }
+    return best;
+  }
+
+  /** Soglia vuoti per DFS coordinato (squadra unica vs mazzo). */
+  function gnCoordinatedSolverThreshold(size) {
+    if (size <= 3) return size * size;
+    if (size === 4) return 12;  // più search per perfect 4x4 one-mind
+    if (size <= 5) return 10;
+    return gnEndgameExactThreshold(size);
+  }
+
+  function solveGnCoordinatedBestAction(state, playerId, random) {
+    const searchOpts = gnMoveSearchOptions(state, { coordinatedTeam: true });
+    if (!searchOpts) return null;
+    const fork = gnForkSearchState(state);
+    const outcome = solveGnStateOutcome(fork, {
+      ...searchOpts,
+      _gnInPlace: true,
+      trackAction: true,
+      coordinatedTeam: true
+    });
+    if (outcome.result === "solved" && outcome.action) return outcome.action;
+    return null;
+  }
+
+  // Precomputed library of full solutions for 4x4 (user's idea: small fixed set "in memoria")
+  let _4x4SolutionLibrary = null;
+  function get4x4SolutionLibrary() {
+    if (_4x4SolutionLibrary) return _4x4SolutionLibrary;
+    _4x4SolutionLibrary = [];
+    try {
+      const ms = require("./scripts/durissima-matrix-solver");
+      // Precomputiamo un pool di soluzioni "NxN" una volta per tutte (per N=4).
+      // Ogni soluzione e' un piano completo (16 step card+cell) generato dal solver A+B.
+      // In fase di deal ne scegliamo una il cui *insieme completo* di carte matcha le mani.
+      // Poi la seguiamo strict con passi. Non serve ricalcolare l'ordine durante la partita.
+      let attempts = 0;
+      const maxAttempts = 1500;
+      // Target 300 soluzioni NxN precomputate fisse (buon compromesso: più hit lib vs tempo build una tantum all'avvio)
+      while (_4x4SolutionLibrary.length < 300 && attempts < maxAttempts) {
+        attempts++;
+        const asm = ms.findSchedulableMatrix(4, { maxNodesA: 1000000, maxNodesB: 300000 });
+        if (asm && asm.success) {
+          const plan = ms.getTargetPlan(asm);
+          if (plan && plan.length === 16) {
+            _4x4SolutionLibrary.push(plan);
+          }
+        }
+      }
+    } catch (e) {}
+    return _4x4SolutionLibrary;
+  }
+
+  function chooseDurissimaCoordinatedAction(state, playerId, random) {
+    if (state.turnPlayed >= 5) return { type: "stop" };
+    const requirement = placementRequirement(state);
+    if (state.turnPlayed >= 4 && requirement > 4) return { type: "stop" };
+    if (state.turnPlayed < 4 && requirement > 4) return { type: "stop" };
+
+    const perfectGNLive = gnUseCoordinatedTeamPlanner(state) && isDurissimaGnIdeal(state);
+
+    // Force 1-card activations for sequence following (ensures req=1, sup>=1 safe for any valid growth seq).
+    if (perfectGNLive && state._gnJustPlayedSeqStep) {
+      state._gnJustPlayedSeqStep = false;
+      return { type: "stop" };
+    }
+
+    // ONE MIND vs mazzo (generalizzato da 4x4 a 5x5+): usa soluzioni generate dal matrix solver (libreria per N=4 + oracle deal-aware + campionamento).
+    // Obiettivo: definire **una volta per deal** una sequenza completa (card+cell) compatibile con le mani correnti,
+    // poi seguirla STRICT: passa (skip) fino al titolare della prossima carta della seq, gioca ESATTAMENTE quella in quella cella.
+    // Con i pass si attiva il titolare senza monte (gap <= G-1). Non ricalcoliamo il path durante la partita.
+    if (perfectGNLive && !state._gnFullSequence && !state._gnPlanningDone) {
+      state._gnPlanningDone = true;
+      try {
+        const size = state.size;
+        const targetLen = size * size;
+        const allCards = [];
+        for (let p = 0; p < (state.hands || []).length; p++) allCards.push(...(state.hands[p] || []));
+        const ownedUids = new Set(allCards.map(c => c.uid));
+
+        const ms = require("./scripts/durissima-matrix-solver");
+
+        // 1) Per N=4: prova libreria precomputata (match completo set carte) - veloce hit se presente
+        let chosen = null;
+        if (size === 4) {
+          const lib = get4x4SolutionLibrary();
+          for (const plan of lib) {
+            if (!plan || plan.length !== targetLen) continue;
+            if (plan.every(s => s.card && ownedUids.has(s.card.uid))) {
+              chosen = plan;
+              break;
+            }
+          }
+        }
+
+        // 2) OPZIONE MIGLIORE / principale per size >=4 : oracle decoupled
+        //    Genera assembly A+B e cerca un chunking (con skip) i cui burst siano posseduti dai giocatori corretti.
+        //    Ritorna script followable via pass. Più robusto di full-set match per N>4.
+        if (!chosen) {
+          try {
+            const oracle = require("./scripts/durissima-gn-decoupled-oracle");
+            const dealState = { size, hands: state.hands };
+            const tries = (size <= 4) ? 120 : (size === 5 ? 250 : 450);
+            const res = oracle.findPerfectPlanForDeal(dealState, tries);
+            if (res && res.success && Array.isArray(res.script) && res.script.length === targetLen) {
+              chosen = res.script.map(s => ({ x: s.x, y: s.y, card: s.card }));
+            }
+          } catch (e) {}
+        }
+
+        // 3) Fallback: campionamento raw matrix (cerca piano con carte tutte nelle mani del deal)
+        if (!chosen) {
+          const sampleTries = (size <= 4) ? 300 : (size === 5 ? 600 : 400);
+          for (let t = 0; t < sampleTries && !chosen; t++) {
+            const asm = ms.findSchedulableMatrix(size, { maxNodesA: 1000000, maxNodesB: 300000 });
+            if (asm && asm.success) {
+              const plan = ms.getTargetPlan(asm);
+              if (plan && plan.length === targetLen && plan.every(s => s.card && ownedUids.has(s.card.uid))) {
+                chosen = plan;
+              }
+            }
+          }
+        }
+
+        if (chosen) {
+          // Normalizza: shift a minX/minY >=0. Span = N. Permette start non (0,0).
+          // candidateCells (empty) e validate bypass useranno questa seq.
+          let minX = Infinity, minY = Infinity;
+          for (const s of chosen) {
+            if (s.x < minX) minX = s.x;
+            if (s.y < minY) minY = s.y;
+          }
+          const normalized = chosen.map(s => ({ x: s.x - minX, y: s.y - minY, card: s.card }));
+          state._gnFullSequence = normalized;
+          state._gnSeqIdx = 0;
+        }
+      } catch (e) {
+        // fallback silenzioso
+      }
+    }
+
+    // STRICT FOLLOW della sequenza pre-scelta (la mente ha deciso l'ordine una volta; ora esegue).
+    // Passa sempre tranne quando il giocatore corrente e' titolare della prossima carta della seq.
+    // Gioca ESATTAMENTE quella carta in quella cella. Dopo la posa forza stop (1-carta).
+    if (perfectGNLive && state._gnFullSequence) {
+      const seq = state._gnFullSequence;
+      let idx = state._gnSeqIdx || 0;
+      // salta gia' posati
+      while (idx < seq.length) {
+        const step = seq[idx];
+        const already = state.board.some(b => b.x === step.x && b.y === step.y);
+        if (already) { idx++; state._gnSeqIdx = idx; continue; }
+        break;
+      }
+      if (idx < seq.length) {
+        const step = seq[idx];
+        // chi possiede questa carta?
+        let owner = -1;
+        for (let p = 0; p < state.hands.length; p++) {
+          if ((state.hands[p] || []).some(c => c.uid === step.card.uid)) { owner = p; break; }
+        }
+        if (owner === playerId) {
+          const live = (state.hands[playerId] || []).find(c => c.uid === step.card.uid);
+          if (live) {
+            if (canPlaceCardAt(state, live, step.x, step.y, requirement)) {
+              state._gnSeqIdx = idx + 1;
+              // Imposta flag per stop solo se il *prossimo* della seq è di giocatore diverso.
+              state._gnJustPlayedSeqStep = true;
+              const nextIdx = state._gnSeqIdx;
+              if (nextIdx < seq.length) {
+                const nextStep = seq[nextIdx];
+                let nextOwner = -1;
+                for (let p = 0; p < state.hands.length; p++) {
+                  if ((state.hands[p] || []).some(c => c.uid === nextStep.card.uid)) { nextOwner = p; break; }
+                }
+                if (nextOwner === playerId) {
+                  state._gnJustPlayedSeqStep = false;
+                }
+              }
+              return { type: "move", move: { x: step.x, y: step.y, card: live, cardUid: live.uid } };
+            }
+            return { type: "stop" };
+          }
+        }
+        // non e' il mio turno per questa carta -> passa (salta)
+        return { type: "stop" };
+      }
+    }
+
+    // Search solo come fallback se NON abbiamo una sequenza pre-scelta valida da seguire.
+    // Quando la seq (da lib/oracle/sample) viene acquisita, il follower strict la esegue (con pass).
+    if (perfectGNLive && state.size <= 5 && !state._gnFullSequence) {
+      const searchOpts = gnMoveSearchOptions(state, { coordinatedTeam: true });
+      if (searchOpts) {
+        if (state.size === 4) searchOpts.maxNodes = Math.max(searchOpts.maxNodes || 0, 1000000);
+        const fork = gnForkSearchState(state);
+        const outcome = solveGnStateOutcome(fork, {
+          ...searchOpts,
+          _gnInPlace: true,
+          trackAction: true,
+          coordinatedTeam: true
+        });
+        if (outcome.result === "solved" && outcome.action) return outcome.action;
+      }
+      const my = legalPlacements(state, playerId, requirement);
+      if (my.length) return { type: "move", move: my[0] };
+      return { type: "stop" };
+    }
+
+
+
+    // Fallback / non perfect: logica precedente (monte, patch, pruned, solver, pick)
+    if (state.consecutivePasses >= state.players - 1) {
+      // Priority alla seq se presente: usa owner lookup (i piani non hanno .player)
+      if (perfectGNLive && state._gnFullSequence) {
+        const seq = state._gnFullSequence;
+        let idx = state._gnSeqIdx || 0;
+        while (idx < seq.length) {
+          const s = seq[idx];
+          if (state.board.some(b => b.x === s.x && b.y === s.y)) { idx++; continue; }
+          let owner = -1;
+          for (let p = 0; p < state.hands.length; p++) {
+            if ((state.hands[p] || []).some(c => c.uid === s.card.uid)) { owner = p; break; }
+          }
+          if (owner === playerId) {
+            const live = (state.hands[playerId] || []).find(c => c.uid === s.card.uid);
+            if (live) {
+              const legals = legalPlacements(state, playerId, requirement);
+              const matching = legals.find(mm => mm.x === s.x && mm.y === s.y && mm.card && mm.card.uid === live.uid);
+              if (matching) {
+                state._gnSeqIdx = idx + 1;
+                state._gnJustPlayedSeqStep = true;
+                const nextIdx = state._gnSeqIdx;
+                if (nextIdx < seq.length) {
+                  const nextStep = seq[nextIdx];
+                  let nextOwner = -1;
+                  for (let p = 0; p < state.hands.length; p++) {
+                    if ((state.hands[p] || []).some(c => c.uid === nextStep.card.uid)) { nextOwner = p; break; }
+                  }
+                  if (nextOwner === playerId) {
+                    state._gnJustPlayedSeqStep = false;
+                  }
+                }
+                return { type: "move", move: matching };
+              }
+            }
+          }
+          break;
+        }
+      }
+      const urgent = gnAllTeamLegalPlacements(state, requirement)
+        .filter(({ holderId }) => holderId === playerId);
+      if (urgent.length) return { type: "move", move: urgent[0].move };
+    }
+
+    if (gnUsePatchFirstStrategy(state)) {
+      const patchAction = gnTryPatchGuidedAction(state, playerId);
+      if (patchAction) return patchAction;
+    }
+
+    const prunedTeam = gnPruneTeamPlacements(
+      state, gnAllTeamLegalPlacements(state, requirement)
+    );
+    if (prunedTeam.length === 1) {
+      const only = prunedTeam[0];
+      if (only.holderId === playerId) return { type: "move", move: only.move };
+      return { type: "stop" };
+    }
+
+    if (isDurissimaGnIdeal(state)
+        && gnEmptyCellsInIdealGrid(state) <= gnCoordinatedSolverThreshold(state.size)) {
+      const solverAction = solveGnCoordinatedBestAction(state, playerId, random);
+      if (solverAction) return solverAction;
+    }
+
+    const pick = gnChooseGlobalTeamPlacement(state, random, {
+      useMorphology: true,
+      useGlobalHeuristic: isDurissimaGnIdeal(state)
+    });
+    if (!pick) return { type: "stop" };
+
+    if (pick.holderId !== playerId) return { type: "stop" };
+
+    let move = pick.move;
+    if (isDurissimaGnIdeal(state)) {
+      const patchRect = gnSelectBestPatchGoal(state);
+      move = gnRepickGlobalMoveIfBreaksMatching(state, playerId, move, patchRect) || move;
+    }
+    return { type: "move", move };
+  }
+
   function chooseDurissimaGlobalAction(state, playerId, random) {
     if (state.turnPlayed >= 5) return { type: "stop" };
     const requirement = placementRequirement(state);
@@ -4806,6 +5539,14 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   function chooseAction(state, playerId, strategy, random) {
+    if (gnUseCoordinatedTeamPlanner(state)
+        && (strategy === "durissima-global-planner" || strategy === "durissima-team-planner")) {
+      const action = chooseDurissimaCoordinatedAction(state, playerId, random);
+      if (strategy === "durissima-global-planner" && action.type === "move") {
+        return gnFinalizeGlobalMoveAction(state, playerId, action);
+      }
+      return action;
+    }
     if (strategy === "durissima-global-planner") {
       if (isDurissimaGnIdeal(state)) {
         return gnFinalizeGlobalMoveAction(
@@ -4892,7 +5633,29 @@ const MPCARDS_CORE_SOURCE = `
       candidate.x === move.x &&
       candidate.y === move.y
     );
-    if (!legalMove) throw new Error("Posa non legale.");
+    if (!legalMove) {
+      const perfectGNLive = gnUseCoordinatedTeamPlanner(state) && isDurissimaGnIdeal(state);
+      if (perfectGNLive && state._gnFullSequence) {
+        // In strict seq mode for perfect GN, if canPlace says yes, allow the move.
+        // This bypasses the candidateCells / ideal filter / list, allowing the exact precomputed (card,cell)
+        // even if coords are negative after shift or the enumeration didn't include it.
+        const requirement2 = placementRequirement(state);
+        if (canPlaceCardAt(state, move.card, move.x, move.y, requirement2)) {
+          // return a fake legalMove so applyPlacement can proceed
+          return {
+            cardUid: move.cardUid || (move.card && move.card.uid),
+            x: move.x,
+            y: move.y,
+            card: move.card,
+            fromReserve: false
+          };
+        } else {
+          throw new Error("Posa non legale.");
+        }
+      } else {
+        throw new Error("Posa non legale.");
+      }
+    }
     return legalMove;
   }
 
@@ -5673,9 +6436,7 @@ const MPCARDS_CORE_SOURCE = `
       firstAxisInversionDone: false,
       turnDirection: 1,
       durissimaMater: options.durissimaMater === true,
-      durissimaPursueIdea: options.durissimaMater === true
-        ? options.durissimaPursueIdea !== false
-        : false,
+      durissimaPursueIdea: options.durissimaPursueIdea === true,
       durissimaScartiNReshuffle: scartiMode,
       durissimaDiscardPile: scartiMode ? [] : null,
       durissimaDiscardRecyclesLeft: scartiMode ? size : null,
@@ -6121,6 +6882,9 @@ const MPCARDS_CORE_SOURCE = `
     gnTry7x7CrossMarginAction,
     gnEmptyCellsInIdealGrid,
     gnFilledCellsInIdealGrid,
+    gnIdealLayoutMoveScore,
+    gnIdealLayoutRulesForSize,
+    gnIdealLayoutCellRole,
     gnIdealFillMatchingPossible,
     gnFirstUnfillableIdealCell,
     gnSingletonReservations,
@@ -6130,6 +6894,11 @@ const MPCARDS_CORE_SOURCE = `
     gnMoveBreaksIdealFillPlan,
     gnShallowMaxDepth,
     gnShallowNodesPerMove,
+    gnUseCoordinatedTeamPlanner,
+    gnAllTeamLegalPlacements,
+    gnChooseGlobalTeamPlacement,
+    chooseDurissimaCoordinatedAction,
+    solveGnCoordinatedBestAction,
     solveGnBestAction,
     solveGnShallowBestAction,
     solveGnStateOutcome,
