@@ -445,8 +445,8 @@ const MPCARDS_CORE_SOURCE = `
 
   function candidateCells(state) {
     if (state.board.length === 0) {
-      const perfectGNLive = gnUseCoordinatedTeamPlanner(state) && isDurissimaGnIdeal(state);
-      if (perfectGNLive && state._gnFullSequence && state._gnFullSequence.length > 0) {
+      const coordinated = gnUseCoordinatedTeamPlanner(state);
+      if (coordinated && state._gnFullSequence && state._gnFullSequence.length > 0) {
         // allow the seq to dictate where its first card goes (after we normalized the plan to min=0)
         const firstStep = state._gnFullSequence[0];
         return [{ x: firstStep.x, y: firstStep.y }];
@@ -4980,19 +4980,21 @@ const MPCARDS_CORE_SOURCE = `
     if (state.turnPlayed >= 4 && requirement > 4) return { type: "stop" };
     if (state.turnPlayed < 4 && requirement > 4) return { type: "stop" };
 
-    const perfectGNLive = gnUseCoordinatedTeamPlanner(state) && isDurissimaGnIdeal(state);
+    const coordinated = gnUseCoordinatedTeamPlanner(state);
+    const perfectGNLive = coordinated && isDurissimaGnIdeal(state);
 
     // Force 1-card activations for sequence following (ensures req=1, sup>=1 safe for any valid growth seq).
-    if (perfectGNLive && state._gnJustPlayedSeqStep) {
+    if (coordinated && state._gnJustPlayedSeqStep) {
       state._gnJustPlayedSeqStep = false;
       return { type: "stop" };
     }
 
-    // ONE MIND vs mazzo (generalizzato da 4x4 a 5x5+): usa soluzioni generate dal matrix solver (libreria per N=4 + oracle deal-aware + campionamento).
+    // ONE MIND vs mazzo (generalizzato a G qualsiasi): usa soluzioni generate dal matrix solver (libreria per N=4 + oracle deal-aware + campionamento).
     // Obiettivo: definire **una volta per deal** una sequenza completa (card+cell) compatibile con le mani correnti,
     // poi seguirla STRICT: passa (skip) fino al titolare della prossima carta della seq, gioca ESATTAMENTE quella in quella cella.
+    // Funziona per G = N e per G > N (fino a 2N): le mani sono note, il piano usa solo carte già in mano ai giocatori.
     // Con i pass si attiva il titolare senza monte (gap <= G-1). Non ricalcoliamo il path durante la partita.
-    if (perfectGNLive && !state._gnFullSequence && !state._gnPlanningDone) {
+    if (coordinated && !state._gnFullSequence && !state._gnPlanningDone) {
       state._gnPlanningDone = true;
       try {
         const size = state.size;
@@ -5016,14 +5018,14 @@ const MPCARDS_CORE_SOURCE = `
           }
         }
 
-        // 2) OPZIONE MIGLIORE / principale per size >=4 : oracle decoupled
-        //    Genera assembly A+B e cerca un chunking (con skip) i cui burst siano posseduti dai giocatori corretti.
-        //    Ritorna script followable via pass. Più robusto di full-set match per N>4.
+        // 2) OPZIONE MIGLIORE / principale : oracle decoupled (generalizzato per qualsiasi G)
+        //    Genera assembly A+B e cerca un chunking (con skip) i cui burst siano posseduti dai giocatori corretti (mod G).
+        //    Ritorna script followable via pass.
         if (!chosen) {
           try {
             const oracle = require("./scripts/durissima-gn-decoupled-oracle");
-            const dealState = { size, hands: state.hands };
-            const tries = (size <= 4) ? 120 : (size === 5 ? 250 : 450);
+            const dealState = { size, hands: state.hands, players: state.players };
+            const tries = (size <= 4) ? 200 : (size === 5 ? 400 : (size === 6 ? 600 : 800));
             const res = oracle.findPerfectPlanForDeal(dealState, tries);
             if (res && res.success && Array.isArray(res.script) && res.script.length === targetLen) {
               chosen = res.script.map(s => ({ x: s.x, y: s.y, card: s.card }));
@@ -5033,7 +5035,7 @@ const MPCARDS_CORE_SOURCE = `
 
         // 3) Fallback: campionamento raw matrix (cerca piano con carte tutte nelle mani del deal)
         if (!chosen) {
-          const sampleTries = (size <= 4) ? 300 : (size === 5 ? 600 : 400);
+          const sampleTries = (size <= 4) ? 400 : (size === 5 ? 700 : 500);
           for (let t = 0; t < sampleTries && !chosen; t++) {
             const asm = ms.findSchedulableMatrix(size, { maxNodesA: 1000000, maxNodesB: 300000 });
             if (asm && asm.success) {
@@ -5065,7 +5067,7 @@ const MPCARDS_CORE_SOURCE = `
     // STRICT FOLLOW della sequenza pre-scelta (la mente ha deciso l'ordine una volta; ora esegue).
     // Passa sempre tranne quando il giocatore corrente e' titolare della prossima carta della seq.
     // Gioca ESATTAMENTE quella carta in quella cella. Dopo la posa forza stop (1-carta).
-    if (perfectGNLive && state._gnFullSequence) {
+    if (coordinated && state._gnFullSequence) {
       const seq = state._gnFullSequence;
       let idx = state._gnSeqIdx || 0;
       // salta gia' posati
@@ -5112,7 +5114,7 @@ const MPCARDS_CORE_SOURCE = `
 
     // Search solo come fallback se NON abbiamo una sequenza pre-scelta valida da seguire.
     // Quando la seq (da lib/oracle/sample) viene acquisita, il follower strict la esegue (con pass).
-    if (perfectGNLive && state.size <= 5 && !state._gnFullSequence) {
+    if (coordinated && state.size <= 5 && !state._gnFullSequence) {
       const searchOpts = gnMoveSearchOptions(state, { coordinatedTeam: true });
       if (searchOpts) {
         if (state.size === 4) searchOpts.maxNodes = Math.max(searchOpts.maxNodes || 0, 1000000);
@@ -5135,7 +5137,7 @@ const MPCARDS_CORE_SOURCE = `
     // Fallback / non perfect: logica precedente (monte, patch, pruned, solver, pick)
     if (state.consecutivePasses >= state.players - 1) {
       // Priority alla seq se presente: usa owner lookup (i piani non hanno .player)
-      if (perfectGNLive && state._gnFullSequence) {
+      if (coordinated && state._gnFullSequence) {
         const seq = state._gnFullSequence;
         let idx = state._gnSeqIdx || 0;
         while (idx < seq.length) {
@@ -5634,9 +5636,9 @@ const MPCARDS_CORE_SOURCE = `
       candidate.y === move.y
     );
     if (!legalMove) {
-      const perfectGNLive = gnUseCoordinatedTeamPlanner(state) && isDurissimaGnIdeal(state);
-      if (perfectGNLive && state._gnFullSequence) {
-        // In strict seq mode for perfect GN, if canPlace says yes, allow the move.
+      const coordinated = gnUseCoordinatedTeamPlanner(state);
+      if (coordinated && state._gnFullSequence) {
+        // In strict seq mode, if canPlace says yes, allow the move.
         // This bypasses the candidateCells / ideal filter / list, allowing the exact precomputed (card,cell)
         // even if coords are negative after shift or the enumeration didn't include it.
         const requirement2 = placementRequirement(state);

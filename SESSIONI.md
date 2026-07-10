@@ -526,3 +526,42 @@ L   win%     deal     ms/deal   nodi/deal
 
 **Artefatti:** mpcards-core.js (generalizzazione acquisizione), SESSIONI.md (questa voce).
 **Prossimi (quando utente torna):** se vuole spingere oltre (più deal, 9x9 se sensato, persist lib su disco, o tuning tries/budget), o integrare in altri flussi. Altrimenti il metodo "precomp + oracle + strict follow" è validato fino a 8x8.
+
+## 2026-07-10 — Tentativo estensione "stesso metodo" a G ≠ N (fino a 2N)
+
+**Contesto:** Utente: con lo stesso ragionamento (piano una volta + strict follow con passi) dovrebbe essere possibile per G > N, dato che le carte sono note e il tallone è irrisorio. Chiede di provare per tutti gli ordini 3x3-8x8 e tutti i G legali fino a 2N.
+
+**Azioni:**
+- Generalizzato l'oracolo (`durissima-gn-decoupled-oracle.js`): `computePlayersForBursts` e `isAssemblyPlayable` ora prendono `numPlayers`/`G` e usano `% G` per il ciclo turni e per i salti (skip).
+- Allargato il trigger: l'acquisizione del piano `_gnFullSequence` e il follower strict ora partono per qualsiasi `gnUseCoordinatedTeamPlanner(state)` in modalità Durissima (non più solo quando `isDurissimaGnIdeal`, cioè G==N + no tallone).
+- Passato `players` nel `dealState` all'oracle.
+- Aggiornati guard per follower, bypass, candidateCells, monte priority, 1-card force.
+- Aumentati i tentativi oracle per i casi G ≠ N.
+- Test: run estesi (fino a 20 deal per alcuni formati) + script mirati che coprono size 3-8 e G da 1 al massimo legale (floor(N²/3) carte per testa).
+
+**Risultati principali (dati reali):**
+
+G = N: confermato 100%, seq usata quasi sempre, 0 nodi, tempi minimi (es. 4/5/6/8).
+
+G > N (esempi dai run):
+- 4x4 G=5: misto (in un batch 33%, alto nodes; in altri casi seq non trovata).
+- 5x5 G=6: 0% (search esplode).
+- 5x5 G=8: ~50%.
+- 6x6 G=9: 100% con seq 100% e 0 nodi (funziona bene!).
+- 8x8 G=12: 0%.
+
+G < N: generalmente peggiore o molto costoso.
+
+**Conclusione:**
+Il ragionamento teorico è valido e la generalizzazione è stata implementata correttamente. Tuttavia **il metodo "piano una volta + strict follow puro (0 nodi, altissima affidabilità)"** resta particolarmente efficace e consistente solo quando **G = N**. Per G > N l'oracolo fatica a trovare assembly i cui burst siano assegnabili agli owner con gli skip (perché le mani sono più piccole). In alcuni casi dà ottimi risultati, in altri ricade su search pesante o fallisce.
+
+Non possiamo (con i dati attuali) affermare di aver risolto allo stesso livello per tutti i G fino a 2N.
+
+**Decisione:**
+- Manteniamo la generalizzazione (è corretta e a volte aiuta).
+- Per G ≠ N il coordinatore resta ibrido.
+- Possibili raffinamenti futuri: budget oracle più alto per G alto, preferenza per piani con burst piccoli, repair guidato sul piano residuo, o accettazione che G=N è il caso "dolce".
+
+**Non rifare:** riportare che "funziona per tutti i G" senza distinguere; assumere che il successo a G=N si trasferisca automaticamente.
+
+**Artefatti:** mpcards-core.js, scripts/durissima-gn-decoupled-oracle.js, test temporanei (rimossi), questa voce.
