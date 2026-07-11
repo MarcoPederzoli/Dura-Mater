@@ -136,6 +136,7 @@ La chat Grok non e' persistente: il diario e' `SESSIONI.md` (su Git).
 
 - **Pesca / monte (2026-06):** competitiva — pesca anche su pass; monte dopo G pass senza posate (anche con tallone pieno). Durissima coop — pesca solo dopo posata; stesso monte. Implementato in `mpcards-core.js` + `RULES.md`.
 - **Durissima solitario:** da rivedere con la modalità Durissima (monte / stallo, bilanciamento); non in Dura.
+- **Nefanda Mater:** nome provvisorio per la modalità solitario (G=1). Trattata come gioco a parte. Si partirà dal bot attuale e si testeranno soluzioni già esplorate (vite extra, reshuffle, pool N, ecc.) con target >=1% di successi. Fase Durissima one-mind (G>=2) archiviata il 2026-07-11.
 
 ## Task tipici ancora aperti (opzionali)
 
