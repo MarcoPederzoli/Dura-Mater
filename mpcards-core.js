@@ -4877,6 +4877,27 @@ const MPCARDS_CORE_SOURCE = `
     score += durissimaMoveScore(
       state, holderId, move, () => 0, 12, placementRequirement(state), true
     ) * 0.08;
+
+    // Bias forte per le celle precoci del piano one-mind (cell order per G>N)
+    if (state._gnFullSequence && Array.isArray(state._gnFullSequence)) {
+      const seq = state._gnFullSequence;
+      let planPos = -1;
+      for (let i = 0; i < seq.length; i++) {
+        const t = seq[i];
+        if (t.x === move.x && t.y === move.y) {
+          if (!state.board.some(b => b.x === t.x && b.y === t.y)) {
+            planPos = i;
+          }
+          break;
+        }
+      }
+      if (planPos >= 0) {
+        // bonus molto forte per G > N (tallone)
+        const isHighG = state.players > state.size;
+        const bonus = isHighG ? (80000 - planPos * 3000) : (50000 - planPos * 2000);
+        score += Math.max(2000, bonus);
+      }
+    }
     return score;
   }
 
@@ -4999,65 +5020,118 @@ const MPCARDS_CORE_SOURCE = `
       try {
         const size = state.size;
         const targetLen = size * size;
-        const allCards = [];
-        for (let p = 0; p < (state.hands || []).length; p++) allCards.push(...(state.hands[p] || []));
-        const ownedUids = new Set(allCards.map(c => c.uid));
+        const isIdeal = isDurissimaGnIdeal(state);
+        const drawPileLen = (state.drawPile || []).length;
 
         const ms = require("./scripts/durissima-matrix-solver");
 
-        // 1) Per N=4: prova libreria precomputata (match completo set carte) - veloce hit se presente
-        let chosen = null;
-        if (size === 4) {
-          const lib = get4x4SolutionLibrary();
-          for (const plan of lib) {
-            if (!plan || plan.length !== targetLen) continue;
-            if (plan.every(s => s.card && ownedUids.has(s.card.uid))) {
-              chosen = plan;
-              break;
-            }
-          }
-        }
+        if (isIdeal) {
+          // === G = N IDEAL: restore old reliable card-specific full match logic ===
+          const allCards = [];
+          for (let p = 0; p < (state.hands || []).length; p++) allCards.push(...(state.hands[p] || []));
+          const ownedUids = new Set(allCards.map(c => c.uid));
 
-        // 2) OPZIONE MIGLIORE / principale : oracle decoupled (generalizzato per qualsiasi G)
-        //    Genera assembly A+B e cerca un chunking (con skip) i cui burst siano posseduti dai giocatori corretti (mod G).
-        //    Ritorna script followable via pass.
-        if (!chosen) {
-          try {
-            const oracle = require("./scripts/durissima-gn-decoupled-oracle");
-            const dealState = { size, hands: state.hands, players: state.players };
-            const tries = (size <= 4) ? 200 : (size === 5 ? 400 : (size === 6 ? 600 : 800));
-            const res = oracle.findPerfectPlanForDeal(dealState, tries);
-            if (res && res.success && Array.isArray(res.script) && res.script.length === targetLen) {
-              chosen = res.script.map(s => ({ x: s.x, y: s.y, card: s.card }));
-            }
-          } catch (e) {}
-        }
+          let chosen = null;
 
-        // 3) Fallback: campionamento raw matrix (cerca piano con carte tutte nelle mani del deal)
-        if (!chosen) {
-          const sampleTries = (size <= 4) ? 400 : (size === 5 ? 700 : 500);
-          for (let t = 0; t < sampleTries && !chosen; t++) {
-            const asm = ms.findSchedulableMatrix(size, { maxNodesA: 1000000, maxNodesB: 300000 });
-            if (asm && asm.success) {
-              const plan = ms.getTargetPlan(asm);
+          // lib for 4
+          if (size === 4) {
+            const lib = get4x4SolutionLibrary();
+            for (const plan of lib) {
               if (plan && plan.length === targetLen && plan.every(s => s.card && ownedUids.has(s.card.uid))) {
                 chosen = plan;
+                break;
               }
             }
           }
-        }
 
-        if (chosen) {
-          // Normalizza: shift a minX/minY >=0. Span = N. Permette start non (0,0).
-          // candidateCells (empty) e validate bypass useranno questa seq.
-          let minX = Infinity, minY = Infinity;
-          for (const s of chosen) {
-            if (s.x < minX) minX = s.x;
-            if (s.y < minY) minY = s.y;
+          // oracle or sampling with full owned
+          if (!chosen) {
+            try {
+              const oracle = require("./scripts/durissima-gn-decoupled-oracle");
+              const dealState = { size, hands: state.hands, players: state.players };
+              const res = oracle.findPerfectPlanForDeal(dealState, 200);
+              if (res && res.success && res.script && res.script.length === targetLen && res.script.every(s => ownedUids.has(s.card.uid))) {
+                chosen = res.script;
+              }
+            } catch (e) {}
           }
-          const normalized = chosen.map(s => ({ x: s.x - minX, y: s.y - minY, card: s.card }));
-          state._gnFullSequence = normalized;
-          state._gnSeqIdx = 0;
+
+          if (!chosen) {
+            for (let t = 0; t < 500 && !chosen; t++) {
+              const asm = ms.findSchedulableMatrix(size, { maxNodesA: 1000000, maxNodesB: 300000 });
+              if (asm && asm.success) {
+                const plan = ms.getTargetPlan(asm);
+                if (plan && plan.length === targetLen && plan.every(s => s.card && ownedUids.has(s.card.uid))) {
+                  chosen = plan;
+                }
+              }
+            }
+          }
+
+          if (chosen) {
+            let minX = Infinity, minY = Infinity;
+            for (const s of chosen) { minX = Math.min(minX, s.x); minY = Math.min(minY, s.y); }
+            const normalized = chosen.map(s => ({ x: s.x - minX, y: s.y - minY, card: s.card }));
+            state._gnFullSequence = normalized;
+            state._gnSeqIdx = 0;
+          }
+        } else {
+          // === G > N: piano con carte specifiche dal pool noto completo (mani + tallone) ===
+          const fullPool = [];
+          for (let p = 0; p < (state.hands || []).length; p++) if (state.hands[p]) fullPool.push(...state.hands[p]);
+          if (state.drawPile) fullPool.push(...state.drawPile);
+
+          const poolSigToCard = new Map();
+          for (const c of fullPool) {
+            const sig = c.value + "-" + c.shape + "-" + c.color;
+            if (!poolSigToCard.has(sig)) poolSigToCard.set(sig, c);
+          }
+
+          let bestPlan = null;
+          const maxTries = 2000;
+          for (let t = 0; t < maxTries && !bestPlan; t++) {
+            const asm = ms.findSchedulableMatrix(size, { maxNodesA: 2000000, maxNodesB: 500000 });
+            if (!asm || !asm.success) continue;
+            const p = ms.getTargetPlan(asm);
+            if (!p || p.length !== targetLen) continue;
+
+            let mapped = [];
+            let ok = true;
+            for (let i = 0; i < p.length; i++) {
+              const pc = p[i].card;
+              const sig = pc.value + "-" + pc.shape + "-" + pc.color;
+              const gameC = poolSigToCard.get(sig);
+              if (!gameC) { ok = false; break; }
+              mapped.push({ x: p[i].x, y: p[i].y, card: gameC });
+            }
+            if (ok) bestPlan = mapped;
+          }
+
+          if (!bestPlan) {
+            const asm = ms.findSchedulableMatrix(size, { maxNodesA: 1000000, maxNodesB: 300000 });
+            if (asm && asm.success) {
+              const p = ms.getTargetPlan(asm);
+              if (p && p.length === targetLen) {
+                let mapped = [];
+                for (let i = 0; i < p.length; i++) {
+                  const pc = p[i].card;
+                  const sig = pc.value + "-" + pc.shape + "-" + pc.color;
+                  const gameC = poolSigToCard.get(sig) || pc;
+                  mapped.push({ x: p[i].x, y: p[i].y, card: gameC });
+                }
+                bestPlan = mapped;
+              }
+            }
+          }
+
+          if (bestPlan && bestPlan.length === targetLen) {
+            let minX = Infinity, minY = Infinity;
+            for (const s of bestPlan) { minX = Math.min(minX, s.x); minY = Math.min(minY, s.y); }
+            const normalized = bestPlan.map(s => ({ x: s.x - minX, y: s.y - minY, card: s.card }));
+            state._gnFullSequence = normalized;
+            state._gnSeqIdx = 0;
+            state._gnDrawPileAtPlanning = (state.drawPile || []).length;
+          }
         }
       } catch (e) {
         // fallback silenzioso
@@ -5065,49 +5139,83 @@ const MPCARDS_CORE_SOURCE = `
     }
 
     // STRICT FOLLOW della sequenza pre-scelta (la mente ha deciso l'ordine una volta; ora esegue).
-    // Passa sempre tranne quando il giocatore corrente e' titolare della prossima carta della seq.
-    // Gioca ESATTAMENTE quella carta in quella cella. Dopo la posa forza stop (1-carta).
+    // La seq è ora principalmente una sequenza di celle (per robustezza con tallone).
+    // Il giocatore, quando attivato, gioca *qualsiasi* carta della sua mano che si possa posare nella prossima cella del piano.
+    // Questo permette di usare carte che arrivano dal tallone man mano che vengono pescate.
     if (coordinated && state._gnFullSequence) {
       const seq = state._gnFullSequence;
-      let idx = state._gnSeqIdx || 0;
-      // salta gia' posati
-      while (idx < seq.length) {
-        const step = seq[idx];
-        const already = state.board.some(b => b.x === step.x && b.y === step.y);
-        if (already) { idx++; state._gnSeqIdx = idx; continue; }
-        break;
-      }
-      if (idx < seq.length) {
-        const step = seq[idx];
-        // chi possiede questa carta?
-        let owner = -1;
-        for (let p = 0; p < state.hands.length; p++) {
-          if ((state.hands[p] || []).some(c => c.uid === step.card.uid)) { owner = p; break; }
-        }
-        if (owner === playerId) {
-          const live = (state.hands[playerId] || []).find(c => c.uid === step.card.uid);
-          if (live) {
-            if (canPlaceCardAt(state, live, step.x, step.y, requirement)) {
-              state._gnSeqIdx = idx + 1;
-              // Imposta flag per stop solo se il *prossimo* della seq è di giocatore diverso.
-              state._gnJustPlayedSeqStep = true;
-              const nextIdx = state._gnSeqIdx;
-              if (nextIdx < seq.length) {
-                const nextStep = seq[nextIdx];
-                let nextOwner = -1;
-                for (let p = 0; p < state.hands.length; p++) {
-                  if ((state.hands[p] || []).some(c => c.uid === nextStep.card.uid)) { nextOwner = p; break; }
-                }
-                if (nextOwner === playerId) {
-                  state._gnJustPlayedSeqStep = false;
-                }
-              }
-              return { type: "move", move: { x: step.x, y: step.y, card: live, cardUid: live.uid } };
-            }
-            return { type: "stop" };
+      const hasCards = seq.length > 0 && seq[0].card !== undefined;
+
+      const myHand = state.hands[playerId] || [];
+      if (hasCards) {
+        const remainingCount = seq.filter((step) => 
+          !state.board.some(b => b.x === step.x && b.y === step.y)
+        ).length;
+
+        const isEndgame = remainingCount <= 6 || (state.size * state.size - state.board.length) <= 6;
+
+        // Find all remaining steps whose specific card I hold
+        let candidates = [];
+        for (let i = 0; i < seq.length; i++) {
+          const step = seq[i];
+          if (state.board.some(b => b.x === step.x && b.y === step.y)) continue;
+          const live = myHand.find(c => c.uid === step.card.uid);
+          if (live && canPlaceCardAt(state, live, step.x, step.y, requirement)) {
+            candidates.push({ idx: i, live });
           }
         }
-        // non e' il mio turno per questa carta -> passa (salta)
+
+        if (candidates.length > 0) {
+          candidates.sort((a,b) => a.idx - b.idx);
+          const chosen = candidates[0];
+          state._gnSeqIdx = chosen.idx + 1;
+          state._gnJustPlayedSeqStep = true;
+
+          const nextIdx = state._gnSeqIdx;
+          if (nextIdx < seq.length) {
+            const nextStep = seq[nextIdx];
+            const hasNext = myHand.some(c => c.uid === nextStep.card.uid && canPlaceCardAt(state, c, nextStep.x, nextStep.y, requirement));
+            if (hasNext) state._gnJustPlayedSeqStep = false;
+          }
+          return { type: "move", move: { x: seq[chosen.idx].x, y: seq[chosen.idx].y, card: chosen.live, cardUid: chosen.live.uid } };
+        }
+
+        // For awkward high-G endgame (7x10 etc.), do not force stop here.
+        // Let the later ranked logic with plan bias try to play a useful move or catalyst.
+        if (!isEndgame || state.players <= state.size) {
+          return { type: "stop" };
+        }
+        // else fall through
+      } else {
+        // Cell-only plan (G > N): gioca la cella più precoce del piano per cui ho una carta che ci si può posare.
+        // Questo rispetta l'ordine geometrico deciso dalla mente, usando qualsiasi carta adatta quando arriva.
+        const myHand = state.hands[playerId] || [];
+        for (let i = 0; i < seq.length; i++) {
+          const t = seq[i];
+          if (state.board.some(b => b.x === t.x && b.y === t.y)) continue;
+          const fit = myHand.find(c => canPlaceCardAt(state, c, t.x, t.y, requirement));
+          if (fit) {
+            state._gnSeqIdx = i + 1;
+            state._gnJustPlayedSeqStep = true;
+            return { type: "move", move: { x: t.x, y: t.y, card: fit, cardUid: fit.uid } };
+          }
+          break;
+        }
+
+        const legals = legalPlacements(state, playerId, requirement);
+        if (legals.length) {
+          if (state.players > state.size) {
+            // high G: prefer any plan cell to advance and draw
+            for (let i = 0; i < Math.min(seq.length, 6); i++) {
+              const t = seq[i];
+              if (state.board.some(b => b.x === t.x && b.y === t.y)) continue;
+              const m = legals.find(mm => mm.x === t.x && mm.y === t.y);
+              if (m) return { type: "move", move: m };
+            }
+            return { type: "move", move: legals[0] };
+          }
+          return { type: "stop" };
+        }
         return { type: "stop" };
       }
     }
@@ -5139,38 +5247,66 @@ const MPCARDS_CORE_SOURCE = `
       // Priority alla seq se presente: usa owner lookup (i piani non hanno .player)
       if (coordinated && state._gnFullSequence) {
         const seq = state._gnFullSequence;
-        let idx = state._gnSeqIdx || 0;
-        while (idx < seq.length) {
-          const s = seq[idx];
-          if (state.board.some(b => b.x === s.x && b.y === s.y)) { idx++; continue; }
-          let owner = -1;
-          for (let p = 0; p < state.hands.length; p++) {
-            if ((state.hands[p] || []).some(c => c.uid === s.card.uid)) { owner = p; break; }
-          }
-          if (owner === playerId) {
-            const live = (state.hands[playerId] || []).find(c => c.uid === s.card.uid);
+        const placedCount = state.board.length;
+        const safeLen = state._gnSafePrefixLen || 0;
+        const prefixAssign = state._gnPrefixAssignments || [];
+        const myHand = state.hands[playerId] || [];
+
+        // Rispetta il prefisso safe anche nel monte
+        if (placedCount < safeLen && prefixAssign.length > 0) {
+          for (let i = 0; i < prefixAssign.length; i++) {
+            const pa = prefixAssign[i];
+            if (state.board.some(b => b.x === pa.x && b.y === pa.y)) continue;
+            const live = myHand.find(c => c.uid === pa.card.uid);
             if (live) {
               const legals = legalPlacements(state, playerId, requirement);
-              const matching = legals.find(mm => mm.x === s.x && mm.y === s.y && mm.card && mm.card.uid === live.uid);
+              const matching = legals.find(mm => mm.x === pa.x && mm.y === pa.y && mm.card && mm.card.uid === live.uid);
               if (matching) {
-                state._gnSeqIdx = idx + 1;
+                state._gnSeqIdx = i + 1;
                 state._gnJustPlayedSeqStep = true;
-                const nextIdx = state._gnSeqIdx;
-                if (nextIdx < seq.length) {
-                  const nextStep = seq[nextIdx];
-                  let nextOwner = -1;
-                  for (let p = 0; p < state.hands.length; p++) {
-                    if ((state.hands[p] || []).some(c => c.uid === nextStep.card.uid)) { nextOwner = p; break; }
-                  }
-                  if (nextOwner === playerId) {
-                    state._gnJustPlayedSeqStep = false;
-                  }
-                }
                 return { type: "move", move: matching };
               }
             }
+            break;
           }
-          break;
+        }
+
+        // Flessibile per il resto
+        const WINDOW = 5;
+        let bestIdx = -1;
+        let chosenCard = null;
+        let bestTarget = null;
+        let cand = 0;
+        for (let i = 0; i < seq.length && cand < WINDOW; i++) {
+          const t = seq[i];
+          if (state.board.some(b => b.x === t.x && b.y === t.y)) continue;
+          cand++;
+          for (const c of myHand) {
+            if (canPlaceCardAt(state, c, t.x, t.y, requirement)) {
+              if (bestIdx === -1 || i < bestIdx) {
+                bestIdx = i;
+                chosenCard = c;
+                bestTarget = t;
+              }
+              break;
+            }
+          }
+        }
+        if (bestIdx !== -1 && chosenCard && bestTarget) {
+          const legals = legalPlacements(state, playerId, requirement);
+          const matching = legals.find(mm => mm.x === bestTarget.x && mm.y === bestTarget.y && mm.card && mm.card.uid === chosenCard.uid);
+          if (matching) {
+            state._gnSeqIdx = bestIdx + 1;
+            state._gnJustPlayedSeqStep = true;
+            const nextI = state._gnSeqIdx;
+            if (nextI < seq.length) {
+              const nt = seq[nextI];
+              if (myHand.some(c => canPlaceCardAt(state, c, nt.x, nt.y, requirement))) {
+                state._gnJustPlayedSeqStep = false;
+              }
+            }
+            return { type: "move", move: matching };
+          }
         }
       }
       const urgent = gnAllTeamLegalPlacements(state, requirement)
