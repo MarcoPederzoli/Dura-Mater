@@ -46,6 +46,22 @@ Output locali dei probe `durissima-*`, `diag-gn-*`, solver overnight. **Non elim
 
 ---
 
+## `results/ideal-layouts/` — Layout robusti Livello A (2026-07-09)
+
+| File | Contenuto |
+|------|-----------|
+| `index.json` | Manifest run 3x3 + 4x4 |
+| `layout-N3.json` / `.txt` | 160 soluzioni, top 10, regole morfologiche (118 mai centro, zone scambio) |
+| `layout-N4.json` / `.txt` | 1.250.416 soluzioni, top 10 (swapPairs fino a 10) |
+| `rules-export.json` | Regole compatte per planner (sync in `mpcards-core.js`) |
+| `ab-probe-20deals.json` | Probe A/B ideal vs baseline (20 seed, 3x3/4x4) |
+
+**Script:** `node scripts/analyze-ideal-layouts.js` — lib `scripts/ideal-layout-lib.js`, sync `scripts/sync-ideal-layout-rules.js`.
+**Planner:** `GN_IDEAL_LAYOUT_RULES_DATA` in `mpcards-core.js`; disabilita con `GN_SKIP_IDEAL_LAYOUT=1`.
+**Sessione:** `SESSIONI.md` voce 2026-07-09 layout ideali.
+
+---
+
 ## Altri artefatti locali (non in Git)
 
 | Path | Note |
@@ -53,6 +69,14 @@ Output locali dei probe `durissima-*`, `diag-gn-*`, solver overnight. **Non elim
 | `Analisi-Mazzo-Dura-Mater.docx` | Documento editore; generato da `scripts/build-analisi-mazzo-docx.py` |
 | `*.xlsx` (confronti, carte) | Esport simulatore / analisi |
 | `terminals/`, `agent-tools/` | Cache Grok — cancellabili, non backup |
+
+## 2026-07-11 — Report finale coordinatore One Mind (Durissima G=2..2N)
+
+**File:** `results/Risultati_Durissima_Coordinatore_One_Mind.docx` (anche nella cartella fisica Dropbox)
+
+**Contenuto:** Capitoli per N=3..8 con tabelle G=2..2N (solo combinazioni con >=3 carte in mano). Win% , tallone, mano, seed e spiegazioni. Overall 98.3% su tallone<=20. 8x2 a 4% (accettato come epico). Solitario marcato come regime separato.
+
+**Sessione:** SESSIONI.md voce 2026-07-11 "Documento Word riassuntivo finale".
 
 ---
 

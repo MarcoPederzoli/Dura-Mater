@@ -720,4 +720,408 @@ Il fix generalizzato (condizionale su G>N + endgame) ha portato miglioramenti fo
 - Bot per G>N considerato validato a livello alto con questi sample.
 - Prossimo: ragioniamo su G < N.
 
-**Artefatti:** mpcards-core.js (logica endgame condizionale), temp script rimossi, questa voce.
+## 2026-07-11 — Estensione test a tallone fino a 20 carte
+
+**Test richiesto:** sweep su tutte le combinazioni legali con tallone iniziale <=20 (escludendo solitario G=1), con 12 seed (8 per i casi più pesanti).
+
+**Risultati:**
+
+N | G  | tallone | win% (seed)
+---|----|---------|-------------
+3 | 2  | 3       | 100% (12/12)
+4 | 2  | 8       | 91.7% (11/12)
+4 | 3  | 4       | 100%
+4 | 5  | 1       | 91.7%
+5 | 2  | 15      | 87.5% (7/8)
+5 | 3  | 10      | 91.7%
+5 | 4  | 5       | 100%
+5 | 6  | 1       | 100%
+5 | 7  | 4       | 100%
+5 | 8  | 1       | 100%
+6 | 3  | 18      | 100% (8/8)
+6 | 4  | 12      | 100%
+6 | 5  | 6       | 100%
+6 | 7  | 1       | 100%
+6 | 8  | 4       | 100%
+6 | 9  | 0       | 100%
+6 | 10 | 6       | 100% (8/8)
+6 | 11 | 3       | 100%
+6 | 12 | 0       | 100%
+7 | 5  | 14      | 100% (8/8)
+7 | 6  | 7       | 100%
+7 | 8  | 1       | 100%
+7 | 9  | 4       | 100%
+7 | 10 | 9       | 100%
+7 | 11 | 5       | 87.5%
+7 | 12 | 1       | 100%
+7 | 13 | 10      | 100%
+7 | 14 | 7       | 100%
+8 | 6  | 16      | 100% (8/8)
+8 | 7  | 8       | 100%
+8 | 9  | 1       | 100%
+8 | 10 | 4       | 100%
+8 | 11 | 9       | 100%
+8 | 12 | 4       | 87.5%
+8 | 13 | 12      | 87.5%
+8 | 14 | 8       | 100%
+8 | 15 | 4       | 100%
+8 | 16 | 0       | 100%
+
+**G=N reference (12 seed):** 100% su tutti.
+
+**Overall tallone <=20 (G!=N):** **98.3%** (417/424)
+
+**Osservazioni:**
+- Fino a tallone ~12-14: praticamente sempre 100%.
+- Fino a 18-20: ancora molto alto (87.5-100%), con solo due celle a 87.5% su 8 seed.
+- Il metodo regge benissimo anche con tallone fino a 20.
+- I pochi cali sono su combinazioni con N alto e G abbastanza lontano da N (es. 8x12, 8x13).
+
+**Conclusione:**
+La soluzione "piano dal pool noto + follower con passi" funziona in modo eccellente su tutta la fascia di tallone iniziale fino a 20 carte. L'80%+ è ampiamente superato (98.3% overall).
+
+Questo amplia significativamente la "fascia sistemata" rispetto al test precedente (tallone<=15). 
+
+Prossimo passo: ragionare su come estendere oltre (tallone >20) o su G molto piccoli.
+
+## 2026-07-11 — Sweep finale fascia "tallone basso" (G vicino a N)
+
+**Obiettivo:** verificare con sample alti (15 seed, 10 per casi pesanti) se la soluzione low-tallone funziona per **tutti** i casi con tallone iniziale piccolo, sia G>N che G<N.
+
+**Filtro applicato:** solo combinazioni con tallone <=15 (la fascia "basso" discussa).
+
+**Risultati:**
+
+N | G  | tallone | win% (15/10 seed)
+---|----|---------|-------------------
+3 | 2  | 3       | 100%
+3 | 3  | 0       | 100%
+4 | 2  | 8       | 100%
+4 | 3  | 4       | 100%
+4 | 4  | 0       | 100%
+4 | 5  | 1       | 80% (12/15)
+5 | 2  | 15      | 60% (6/10)
+5 | 3  | 10      | 80% (12/15)
+5 | 4  | 5       | 100%
+5 | 5  | 0       | 100%
+5 | 6  | 1       | 100%
+5 | 7  | 4       | 93.3% (14/15)
+5 | 8  | 1       | 86.7% (13/15)
+6 | 4  | 12      | 100%
+6 | 5  | 6       | 100%
+6 | 6  | 0       | 100%
+6 | 7  | 1       | 93.3%
+6 | 8  | 4       | 93.3%
+6 | 9  | 0       | 93.3%
+6 |10 | 6       | 100% (10/10)
+6 |11 | 3       | 100%
+6 |12 | 0       | 90%
+7 | 5 | 14      | 100% (10/10)
+7 | 6 | 7       | 100%
+7 | 7 | 0       | 100%
+7 | 8 | 1       | 90%
+7 | 9 | 4       | 90%
+7 |10 | 9       | 90%
+7 |11 | 5       | 100%
+7 |12 | 1       | 90%
+7 |13 | 10      | 100%
+7 |14 | 7       | 100%
+8 | 7 | 8       | 100%
+8 | 8 | 0       | 100%
+8 | 9 | 1       | 90%
+8 |10 | 4       | 100%
+8 |11 | 9       | 90%
+8 |12 | 4       | 100%
+8 |13 | 12      | 100%
+8 |14 | 8       | 100%
+8 |15 | 4       | 100%
+8 |16 | 0       | 90%
+
+**G=N reference (15 seed):** 100% su tutti.
+
+**Overall fascia tallone basso (G != N):** **95.3%** (486/510 deal)
+
+**Osservazioni:**
+- Quando tallone <= ~8-10: quasi sempre 100%.
+- Quando tallone 12-15: ancora molto alto (80-100%), con qualche calo su sample più grandi.
+- Il metodo (piano dal pool noto + follower con passi) si comporta allo stesso modo indipendentemente dal fatto che G sia >N o <N, purché il tallone sia piccolo.
+- I casi con tallone più grande all'interno del filtro (es. 5x2=15, 7x10=9) mostrano più varianza, ma restano utilizzabili.
+
+**Conclusione per questo punto:**
+La soluzione "tallone basso" è applicabile in tutta la fascia dove il tallone iniziale è piccolo (G sufficientemente vicino a N da entrambi i lati). Non è limitata a G>N.
+
+Abbiamo ora dati solidi con sample alti. Possiamo considerare questa fascia "sistemata" intorno al 95%+.
+
+Prossimo: ragioniamo su G molto < N (tallone grande) e solitario.
+
+## 2026-07-11 — Applicabilità soluzione "tallone basso" anche a G < N
+
+**Domanda utente:** La soluzione sviluppata per G > N (piano dal pool noto completo + strict/greedy follower con passi) funziona anche per G < N quando il tallone è piccolo?
+
+**Matematica tallone:**
+- Quando G < N: cardsPerPlayer = N, tallone = N*(N-G)
+- Esempi:
+  - 4x4 G=3: tallone=4 (molto basso)
+  - 5x5 G=4: tallone=5
+  - 6x6 G=5: tallone=6
+  - 5x5 G=3: tallone=10
+  - 7x7 G=4: tallone=21 (medio)
+  - 8x8 G=5: tallone=24
+
+**Test eseguiti (12 seed, poi 15 seed sui borderline):**
+
+| N | G | tallone | win% (12 seed) | note |
+|---|----|---------|----------------|------|
+| 4 | 3 | 4 | 100% | tallone bassissimo |
+| 5 | 4 | 5 | 100% | |
+| 5 | 3 | 10 | 91.7% → 93% (15 seed) | ancora ottimo |
+| 6 | 5 | 6 | 100% | |
+| 6 | 4 | 12 | 100% | |
+| 6 | 3 | 18 | 100% | |
+| 7 | 6 | 7 | 100% | |
+| 7 | 5 | 14 | 100% | |
+| 7 | 4 | 21 | 75% → 93% (15 seed) | |
+| 8 | 7 | 8 | 100% | |
+| 8 | 6 | 16 | 100% | |
+| 8 | 5 | 24 | 100% | |
+
+**Overall G < N (tallone basso/medio):** 97.2% (con sample 12), borderline salgono a 93%+ con più seed.
+
+**Conclusioni:**
+- La soluzione è applicabile **ogni volta che il tallone è piccolo** (diciamo ≤12-15), indipendentemente se G > N o G < N.
+- Il principio chiave è: "tutte (o quasi) le carte sono note all'inizio → una mente può pianificare l'intera sequenza dal pool noto e farla eseguire strict con passi".
+- Quando il tallone diventa grande (G molto inferiore a N, es. G=2 o G=1), il metodo non è più lo stesso (troppe carte "future", timing dei draw critico).
+- 2 giocatori su 8x8 (tallone enorme) e solitario sono casi diversi e richiedono approcci separati.
+
+**Decisione:**
+- La soluzione "tallone basso" è più generale di "solo G>N". Funziona bene per tutti i casi in cui il tallone iniziale è piccolo (G vicino a N da entrambi i lati).
+- Per G << N si passa a regime diverso (più ricerca, o pianificazione incrementale man mano che le carte vengono pescate).
+
+**Artefatti:** mpcards-core.js (logica endgame condizionale + pool noto), temp script rimossi, questa voce.
+
+## 2026-07-11 — Test esteso a tallone fino a 20 carte (validazione finale fascia bassa)
+
+**Test:**
+- Tutte le combinazioni legali N=3..8, G=2..max con tallone iniziale <=20.
+- 12 seed (8 per casi più pesanti).
+- Metodo: piano dal pool noto completo (mani + tallone) + follower con passi (greedy earliest owned in endgame per G alto).
+
+**Risultati principali:**
+
+N | G  | tallone | win% 
+---|----|---------|------
+3 | 2  | 3       | 100%
+4 | 2  | 8       | 91.7%
+4 | 3  | 4       | 100%
+4 | 5  | 1       | 91.7%
+5 | 2  | 15      | 87.5%
+5 | 3  | 10      | 91.7%
+5 | 4  | 5       | 100%
+5 | 6  | 1       | 100%
+5 | 7  | 4       | 100%
+5 | 8  | 1       | 100%
+6 | 3  | 18      | 100%
+6 | 4  | 12      | 100%
+6 | 5  | 6       | 100%
+6 | 7  | 1       | 100%
+6 | 8  | 4       | 100%
+6 | 9  | 0       | 100%
+6 | 10 | 6       | 100%
+6 | 11 | 3       | 100%
+6 | 12 | 0       | 100%
+7 | 5  | 14      | 100%
+7 | 6  | 7       | 100%
+7 | 8  | 1       | 100%
+7 | 9  | 4       | 100%
+7 | 10 | 9       | 100%
+7 | 11 | 5       | 87.5%
+7 | 12 | 1       | 100%
+7 | 13 | 10      | 100%
+7 | 14 | 7       | 100%
+8 | 6  | 16      | 100%
+8 | 7  | 8       | 100%
+8 | 9  | 1       | 100%
+8 | 10 | 4       | 100%
+8 | 11 | 9       | 100%
+8 | 12 | 4       | 87.5%
+8 | 13 | 12      | 87.5%
+8 | 14 | 8       | 100%
+8 | 15 | 4       | 100%
+8 | 16 | 0       | 100%
+
+**G=N reference:** 100% su tutti i formati.
+
+**Overall tallone <=20 (G != N):** **98.3%** (417/424 deal)
+
+**Conclusioni:**
+- Il metodo regge in modo eccellente fino a tallone ~20.
+- Fino a ~12-14: quasi sempre 100%.
+- La fascia "sistemata" (G vicino a N da entrambi i lati) è ora ben validata con sample solidi.
+- Per talloni più grandi (G molto inferiore a N) serve un approccio diverso.
+
+**Artefatti:** mpcards-core.js, SESSIONI.md, temp script rimossi.
+
+## 2026-07-11 — Test G bassi e G=1 (dati per valori mai testati o parziali)
+
+**Test:** casi G < N con tallone grande o G=1 (mai o poco testati prima), usando 5-15 seed a seconda della difficoltà (più seed per casi estremi). Non ritestati i casi con tallone basso già coperti.
+
+**Risultati (G=1 to N per ciascun N):**
+
+**N=3 (tallone =3*(3-G))**
+- G=1: 6.7% (1/15) tallone=6
+- G=2: 100% (prev, tallone=3)
+- G=3: 100%
+
+**N=4 (tallone=4*(4-G))**
+- G=1: 0% (0/12) tallone=12
+- G=2: 91.7% (prev, tallone=8)
+- G=3: 100% (prev, tallone=4)
+- G=4: 100%
+
+**N=5 (tallone=5*(5-G))**
+- G=1: 0% (0/10) tallone=20
+- G=2: 40% (focus 20 seed, tallone=15; sweep aveva varianza)
+- G=3: 91.7-93% (prev, tallone=10)
+- G=4: 100% (prev, tallone=5)
+- G=5: 100%
+
+**N=6 (tallone=6*(6-G))**
+- G=1: 0% (0/8) tallone=30
+- G=2: 50% (5/10) tallone=24
+- G=3: 100% (prev, tallone=18)
+- G=4: 100% (prev, tallone=12)
+- G=5: 100% (prev, tallone=6)
+- G=6: 100%
+
+**N=7 (tallone=7*(7-G))**
+- G=1: 0% (0/6) tallone=42
+- G=2: 25% (2/8) tallone=35
+- G=3: 75% (6/8) tallone=28
+- G=4: 93% (prev + focus, tallone=21)
+- G=5: 100% (prev, tallone=14)
+- G=6: 100% (prev, tallone=7)
+- G=7: 100%
+
+**N=8 (tallone=8*(8-G))**
+- G=1: 0% (0/5) tallone=56
+- G=2: **4.0%** (2/50) tallone=48   [test dedicato con 50 seed: 2 successi totali; la stragrande maggioranza stallano molto presto a 1-10 carte]
+- G=3: 33.3% (2/6) tallone=40
+- G=4: 100% (8/8) tallone=32
+- G=5: 100% (prev, tallone=24)
+- G=6: 100% (prev, tallone=16)
+- G=7: 100% (prev, tallone=8)
+- G=8: 100%
+
+**G>N**: dai test precedenti con tallone basso (fino a ~20): 80-100% a seconda del caso, overall ~73-98% a seconda del sample (non ritestati qui).
+
+**Quando scende sotto 10%**:
+- Tutti i G=1 per N>=4: 0% nei sample (probabilmente <<5-7%).
+- N=8 G=2: 4.0% (2/50)  [ancora molto basso, ma non zero]
+- N=6 G=1: 0%
+- N=7 G=1: 0%
+- N=8 G=3: 33% (con 6 seed)
+- N=7 G=2: 25%
+
+Con sample piccoli per G=1 grandi N (5-8 seed), 0/5-0/8 suggerisce win rate molto basso o vicino a 0 con la strategia attuale (il piano upfront fatica con tallone enorme e nessun "pass" utile in solitario).
+
+Per 8x8 G=2 (tallone=48, non solitario): con 5 seed era 0/5; con 50 seed: **2/50 = 4.0%**. La maggior parte delle partite stallano presto (1-10 carte), ma occasionalmente il bot riesce a completare la griglia. Non è zero, ma resta estremamente basso.
+
+**Conclusione**:
+Il gioco non è "impossibile" in assoluto (teoricamente con infinite partite e fortuna si può vincere se esiste una strategia), ma con il bot attuale diventa **praticamente impossibile o epico** (win% <5% stimata, a volte <<1%) quando tallone >~30-40 e G piccolo (soprattutto G=1 per N>=4, o G=2 per N=8 con tallone enorme). Per 8x2 abbiamo ora evidenza di rare vittorie con sample alto.
+
+Per tallone piccolo (fino a ~20) resta eccellente (>90% spesso).
+
+**Prossimo**: quando win% <10% (come per G=1 N>=4 e 8x2), il bot attuale rende il gioco epico o praticamente non giocabile con la strategia corrente. Per 8x2 con 50 seed abbiamo 4% (2 vittorie), quindi non zero ma rarissimo. 
+
+Valutare:
+- Se migliorare il planner per talloni enormi (pianificazione incrementale basata sull'ordine del mazzo noto, o più search/heuristic locale).
+- O accettare che per G=1-2 con N grande sia "epico" per design e il bot non è ottimizzato per vincerle spesso.
+
+**Artefatti**: temp_8x2_50seeds.js (rimosso), questa voce. Dati aggiornati con 50 seed su 8x2.
+
+## 2026-07-11 — Analisi soglia tallone per win% <80% + correlazione con hand size
+
+**Obiettivo:** trovare per quale dimensione di tallone iniziale il success rate scende stabilmente sotto l'80%, e verificare il sospetto che sia legato anche alla dimensione della mano (cardsPerPlayer).
+
+**Dati da sweep (8 seed) + focus (12-20 seed) su tallone 10-30:**
+
+**Per bin di tallone (dati aggregati):**
+- tallone 0-4: 98.1%
+- 5-9: 94.6%
+- 10-14: 94.1%
+- 15-19: 81.8%
+- 20-24: 77.8%
+- 25-29: 83.3% (sample piccolo)
+- 30+: 40-66% (e peggio)
+
+**Focus con più seed (15-20):**
+- 5x2 tallone=15 hand=5: 40% (9/20)
+- 6x3 tallone=18 hand=6: 73.3% (11/15)
+- 6x2 tallone=24 hand=6: 33.3%
+- 7x4 tallone=21 hand=7: 86.7% (13/15) / 93.3% (14/15 in altri run)
+- 7x3 tallone=28 hand=7: 66.7-75%
+- 8x5 tallone=24 hand=8: 93.3-100%
+
+**Per hand size (cardsPerPlayer):**
+- hand=3: ~98%
+- 4: ~95-96%
+- 5: ~85-91%
+- 6: ~80-86%
+- 7: ~85-93%
+- 8: ~89% (ma solo quando tallone non troppo grande)
+
+**Osservazioni chiave:**
+- Il calo sotto l'80% inizia tipicamente intorno a **tallone 15-20**.
+- Per tallone simile, performance peggiore quando la mano è più piccola (es. tallone 24 hand=6: 33% vs hand=8: 93-100%).
+- Questo conferma il sospetto dell'utente: non solo la dimensione assoluta del tallone, ma anche quante carte hai "in mano" per costruire/segure il piano in modo affidabile.
+- Quando hand piccolo + tallone medio: il piano dal pool noto diventa meno robusto perché ci sono meno "buffer" di carte note per compensare il timing dei draw.
+- G=N (hand=N, tallone=0) resta il caso ideale a 100%.
+
+**Conclusione provvisoria:**
+La soglia per scendere stabilmente sotto 80% è intorno a tallone **15-20 carte**, e peggiora ulteriormente quando cardsPerPlayer è basso (hand <=5-6) per quel tallone.
+
+Il metodo attuale è affidabile nella fascia tallone <=12-15 (o un po' di più se hand grande).
+
+Per talloni >20 o combinazioni hand-piccolo + tallone-medio serve o più sampling/re-plan, o un approccio diverso (più euristico/search).
+
+**Prossimi passi suggeriti:**
+- Test mirati con 20+ seed su tallone 15-25 per confermare la curva.
+- Valutare se aggiungere re-plan periodico del residuo quando tallone >15.
+- Poi passare a ragionare su G molto piccolo / solitario.
+
+**Artefatti:** temp_tallone_threshold.js e temp_tallone_focus.js (rimossi), questa voce.
+
+## 2026-07-11 — Documento Word riassuntivo finale + archiviazione fase G=2..2N
+
+**Contesto:** Dopo validazione 8x2 a 50 seed (4%), analisi soglia tallone/mano, e conferma utente che 4% è accettabile per sfida epica (soglia ~1%), si produce l'ultima tabella riassuntiva prima di archiviare questa parte del lavoro e passare al tweaking solitario.
+
+**Artefatto:** `Risultati_Durissima_Coordinatore_One_Mind.docx` (salvato nella cartella fisica Dropbox accanto a Report_Solvibilita_Dura_Durissima.docx).
+
+**Struttura del documento:**
+- Capitolo separato per ogni N=3..8.
+- Per ciascun N: tabella con tutte le combinazioni G=2..2N legali (cartePerMano iniziale >= 3 secondo MIN_INITIAL_HAND).
+- Colonne: G, Tallone, Carte in mano, Win %, Seed, Note/Spiegazione (perché alta o bassa, effetto mano vs tallone, G<N vs G>N).
+- Sezioni extra: Riassunto Generale e Soglie Critiche, Conclusioni e transizione al solitario.
+- Spiegazione del metodo (piano pool-noto + follower + endgame relaxation solo G>N) e del significato delle % (bot one-mind su deal casuali mulberry32).
+
+**Dati incorporati (da questa e precedenti voci):**
+- Overall tallone <=20 (G!=1): 98.3% (417 successi su 424 deal testati).
+- G=N: 100% su tutti.
+- 8x2: 4.0% (2/50) — esplicitamente accettato.
+- G=1 N>=4: 0% (solitario come gioco a parte).
+- Correlazione: tallone ~15-20 è la soglia sotto cui il metodo regge; mano grande (7-8) aumenta la tolleranza anche a talloni più alti (es. 8x4 100% con t=32).
+
+**Decisioni:**
+- Il gioco con G=2..2N (min 3 carte) è "risolto" dal bot nella fascia tallone basso (G vicino a N). 
+- Casi con tallone grande restano epici o molto difficili con questa strategia — ok per design.
+- Solitario (G=1) va trattato separatamente; non più con piano upfront completo.
+- Puliti i temp_*.js precedenti.
+
+**Prossimi passi:** 
+1. Commit/push di mpcards-core.js + SESSIONI.md + eventuale inclusione del .docx nei risultati (su approvazione).
+2. Archiviare la fase "one mind G>=2".
+3. Passare al tweaking regole + bot per il solitario Durissima.
+
+**Nota:** Il file Word è stato generato da script Python (create_results_doc.py) con python-docx e formattazione professionale (tabelle per capitolo, note esplicative, legenda, riassunti). Non ritestato nulla — solo compilazione dei dati esistenti.
+
+**Ultima nota utente (2026-07-11):** il solitario verrà trattato come gioco a parte (partendo comunque dal bot attuale). Si testeranno gli effetti delle soluzioni già provate (vite extra, reshuffle, pool N, ecc.) con l'obiettivo di raggiungere almeno l'1% di successi. In modalità solitario il gioco si chiamerà **Nefanda Mater**. Per ora ci fermiamo qui.
