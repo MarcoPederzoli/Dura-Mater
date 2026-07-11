@@ -2,8 +2,8 @@
 
 /** Etichetta build UI — se non la vedi in fondo alla pagina, non stai aprendo questo file. */
 const DM_UI_BUILD = document.body.dataset.gameMode === "real"
-  ? "Gioco reale 2026-06-05"
-  : "UI layout mano 2026-06-05";
+  ? "Gioco reale 2026-07-11"
+  : "Simulazione + Durissima 2026-07-11";
 
 const GAME_MODE = document.body.dataset.gameMode === "real" ? "real" : "simulation";
 
@@ -42,17 +42,53 @@ const OPPONENT_NAMES = Object.freeze([
   "Cucciolo"
 ]);
 
+const DEFAULT_VARIANT = document.body.dataset.defaultVariant === "durissima" ? "durissima" : "dura";
+const DEFAULT_DURISSIMA_SIZE = DEFAULT_VARIANT === "durissima" ? 4 : 5;
+const DEFAULT_DURISSIMA_PLAYERS = DEFAULT_VARIANT === "durissima" ? 4 : 3;
+
 const DEFAULT_GAME_PREFS = {
-  version: 1,
-  players: 3,
-  size: 5,
+  version: 2,
+  variant: DEFAULT_VARIANT,
+  players: DEFAULT_DURISSIMA_PLAYERS,
+  size: DEFAULT_DURISSIMA_SIZE,
   speed: "1000",
   seed: "",
   playerOneName: "Giocatore 1",
   tournamentMode: false,
-  modes: ["manual", ...Array.from({ length: MPCardsCore.MAX_PLAYERS - 1 }, () => "bot")],
-  strategies: Array.from({ length: MPCardsCore.MAX_PLAYERS }, () => "auto")
+  durissimaVitaExtra: false,
+  durissimaCoordinator: true,
+  modes: DEFAULT_VARIANT === "durissima"
+    ? Array.from({ length: MPCardsCore.MAX_PLAYERS }, () => "bot")
+    : ["manual", ...Array.from({ length: MPCardsCore.MAX_PLAYERS - 1 }, () => "bot")],
+  strategies: Array.from({ length: MPCardsCore.MAX_PLAYERS }, (_, index) => (
+    index === 0 && DEFAULT_VARIANT !== "durissima" ? "auto" : defaultBotStrategySetting(DEFAULT_VARIANT)
+  ))
 };
+
+function isDurissimaVariantSelected() {
+  return els.gameVariant?.value === "durissima";
+}
+
+/** Pool riserva N: regola fissa del solitario Durissima (G=1), non usata in coop. */
+function isDurissimaSoloReserveRule(players, variant) {
+  return variant === "durissima" && players === 1;
+}
+
+function defaultBotStrategySetting(variant = DEFAULT_VARIANT) {
+  return variant === "durissima" ? "durissima-global-planner" : "auto";
+}
+
+function resolveStrategySettings(settings, players, variant) {
+  const forceCoordinator = variant === "durissima" && isCoordinatorBotEnabled();
+  return Array.from({ length: players }, (_, index) => {
+    if (forceCoordinator) return "durissima-global-planner";
+    const value = settings[index] || defaultBotStrategySetting(variant);
+    if (value === "auto" && variant === "durissima") {
+      return "durissima-global-planner";
+    }
+    return value;
+  });
+}
 
 function readPlayerOneName() {
   const raw = els.playerOneName?.value?.trim();
@@ -120,6 +156,11 @@ const els = {
   speedLive: document.querySelector("#speed-live"),
   seed: document.querySelector("#seed"),
   tournamentMode: document.querySelector("#tournament-mode"),
+  gameVariant: document.querySelector("#game-variant"),
+  durissimaOptions: document.querySelector("#durissima-options"),
+  durissimaVitaExtra: document.querySelector("#durissima-vita-extra"),
+  durissimaSoloReserveNote: document.querySelector("#durissima-solo-reserve"),
+  durissimaCoordinator: document.querySelector("#durissima-coordinator"),
   playerOneName: document.querySelector("#player-one-name"),
   setupSection: document.querySelector("#setup-section"),
   newGame: document.querySelector("#new-game"),
@@ -259,27 +300,67 @@ function strategyOptions() {
   return core.STRATEGIES.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
 }
 
-function playerCountBounds(size) {
+function playerCountBounds(size, variant = isDurissimaVariantSelected() ? "durissima" : "dura") {
   const grid = clampNumber(size, 3, 8, DEFAULT_GAME_PREFS.size);
+  const min = variant === "durissima"
+    ? core.durissimaMinPlayers()
+    : Math.max(2, core.recommendedMinPlayers(grid));
   return {
-    min: Math.max(2, core.recommendedMinPlayers(grid)),
+    min,
     max: core.maxPlayersForSize(grid)
   };
 }
 
-function clampPlayersToGrid(players, size) {
-  const { min, max } = playerCountBounds(size);
+function clampPlayersToGrid(players, size, variant = isDurissimaVariantSelected() ? "durissima" : "dura") {
+  const { min, max } = playerCountBounds(size, variant);
   return clampNumber(players, min, max, min);
 }
 
-function playersRangeHintText(size) {
+function playersRangeHintText(size, variant = isDurissimaVariantSelected() ? "durissima" : "dura") {
   const grid = clampNumber(size, 3, 8, DEFAULT_GAME_PREFS.size);
-  const { min, max } = playerCountBounds(grid);
+  const { min, max } = playerCountBounds(grid, variant);
+  if (variant === "durissima") {
+    return `Durissima: G da ${min} a ${max} (2N) · solitario G=1 · bot consigliato TG`;
+  }
   const rule =
     grid === 7
       ? "minimo 3 su 7x7 (eccezione a ceil(N/2))"
       : `minimo ceil(N/2) = ${min}`;
   return `${rule} · massimo 2N = ${max} · Dura: minimo 2 giocatori (no solitario)`;
+}
+
+function isCoordinatorBotEnabled() {
+  return isDurissimaVariantSelected() && els.durissimaCoordinator?.checked !== false;
+}
+
+function coordinatorBundleReady() {
+  return globalThis.__DM_COORDINATOR_BROWSER__ === true
+    && !!globalThis.DurissimaMatrixSolver
+    && !!globalThis.DurissimaGnDecoupledOracle;
+}
+
+function syncVariantUi() {
+  const durissima = isDurissimaVariantSelected();
+  const coordinator = isCoordinatorBotEnabled();
+  if (els.durissimaOptions) els.durissimaOptions.hidden = !durissima;
+  if (els.tournamentMode) {
+    const tournamentWrap = els.tournamentMode.closest("label");
+    if (tournamentWrap) tournamentWrap.hidden = durissima;
+    if (durissima) els.tournamentMode.checked = false;
+  }
+  const players = clampPlayersToGrid(els.players?.value || DEFAULT_GAME_PREFS.players, clampNumber(els.size?.value || DEFAULT_GAME_PREFS.size, 3, 8, 5));
+  const solo = durissima && players === 1;
+  const soloCoordinator = coordinator && solo;
+  if (els.durissimaVitaExtra) {
+    els.durissimaVitaExtra.disabled = coordinator && !soloCoordinator;
+    if (coordinator && !soloCoordinator) els.durissimaVitaExtra.checked = false;
+    if (els.durissimaVitaExtra.closest("label")) {
+      els.durissimaVitaExtra.closest("label").hidden = !solo;
+    }
+  }
+  if (els.durissimaSoloReserveNote) {
+    els.durissimaSoloReserveNote.hidden = !solo;
+  }
 }
 
 function syncPlayersInputBounds(options = {}) {
@@ -303,10 +384,16 @@ function syncPlayersInputBounds(options = {}) {
 function normalizeGamePrefs(prefs) {
   const normalized = { ...DEFAULT_GAME_PREFS, ...prefs };
   normalized.size = clampNumber(normalized.size, 3, 8, DEFAULT_GAME_PREFS.size);
-  normalized.players = clampPlayersToGrid(normalized.players, normalized.size);
+  normalized.players = clampPlayersToGrid(normalized.players, normalized.size, normalized.variant);
   normalized.speed = SPEED_VALUES.has(normalized.speed) ? normalized.speed : DEFAULT_GAME_PREFS.speed;
   normalized.seed = typeof normalized.seed === "string" ? normalized.seed : DEFAULT_GAME_PREFS.seed;
-  normalized.tournamentMode = normalized.tournamentMode === true;
+  normalized.variant = normalized.variant === "durissima" ? "durissima" : "dura";
+  normalized.tournamentMode = normalized.variant === "durissima" ? false : normalized.tournamentMode === true;
+  normalized.durissimaVitaExtra = normalized.durissimaVitaExtra === true;
+  normalized.durissimaCoordinator = normalized.durissimaCoordinator !== false;
+  if (normalized.durissimaCoordinator && normalized.players > 1) {
+    normalized.durissimaVitaExtra = false;
+  }
   normalized.playerOneName = typeof normalized.playerOneName === "string"
     ? normalized.playerOneName.trim().slice(0, 32)
     : DEFAULT_GAME_PREFS.playerOneName;
@@ -327,7 +414,8 @@ function normalizeGamePrefs(prefs) {
 
 function collectGamePrefs() {
   const size = clampNumber(els.size.value, 3, 8, DEFAULT_GAME_PREFS.size);
-  const players = clampPlayersToGrid(els.players.value, size);
+  const variant = isDurissimaVariantSelected() ? "durissima" : "dura";
+  const players = clampPlayersToGrid(els.players.value, size, variant);
   const config = readPlayersConfig(players);
   return normalizeGamePrefs({
     version: 1,
@@ -336,7 +424,10 @@ function collectGamePrefs() {
     speed: els.speed.value,
     seed: els.seed.value,
     playerOneName: readPlayerOneName(),
+    variant: isDurissimaVariantSelected() ? "durissima" : "dura",
     tournamentMode: Boolean(els.tournamentMode?.checked),
+    durissimaVitaExtra: Boolean(els.durissimaVitaExtra?.checked),
+    durissimaCoordinator: isCoordinatorBotEnabled(),
     modes: config.modes.concat(DEFAULT_GAME_PREFS.modes).slice(0, 8),
     strategies: config.strategies.concat(DEFAULT_GAME_PREFS.strategies).slice(0, 8)
   });
@@ -351,7 +442,11 @@ function applyGamePrefs(prefs) {
   els.speedLive.value = normalized.speed;
   els.seed.value = normalized.seed;
   if (els.playerOneName) els.playerOneName.value = normalized.playerOneName;
+  if (els.gameVariant) els.gameVariant.value = normalized.variant;
+  if (els.durissimaVitaExtra) els.durissimaVitaExtra.checked = normalized.durissimaVitaExtra;
+  if (els.durissimaCoordinator) els.durissimaCoordinator.checked = normalized.durissimaCoordinator;
   if (els.tournamentMode) els.tournamentMode.checked = normalized.tournamentMode;
+  syncVariantUi();
   loadedPlayerPrefs = {
     modes: normalized.modes,
     strategies: normalized.strategies
@@ -395,7 +490,10 @@ function resetGamePrefsToDefaults() {
 }
 
 function bindGamePrefsPersistence() {
-  const fields = [els.players, els.size, els.speed, els.seed, els.playerOneName, els.tournamentMode];
+  const fields = [
+    els.players, els.size, els.speed, els.seed, els.playerOneName, els.tournamentMode,
+    els.gameVariant, els.durissimaVitaExtra, els.durissimaCoordinator
+  ];
   for (const field of fields) {
     if (!field) continue;
     field.addEventListener("input", scheduleSaveGamePrefs);
@@ -556,18 +654,59 @@ function renderTournamentRanking() {
   }
 }
 
+function buildDurissimaSetupOptions(size, players) {
+  const solo = players === 1;
+  return {
+    durissimaMater: true,
+    players,
+    drawOnlyAfterPlacement: true,
+    durissimaVitaExtraEnabled: solo && Boolean(els.durissimaVitaExtra?.checked),
+    durissimaReserveEnabled: solo,
+    durissimaReserveSize: size
+  };
+}
+
 function describeFormatTier(size, players) {
-  const tournament = isTournamentEnabled();
-  const gMin = core.recommendedMinPlayers(size);
-  if (players < 2) {
+  const variant = isDurissimaVariantSelected() ? "durissima" : "dura";
+  const tournament = variant === "dura" && isTournamentEnabled();
+  const gMin = variant === "durissima" ? core.durissimaMinPlayers() : core.recommendedMinPlayers(size);
+  if (variant === "dura" && players < 2) {
     return {
       level: "invalid",
       text:
-        "Dura non ha modalità solitario (minimo 2 giocatori). " +
-        "Il solitario è previsto solo in Durissima (griglia piena), in preparazione."
+        "Dura non ha modalita' solitario (minimo 2 giocatori). " +
+        "Usa Durissima Mater per G=1."
     };
   }
-  if (players < gMin) {
+  if (variant === "durissima" && players === 1) {
+    const tier = durissimaGnTierLabel(size);
+    const deal = core.computeInitialDeal(size, 1);
+    const drawAfterReserve = Math.max(0, deal.drawCount - size);
+    if (isCoordinatorBotEnabled()) {
+      const bundle = coordinatorBundleReady() ? "solver browser ok" : "solver browser mancante — ricarica pagina";
+      return {
+        level: drawAfterReserve <= 12 ? "core" : tier.level,
+        text:
+          `Durissima Mater solitario (${size}x${size}): pool riserva ${size} + coordinatore una mente, ` +
+          `piano da mano + riserva + tallone (${drawAfterReserve} carte). ${bundle}. ${tier.text}`
+      };
+    }
+    return {
+      level: tier.level,
+      text:
+        `Durissima Mater solitario (${size}x${size}) — pool riserva ${size}, tallone ${drawAfterReserve}. ` +
+        `${tier.text}. Bot consigliato: G (durissima-planner).`
+    };
+  }
+  if (variant === "durissima" && isCoordinatorBotEnabled()) {
+    const bundle = coordinatorBundleReady() ? "solver browser ok" : "solver browser mancante — ricarica pagina";
+    const deal = core.computeInitialDeal(size, players);
+    let text = `Coordinatore una mente (TG): piano dal pool noto (mani${deal.drawCount ? " + tallone" : ""}), G>=2. ${bundle}.`;
+    if (players === size) text += " G=N: formato ideale.";
+    else text += ` Tallone ${deal.drawCount}.`;
+    return { level: deal.drawCount <= 20 ? "core" : "hard", text };
+  }
+  if (variant === "dura" && players < gMin) {
     const rule =
       size === 7
         ? `minimo ${gMin} giocatori su 7x7 (eccezione a ceil(N/2))`
@@ -587,6 +726,23 @@ function describeFormatTier(size, players) {
       text: `Configurazione non ammessa: servono almeno ${core.MIN_INITIAL_HAND} carte a testa.`
     };
   }
+  if (variant === "durissima") {
+    const deal = core.computeInitialDeal(size, players);
+    const tier = durissimaGnTierLabel(size);
+    let text = `Durissima coop: griglia piena, pesca solo dopo posata.`;
+    if (players === size) {
+      text += ` G=N (${size}x${size}, tallone 0) — coordinatore TG risolve.`;
+      return { level: "core", text };
+    }
+    text += ` Tallone ${deal.drawCount}, mano ${deal.cardsPerPlayer}.`;
+    if (deal.drawCount <= 20) {
+      text += " Fascia testata dal bot (tallone basso).";
+      return { level: players >= gMin ? "core" : "extra", text };
+    }
+    text += ` ${tier.text}.`;
+    return { level: tier.level, text };
+  }
+
   let text = tournament
     ? `Torneo competitivo: ${players} mani automatiche, classifica a punteggio.`
     : "Competitiva: giocabile (tutte le combinazioni legali).";
@@ -628,18 +784,25 @@ function updateFormatTierHint() {
 function startGame() {
   stopTimer();
   saveGamePrefsNow();
+  const variant = isDurissimaVariantSelected() ? "durissima" : "dura";
   const size = clampNumber(els.size.value, 3, 8, 5);
-  const players = clampPlayersToGrid(els.players.value, size);
+  const players = clampPlayersToGrid(els.players.value, size, variant);
   els.players.value = String(players);
-  if (players < 2) {
+  if (variant === "dura" && players < 2) {
     setStatus(
-      "Dura non ha modalità solitario (minimo 2 giocatori). Il solitario è solo in Durissima.",
+      "Dura non ha modalita' solitario (minimo 2 giocatori). Passa a Durissima Mater per G=1.",
       "bad"
     );
     return;
   }
-  const gMin = core.recommendedMinPlayers(size);
-  if (players < gMin) {
+  if (variant === "durissima" && isCoordinatorBotEnabled()) {
+    if (!coordinatorBundleReady()) {
+      setStatus("Solver coordinatore non caricato — ricarica la pagina (Ctrl+F5).", "bad");
+      return;
+    }
+  }
+  const gMin = variant === "durissima" ? core.durissimaMinPlayers() : core.recommendedMinPlayers(size);
+  if (variant === "dura" && players < gMin) {
     const rule =
       size === 7
         ? `minimo ${gMin} su 7x7 (eccezione a ceil(N/2))`
@@ -659,10 +822,11 @@ function startGame() {
     }
     return;
   }
-  const tournamentMode = isTournamentEnabled();
+  const tournamentMode = variant === "dura" && isTournamentEnabled();
   const seed = els.seed.value.trim() || String(Date.now());
   const random = gameState.createRandom(seed);
   const config = readPlayersConfig(players);
+  const strategySettings = resolveStrategySettings(config.strategies, players, variant);
   let deck;
   try {
     deck = core.simulationDeck();
@@ -672,12 +836,19 @@ function startGame() {
   }
   let state;
   try {
-    state = core.setupGame(deck, { players, size, random, tournamentMode });
+    const setupOptions = {
+      players,
+      size,
+      random,
+      tournamentMode,
+      ...(variant === "durissima" ? buildDurissimaSetupOptions(size, players) : {})
+    };
+    state = core.setupGame(deck, setupOptions);
   } catch (error) {
     setStatus(error.message, "bad");
     return;
   }
-  const strategies = core.resolveStrategies(config.strategies, players, random);
+  const strategies = core.resolveStrategies(strategySettings, players, random);
   const playerOneName = readPlayerOneName();
   const session = gameState.createSession({
     seed,
@@ -685,8 +856,11 @@ function startGame() {
     players,
     size,
     tournamentMode,
+    variant,
+    durissimaVitaExtra: Boolean(els.durissimaVitaExtra?.checked),
+    durissimaCoordinator: isCoordinatorBotEnabled(),
     modes: config.modes,
-    strategySettings: config.strategies,
+    strategySettings,
     strategies,
     playerOneName
   }, state, random);
@@ -694,8 +868,9 @@ function startGame() {
     session,
     state: gameState.currentState(session),
     random,
+    variant,
     modes: config.modes,
-    strategySettings: config.strategies,
+    strategySettings,
     strategies,
     seed,
     playerOneName,
@@ -760,6 +935,55 @@ function syncPlayersConfig() {
 
 function isBotTurn() {
   return game && game.modes[game.state.currentPlayer] === "bot" && game.state.status === "playing";
+}
+
+function isTerminalGameStatus(status) {
+  return status === "success" || status === "stalled" || status === "tournament_complete";
+}
+
+function isTournamentHandPaused() {
+  return Boolean(
+    game?.tournamentMode
+    && core.isTournamentMode(game.state)
+    && game.state.status === "hand_over"
+  );
+}
+
+function tournamentHandPauseMessage() {
+  const state = game.state;
+  const reason = state.tournamentLastHandReason === "monte" ? "monte" : "tutti finiti";
+  return `Mano ${state.tournamentHandIndex}/${state.players} conclusa (${reason}). `
+    + (els.speed?.value === "step"
+      ? "Clicca «Step computer» per la prossima mano."
+      : "Metti «Step by step» e clicca «Step computer», oppure avvia una nuova partita.");
+}
+
+function notifyAutoPlayEnded() {
+  stopTimer();
+  if (!game) return;
+  const state = game.state;
+  if (isTournamentHandPaused()) {
+    setPlayFeedback(tournamentHandPauseMessage());
+    return;
+  }
+  if (!isTerminalGameStatus(state.status)) return;
+  if (state.status === "tournament_complete") {
+    setPlayFeedback(`Torneo concluso — ${formatTournamentRanking(state)}`);
+    return;
+  }
+  if (core.isDurissimaMater(state)) {
+    setPlayFeedback(
+      state.players === 1
+        ? "Durissima solitario: griglia completata."
+        : "Durissima: griglia completata."
+    );
+    return;
+  }
+  if (state.status === "success" && state.winner != null) {
+    setPlayFeedback(`Partita conclusa — vince ${playerLabel(state.winner)}.`);
+    return;
+  }
+  setPlayFeedback("Partita conclusa in stallo.");
 }
 
 function currentRequirement() {
@@ -856,20 +1080,43 @@ function passOrEndTurn() {
 }
 
 function runBotStep() {
+  stopTimer();
+  if (!game) return;
+  if (isTournamentHandPaused()) {
+    if (advanceTournamentHandIfNeeded()) {
+      scheduleBotIfNeeded();
+    }
+    return;
+  }
   if (!isBotTurn()) return;
   const beforePlayer = game.state.currentPlayer;
+  let botResult = null;
   game.state = gameState.commit(game.session, `${playerLabel(beforePlayer)}: azione computer.`, game.random, nextState => {
-    const result = core.botStep(nextState, game.strategies, game.random);
-    if (result.played) {
-      const move = result.move;
+    botResult = core.botStep(nextState, game.strategies, game.random);
+    if (botResult.played) {
+      const move = botResult.move;
       return `${playerLabel(beforePlayer)} gioca ${move.card.code} in (${move.x}, ${move.y}).`;
     }
-    if (result.passed) return `${playerLabel(beforePlayer)} passa.`;
-    if (result.ended) return `${playerLabel(beforePlayer)} chiude il turno.`;
+    if (botResult.passed) return `${playerLabel(beforePlayer)} passa.`;
+    if (botResult.ended) return `${playerLabel(beforePlayer)} chiude il turno.`;
+    if (botResult.lost) return `${playerLabel(beforePlayer)}: sconfitta.`;
     return `${playerLabel(beforePlayer)}: nessuna azione.`;
   });
+  if (
+    game.state.status === "playing"
+    && botResult
+    && !botResult.played
+    && !botResult.passed
+    && !botResult.ended
+    && !botResult.lost
+  ) {
+    setPlayFeedback("Il computer non ha potuto avanzare: partita in pausa.");
+    setStatus("Bot bloccato (nessuna mossa legale).", "bad");
+    return;
+  }
   resetTransientUi();
   render();
+  notifyAutoPlayEnded();
   scheduleBotIfNeeded();
 }
 
@@ -889,8 +1136,13 @@ function advanceTournamentHandIfNeeded() {
 
 function scheduleBotIfNeeded() {
   stopTimer();
-  if (advanceTournamentHandIfNeeded()) {
-    scheduleBotIfNeeded();
+  if (!game) return;
+  if (isTerminalGameStatus(game.state.status)) {
+    notifyAutoPlayEnded();
+    return;
+  }
+  if (isTournamentHandPaused()) {
+    notifyAutoPlayEnded();
     return;
   }
   if (!isBotTurn()) return;
@@ -930,6 +1182,8 @@ function saveGame() {
     players: game.state.players,
     size: game.state.size,
     tournamentMode: game.tournamentMode === true,
+    variant: game.variant || (core.isDurissimaMater(game.state) ? "durissima" : "dura"),
+    durissimaVitaExtra: game.state.durissimaVitaExtraEnabled === true,
     modes: game.modes,
     strategySettings: game.strategySettings,
     strategies: game.strategies,
@@ -974,8 +1228,16 @@ function applyLoadedSession(session) {
     seed,
     playerOneName: config.playerOneName || DEFAULT_GAME_PREFS.playerOneName,
     deck,
-    tournamentMode: config.tournamentMode === true
+    tournamentMode: config.tournamentMode === true,
+    variant: config.variant || (core.isDurissimaMater(game.state) ? "durissima" : "dura")
   };
+  if (els.gameVariant) {
+    els.gameVariant.value = game.variant;
+    syncVariantUi();
+  }
+  if (els.durissimaVitaExtra) {
+    els.durissimaVitaExtra.checked = config.durissimaVitaExtra === true;
+  }
   gameState.restoreRandom(game.session, game.random);
   if (!game.strategies.length) {
     game.strategies = core.resolveStrategies(game.strategySettings, game.state.players, game.random);
@@ -1532,6 +1794,9 @@ function renderHandCountsBar() {
         const handHint = handDelta !== 0 ? ` · mano ${handDelta >= 0 ? "+" : ""}${handDelta}` : "";
         chip.title = `${count} carte in mano · ${score} punti torneo${handHint}`;
       }
+    } else if (state.status === "success" && core.isDurissimaMater(state) && state.players > 1) {
+      detail.textContent = "OK";
+      chip.classList.add("winner");
     } else if (state.status === "success" && player === state.winner && count === 0) {
       detail.textContent = "Vince";
     } else {
@@ -1771,9 +2036,12 @@ function renderActions() {
   els.undo.disabled = !hasGame || !gameState.canUndo(game.session);
   els.redo.disabled = !hasGame || !gameState.canRedo(game.session);
   els.saveGame.disabled = !hasGame;
-  if (!game || game.state.status !== "playing") {
+  const tournamentHandPaused = isTournamentHandPaused();
+  const botStepMode = isBotTurn() || tournamentHandPaused;
+  if (!game || (game.state.status !== "playing" && !tournamentHandPaused)) {
     els.pass.disabled = true;
     els.botStep.disabled = true;
+    els.botStep.style.display = "none";
     if (els.vitaExtra) els.vitaExtra.hidden = true;
     return;
   }
@@ -1784,7 +2052,7 @@ function renderActions() {
     && game.state.turnPlayed === 0
     && core.canUseDurissimaVitaExtra(game.state, game.state.currentPlayer);
   els.pass.style.display = isBotTurn() ? "none" : "inline-grid";
-  els.botStep.style.display = isBotTurn() ? "inline-grid" : "none";
+  els.botStep.style.display = botStepMode ? "inline-grid" : "none";
   els.pass.disabled = isBotTurn() || durissimaSolo;
   els.pass.className = moves.length === 0 || game.state.turnPlayed > 0 ? "warn" : "secondary";
   if (els.vitaExtra) {
@@ -1792,7 +2060,12 @@ function renderActions() {
     els.vitaExtra.disabled = !canVita;
     els.vitaExtra.className = canVita ? "secondary" : "secondary";
   }
-  els.botStep.disabled = !isBotTurn() || els.speed.value !== "step";
+  els.botStep.disabled = !botStepMode || els.speed.value !== "step";
+  if (tournamentHandPaused && els.speed.value !== "step") {
+    els.botStep.title = "Metti Step by step per avanzare mano torneo";
+  } else {
+    els.botStep.removeAttribute("title");
+  }
 }
 
 function renderSummary() {
@@ -1802,12 +2075,16 @@ function renderSummary() {
   const player = state.currentPlayer;
   const tournament = core.isTournamentMode(state);
   const tournamentDone = state.status === "tournament_complete";
+  const durissima = core.isDurissimaMater(state);
+  const reserveCount = durissima ? (state.durissimaReserve || []).length : 0;
   els.activePlayer.textContent = state.status === "playing"
     ? `${playerLabel(player)} ${game.modes[player] === "bot" ? core.strategyShortLabel(game.strategies[player]) : "Manuale"}`
     : tournamentDone
       ? `Torneo: vince ${playerLabel(state.winner)}`
       : state.status === "success"
-        ? `Vince ${playerLabel(state.winner)}`
+        ? durissima
+          ? (state.players === 1 ? "Solitario: griglia completata" : "Durissima: griglia completata")
+          : `Vince ${playerLabel(state.winner)}`
         : state.status === "hand_over"
           ? `Mano ${state.tournamentHandIndex}/${state.players} conclusa`
           : "Stallo";
@@ -1815,6 +2092,7 @@ function renderSummary() {
     ? `Pesca: ${state.drawPile.length} · Mano ${Math.min(state.tournamentHandIndex + (state.status === "playing" ? 1 : 0), state.players)}/${state.players}`
     : `Pesca: ${state.drawPile.length}`;
   const rows = [
+    ...(durissima ? [["Modalita'", "Durissima Mater"]] : [["Modalita'", "Dura Mater"]]),
     ...(tournament
       ? [["Torneo", tournamentDone ? "Completato" : `Mano ${Math.min(state.tournamentHandIndex + (state.status === "playing" ? 1 : 0), state.players)}/${state.players}`]]
       : []),
@@ -1827,6 +2105,10 @@ function renderSummary() {
     ["Giocatore", `${playerLabel(player)} (${game.modes[player]})`],
     ["Strategia", game.modes[player] === "bot" ? core.strategyLabel(game.strategies[player]) : "Manuale"],
     ["Mazzo pesca", state.drawPile.length],
+    ...(durissima && reserveCount ? [["Pool riserva", reserveCount]] : []),
+    ...(durissima && state.durissimaVitaExtraEnabled
+      ? [["Vita extra", `${core.durissimaVitaExtraPoolLeft(state)} rimaste`]]
+      : []),
     ["Carte giocate nel turno", state.turnPlayed],
     ...(core.canOfferIdea(state, player) ? [["Idea", "Quinta carta cieca (jolly)"]] : []),
     ["Passaggi consecutivi", state.consecutivePasses],
@@ -1856,8 +2138,12 @@ function renderSummary() {
         state.status === "playing"
           ? tournament ? "Torneo in corso." : "Partita in corso."
           : state.status === "success"
-            ? `Vince ${playerLabel(state.winner)}.`
-            : "Partita in stallo.",
+            ? durissima
+              ? (state.players === 1 ? "Solitario completato." : "Griglia Durissima completata.")
+              : `Vince ${playerLabel(state.winner)}.`
+            : durissima && state.status === "lost"
+              ? "Durissima: sconfitta."
+              : "Partita in stallo.",
         state.status === "success" || tournamentDone ? "good" : state.status === "stalled" ? "bad" : ""
       );
     }
@@ -1898,6 +2184,32 @@ function renderLog() {
   els.log.textContent = game ? gameState.labels(game.session).slice().reverse().join("\n") : "";
 }
 
+if (els.gameVariant) {
+  els.gameVariant.addEventListener("change", () => {
+    syncVariantUi();
+    syncPlayersInputBounds({ renderConfig: true });
+    updateFormatTierHint();
+    scheduleSaveGamePrefs();
+  });
+}
+if (els.durissimaVitaExtra) {
+  els.durissimaVitaExtra.addEventListener("change", () => {
+    updateFormatTierHint();
+    scheduleSaveGamePrefs();
+  });
+}
+if (els.durissimaCoordinator) {
+  els.durissimaCoordinator.addEventListener("change", () => {
+    syncVariantUi();
+    if (isCoordinatorBotEnabled()) {
+      Array.from(document.querySelectorAll(".player-strategy")).forEach(item => {
+        item.value = "durissima-global-planner";
+      });
+    }
+    updateFormatTierHint();
+    scheduleSaveGamePrefs();
+  });
+}
 if (els.tournamentMode) {
   els.tournamentMode.addEventListener("change", () => {
     updateFormatTierHint();
@@ -1945,6 +2257,16 @@ els.speedLive.addEventListener("change", () => {
 window.addEventListener("resize", renderBoard);
 
 loadSavedGamePrefs();
+syncVariantUi();
 syncPlayersInputBounds({ renderConfig: true });
 updateFormatTierHint();
 bindGamePrefsPersistence();
+
+(function renderUiBuildLabel() {
+  const target = document.getElementById("app-version");
+  if (!target) return;
+  const base = target.textContent || "";
+  if (!base.includes(DM_UI_BUILD)) {
+    target.textContent = base ? `${base} · ${DM_UI_BUILD}` : DM_UI_BUILD;
+  }
+})();

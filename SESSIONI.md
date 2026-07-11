@@ -1124,4 +1124,158 @@ Per talloni >20 o combinazioni hand-piccolo + tallone-medio serve o più samplin
 
 **Nota:** Il file Word è stato generato da script Python (create_results_doc.py) con python-docx e formattazione professionale (tabelle per capitolo, note esplicative, legenda, riassunti). Non ritestato nulla — solo compilazione dei dati esistenti.
 
-**Ultima nota utente (2026-07-11):** il solitario verrà trattato come gioco a parte (partendo comunque dal bot attuale). Si testeranno gli effetti delle soluzioni già provate (vite extra, reshuffle, pool N, ecc.) con l'obiettivo di raggiungere almeno l'1% di successi. In modalità solitario il gioco si chiamerà **Nefanda Mater**. Per ora ci fermiamo qui.
+**Ultima nota utente (2026-07-11):** il solitario verrà trattato come gioco a parte (partendo comunque dal bot attuale). Si testeranno gli effetti delle soluzioni già provate (vite extra, reshuffle, pool N, ecc.) con l'obiettivo di raggiungere almeno l'1% di successi. Per ora ci fermiamo qui.
+
+## 2026-07-11 — Promemoria aggiornato + nome solitario
+
+**Contesto:** sessione Grok 4.5 non aveva aggiornato `promemoria.md`. Utente torna su Composer.
+
+**Decisione naming:** il solitario **non** si chiama piu' "Nefanda Mater". Per ora: **Durissima Mater solitario** (G=1, stesso brand Durissima).
+
+**Azioni:** aggiornato `promemoria.md` con chiusura fase G>=2 (98.3% tallone<=20, G=N 100%, artefatti Word, soglie tallone/mano) e prossimo passo solitario.
+
+## 2026-07-11 — Aggiornamento motore web (gioco + simulazione singola)
+
+**Contesto:** UI ferma a giugno 2026 (solo Dura competitiva, min 2 giocatori, nessun toggle Durissima).
+
+**Implementato (v0.1.5):**
+- Select **Modalita'**: Dura Mater vs **Durissima Mater** in `gioco.html` e `simulazione-singolo.html`.
+- Durissima: G=1..2N, torneo disabilitato, opzioni vita extra / pool riserva N.
+- Setup passa `durissimaMater`, `drawOnlyAfterPlacement`, flag vita/riserva a `setupGame`.
+- Bot default Durissima: **TG** (`durissima-global-planner`); hint formato con tallone e fascia testata.
+- Esito UI: «griglia completata» (coop) / solitario; riserva e vita extra in pannello Info.
+- `simulazione-singolo.html`: default Durissima 4x4 G=4 tutti bot.
+
+**File:** `game.js`, `gioco.html`, `simulazione-singolo.html`, `version.js`, `package.json`.
+
+## 2026-07-11 — Fix auto-play: stop a fine partita / tra mani torneo
+
+**Problema:** in Gioco, con tutti bot e velocita' automatica, il PC non sembrava fermarsi a fine partita.
+
+**Cause:**
+1. **Torneo a punteggio:** dopo ogni mano (`hand_over`) la UI avanzava subito alla mano successiva in `scheduleBotIfNeeded` — sembrava una partita unica continua.
+2. Mancava stop esplicito del timer su stati terminali (`success`, `stalled`, `tournament_complete`).
+3. Edge case: bot senza mossa (`nessuna azione`) rischedulava all'infinito.
+
+**Fix (`game.js`):** pausa tra mani torneo (serve Step by step + «Step computer»); `notifyAutoPlayEnded()`; guard su mosse vuote del bot.
+
+## 2026-07-11 — Durissima Mater solitario: coordinatore G=1 + web
+
+**Obiettivo:** bot una mente anche per G=1 (mano + tallone noti), target >=1% su formati piccoli; abilitare in UI.
+
+**Motore (`mpcards-core.js`):**
+- `gnUseCoordinatedSoloPlanner` / `gnUseCoordinatedDurissimaPlanner` (coop G>=2 o solitario G=1).
+- Pianificazione pool-noto con `gnSoloIsPlanSchedulable` (simula pesca FIFO) + fallback piano solo-celle.
+- `candidateCells` usa il coordinatore anche in solitario (prima cella dal piano).
+- `gnEnsureLegalSoloMove`: mosse sempre da `legalPlacements`.
+- Nessun `gnFinalizeGlobalMoveAction` su solitario (evita repick illegali).
+
+**Probe core (no reshuffle, TG, 2026-07-11):**
+- 3x3: ~17-25% (30-50 seed)
+- 4x4: ~6% (3/50); con vita extra N: ~12% (6/50)
+- 5x5..8x8: 0/30 (epico / da affinare)
+
+**Web (v0.1.6):** `game.js`, `gioco.html`, `simulazione-singolo.html` — coordinatore attivo anche G=1; vita extra N opzionale in solitario (coop coordinatore la disabilita ancora).
+
+## 2026-07-11 — Probe varianti opzionali x coordinatore TG (3x3 solitario)
+
+**Script:** `scripts/solo-coordinator-variant-probe.js` — strategia `durissima-global-planner`, 50 seed, confronto varianti.
+
+**3x1 (mano 3, tallone 6):**
+
+| Variante | Win% | Coordinatore attivo? | Note |
+|----------|------|----------------------|------|
+| Core puro | 22% | si | baseline coordinatore |
+| N reshuffle | 26% | si | vita/med **0** — il coordinatore non reshuffla a inizio turno |
+| Pool riserva N | **60%** | si | salto forte |
+| Free-draw + N reshuffle | 26% | no (fallback team) | vita/med 2,44 |
+| Scarti N | 32% | no (fallback team) | |
+| Hand-cap N / 2N | 4% / 2% | no | quasi inutile |
+| Emergenza x3 | **60%** | si | pescate extra quando bloccato |
+| After-play x3 | 0% | si | non aiuta su 3x3 |
+| Planner G + core (baseline) | 0% | legacy | stessi seed probe |
+| Planner G + vita | 30% | legacy | vita/med 2,5 |
+
+**Gap motore:** con vita extra ON il coordinatore resta attivo ma **non** chiama `chooseDurissimaTurnStartAction` (reshuffle strategico = 0 uso vita). Riserva ed emergenza funzionano perche' non escludono il coordinatore.
+
+**Prossimo:** integrare reshuffle nel ramo coordinatore solitario; poi ripetere probe su 4x4.
+
+**4x1 (mano 4, tallone 12), 50 seed:**
+
+| Variante | Win% | Coordinatore? |
+|----------|------|---------------|
+| Core puro | 2% | si |
+| N reshuffle | 10% | si (vita/med 0) |
+| Pool riserva N | **48%** | si |
+| Free-draw + vita | 22% | no |
+| Scarti N | 10% | no |
+| Hand-cap N / 2N | 2% / 0% | no |
+| Emergenza x3 | **36%** | si |
+| After-play x3 | 0% | si |
+| Planner G core / vita | 0% / 14% | legacy |
+
+Riserva resta la variante migliore; emergenza x3 scende ma resta utile. Coordinatore core solo 2% (tallone 12); vita ON senza reshuffle integrato = 10% vs planner G 14%.
+
+**5x1 (mano 5, tallone 20), 50 seed:**
+
+| Variante | Win% | Coordinatore? | Storico giu 2026 (planner G + vita) |
+|----------|------|---------------|-------------------------------------|
+| Core / N reshuffle (coord) | 0% / 0% | si, vita 0 | 5x1 ~3,4% |
+| Riserva N | **26%** | si | — |
+| Free-draw + vita | 2% | no | — |
+| Scarti N | 2% | no | — |
+| Emergenza x3 | **18%** | si | — |
+| Planner G vita | 2% | legacy, vita 4,92 | ~3,4% |
+
+Trend confermato: riserva > emergenza >> core; coordinatore core/vita a 0% su 5x5; riserva cala 60%->48%->26% da 3x3 a 5x5.
+
+**6x1 (mano 6, tallone 30), 50 seed:**
+
+| Variante | Win% |
+|----------|------|
+| Core coord | 2% (1/50, rumore?) |
+| N reshuffle coord | 0% |
+| Riserva N | **22%** |
+| Emergenza x3 | 4% |
+| Free-draw / scarti / hand-cap | 0% |
+| Planner G vita | 0% (vita/med 6, satura pool) |
+
+Riserva resta #1 ma scende; emergenza quasi spenta; 6x6 = territorio epico (storico G=N core ~0,3%).
+
+**7x1 (mano 7, tallone 42), 50 seed:** riserva 0/50 — **varianza** (vedi sotto).
+
+**7x1 ampliato (150 seed, stessi seed-tag):** riserva **7/150 (4,7%)** IC95 ~+/−3,4%; emerg-x3 **3/150 (2,0%)**; core 1/150; vita coord 0/150. Con tasso vero ~2-5%, 0/50 ha probabilita' ~8-36% — non prova impossibilita'.
+
+**8x1 riserva 150 seed:** 2/150 (**1,3%**) vs 1/50 (2%) — 7x7 riserva leggermente migliore di 8x8 sullo stesso campione esteso.
+
+**8x1 (mano 8, tallone 56), 50 seed:** core/vita/emerg/planner 0%. Riserva **2%** (1/50), scarti/free-draw **2%** (1/50 ciascuno, fallback team). Serie L3-8 completa: riserva 60->48->26->22->0->2%; sotto 1% quasi ovunque da 7x7 in su.
+
+**Serie completa solitario TG + varianti (50 seed):** script `solo-coordinator-variant-probe.js`. Prossimo: reshuffle nel coordinatore; fascia prodotto solitario consigliata 3x3-6x6 con riserva o emergenza.
+
+## 2026-07-11 — Solitario epico: gioco risolto (riserva N)
+
+**Decisione utente:** bilanciamento accettato. ~1% su 7x7/8x8 con coordinatore + **pool riserva N** e' «tantissimo» rispetto all'atteso ~0,1%; fase probe solitario **chiusa**.
+
+**Variante vincente:** core Durissima + `durissimaReserveEnabled: true`, `durissimaReserveSize: N`, vita extra **off**, emergenza default 0, coordinatore una mente ON. Probe: 7x7 **4,7%** (7/150), 8x8 **1,3%** (2/150).
+
+## 2026-07-11 — Riserva N integrata in solitario (v0.1.7)
+
+**Prodotto:** pool riserva N = regola fissa **solo G=1**; coop G>=2 resta N reshuffle senza riserva.
+
+**Codice:** `defaultDurissimaReserveEnabled` in `mpcards-core.js` (auto ON se `players===1`); `game.js` + `gioco.html` + `simulazione-singolo.html` — checkbox rimossa, nota UI solitario; `RULES.md` sezione dedicata. Test: `testDurissimaSoloDefaultReserveN`, `testDurissimaCoopNeverUsesReserve`.
+
+## 2026-07-11 — Handoff Grok 4.5 (commit + push v0.1.7)
+
+**Fatto:** commit `feat: riserva N regola fissa solitario Durissima v0.1.7` + push. Gioco **risolto** come bilanciamento; probe 50-150 seed accettati dall'utente (~1-5% epico 7x7/8x8).
+
+**Non rifare:** riaprire solver one-mind coop; ri-proporre varianti scarti/hand-cap come default solitario.
+
+**Prossimi task (ordine utente):**
+
+| # | Task | Note |
+|---|------|------|
+| 1 | Probe statistica **realistica** | Molti piu' seed (1000+?), 8 worker, config prodotto G=1 riserva+TG; aggiornare tabelle giocabilita' |
+| 2 | Regole mancanti | `RULES.md` + eventuale Word fisico |
+| 3 | Web per giocare | `gioco.html` UX partita umana, non solo sim |
+
+**Probe storici (indicativi, non definitivi):** 3x3 riserva ~60%, 4x4 ~48%, 5x5 ~26%, 6x6 ~22%, 7x7 ~4,7% (7/150), 8x8 ~1,3% (2/150) — coordinatore + riserva, vita off.

@@ -1,7 +1,8 @@
 {
-  "version": "0.1.4",
+  "version": "0.1.7",
   "scripts": {
     "test": "node tests/core-regression.test.js",
+    "build:coordinator-browser": "node scripts/build-coordinator-browser.js",
     "test:durissima:probe": "node scripts/durissima-rules-probe-check.js",
     "test:durissima:probe:full": "node scripts/durissima-rules-probe-check.js --full",
     "classic:sweep:L3-L5": "node scripts/classic-sweep.js L3-L5",
@@ -14,6 +15,7 @@
     "deploy:partykit": "npm run prepare:partykit && npx partykit deploy"
   },
   "devDependencies": {
+    "docx": "^9.7.1",
     "partykit": "latest"
   }
 }

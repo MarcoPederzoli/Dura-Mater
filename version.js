@@ -1,7 +1,7 @@
 window.MPCARDS_VERSION = {
-  version: "0.1.4",
+  version: "0.1.7",
   commit: "local",
-  deployedAt: "local"
+  deployedAt: "2026-07-11"
 };
 
 (function showAppVersion() {

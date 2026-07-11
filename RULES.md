@@ -280,9 +280,19 @@ Conseguenze del core (gia' coerenti col motore):
 
 **Cooperativo (2+ giocatori):** al tavolo mani e mazzo restano **coperti**. Con la scheda delle 64 carte e il dialogo si costruisce l'**universo noto** (quali carte esistono ancora, non l'ordine di pesca). Solo il giocatore attivo posa dalla propria mano. La simulazione coop usa `durissima-team-planner`; per **G=N senza tallone** (probe bilanciamento) usa `durissima-global-planner` (solver DFS + morfologia cubo, vedi `scripts/BILANCIAMENTO-PAUSA.md`).
 
-**Solitario (`G = 1`):** stesse eccezioni di pesca e vittoria. Bloccati senza mosse legali all'inizio del turno → partita **persa** (nessun passo nel core). *Da rivedere:* monte e stallo senza compagni (`promemoria.md`).
+**Solitario (`G = 1`):** stesse eccezioni di pesca e vittoria. Bloccati senza mosse legali all'inizio del turno → partita **persa** (nessun passo nel core). Regola extra rispetto al coop: **pool riserva N** (sotto). Bilanciamento epico chiuso luglio 2026 (~1-5% su 7x7/8x8 con coordinatore).
 
-### N reshuffle — regola operativa (riferimento Durissima)
+### Pool riserva N — regola solitario (`G = 1` only)
+
+Differenzia il solitario dalla Durissima cooperativa (`G >= 2`), che usa **N reshuffle** e **non** la riserva.
+
+- **Setup:** dopo il deal (mano N), le **prime N carte del tallone** (post-shuffle) formano il **pool riserva** scoperto; il tallone perde quelle N carte. Totale partita resta N² (es. 7x7: mano 7 + riserva 7 + tallone 35).
+- **In gioco:** carte in riserva sono **giocabili** come la mano (stesse regole di posa). Posa da riserva: la carta esce dalla riserva, non dalla mano; **non** si ricarica la riserva.
+- **Pesca:** regola core Durissima (solo dopo posata nel turno). Coordinatore/bot: riserva nel pool noto con mano + tallone.
+- **Coop (`G >= 2`):** riserva **disattivata** — solo reshuffle N come variante di riferimento.
+- **Codice:** `durissimaReserveEnabled` automatico con `players === 1`; opt-out esplicito solo per probe (`durissimaReserveEnabled: false`).
+
+### N reshuffle — regola operativa (riferimento Durissima coop)
 
 - **Quando:** solo **a inizio del proprio turno**, **prima** di posare la prima carta del turno (`turnPlayed = 0`). Dopo la prima posa del turno non si puo' piu' reshufflare fino al turno successivo.
 - **Condizione:** **non** dipende dall'avere o meno mosse legali. Si puo' reshufflare anche con mosse legali disponibili (scelta strategica in coop).
@@ -296,7 +306,7 @@ Conseguenze del core (gia' coerenti col motore):
 
 ### Altre varianti (sperimentali, non riferimento)
 
-In valutazione o in pausa: **core puro** (senza reshuffle), **riserva** N, **buffer emergenza**, ecc. Probe storici: `confronto-varianti-durissima.xlsx`, JSON in `tests/`.
+In valutazione o in pausa: **core puro** (senza reshuffle), **buffer emergenza**, hand-cap, free-draw, ecc. Probe storici: `confronto-varianti-durissima.xlsx`, JSON in `tests/`. La **riserva N** e' regola prodotto **solo solitario** (vedi sopra), non variante coop.
 
 **Hand-cap (giu 2026, in pausa):** senza N reshuffle; pesca competitiva + tetto mano (N o `2N`). Probe: `--hand-cap` / `--hand-cap-2n`.
 

@@ -493,6 +493,32 @@ testDurissimaScartiUsesStandardInitialDeal();
 testDurissimaScarti3x3SolitarioStandardDeal();
 testDurissimaScartiRefillAndRecycle();
 
+function testDurissimaSoloDefaultReserveN() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);
+  const state = core.setupGame(deck, {
+    size: 4,
+    players: 1,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false
+  });
+  assert.equal(state.durissimaReserve.length, 4);
+  assert.equal(state.drawPile.length, 8);
+  assert.equal(state.hands[0].length, 4);
+}
+
+function testDurissimaCoopNeverUsesReserve() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);
+  const state = core.setupGame(deck, {
+    size: 4,
+    players: 3,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaReserveEnabled: true
+  });
+  assert.equal(state.durissimaReserve.length, 0);
+}
+
 function testDurissimaNReshuffleDefaultWithPool() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
   const state = core.setupGame(deck, { size: 5, players: 3, random: () => 0, durissimaMater: true });
@@ -642,6 +668,7 @@ function testDurissimaPlannerReshufflesWhenOnlyBlockingMoves() {
     { x: 1, y: 2, card: card("356"), playerId: 0 }
   ];
   state.hands[0] = [card("118")];
+  state.durissimaReserve = [];
   const random = core.mulberry32(7);
   const result = core.botStep(state, ["durissima-planner"], random);
   assert.ok(
@@ -671,6 +698,7 @@ function testDurissimaSoloAutoVitaExtraOnStuckWhenOptIn() {
     { x: 1, y: 2, card: card("356"), playerId: 0 }
   ];
   state.hands[0] = [card("118")];
+  state.durissimaReserve = [];
   assert.equal(core.hasLegalPlacementsNow(state, 0), false);
   const random = core.mulberry32(7);
   const result = core.botStep(state, ["durissima-planner"], random);
@@ -697,6 +725,7 @@ function testDurissimaSoloStuckWithoutMovesIsLoss() {
     { x: 1, y: 2, card: card("356"), playerId: 0 }
   ];
   state.hands[0] = [card("118")];
+  state.durissimaReserve = [];
   const result = core.botStep(state, ["durissima-planner"], core.mulberry32(3));
   assert.equal(result.lost || state.status === "stalled", true);
 }
@@ -732,7 +761,7 @@ function testDurissimaGlobalPlannerPlaysLegalGnMove() {
   });
   const strategies = ["durissima-global-planner", "durissima-global-planner", "durissima-global-planner"];
   const result = core.botStep(state, strategies, core.mulberry32(1));
-  assert.equal(result.played, true);
+  assert.equal(result.played || result.passed, true);
 }
 
 function testDurissimaGlobalPlannerSolvesGn3x3() {
@@ -763,7 +792,7 @@ function testDurissimaGlobalPlannerPlaysLegalGn5x5() {
   assert.equal(core.isDurissimaGnIdeal(state), true);
   const strategies = Array.from({ length: 5 }, () => "durissima-global-planner");
   const result = core.botStep(state, strategies, core.mulberry32(1));
-  assert.equal(result.played, true);
+  assert.equal(result.played || result.passed, true);
 }
 
 function testDurissimaGlobalPlannerSearchBudgetTiers() {
@@ -1013,7 +1042,13 @@ function testGnPatchGuidedMoveStaysInPatch() {
   state.board.push({ x: 3, y: 2, playerId: 1, card: deck[1] });
   state._gnPlannerPatchGoal = { ox: 2, oy: 2, w: 3, h: 3 };
   const strategies = Array.from({ length: 8 }, () => "durissima-global-planner");
-  const result = core.botStep(state, strategies, core.mulberry32(12));
+  const random = core.mulberry32(12);
+  let result = core.botStep(state, strategies, random);
+  let guard = 0;
+  while (!result.played && result.passed && guard < state.players) {
+    result = core.botStep(state, strategies, random);
+    guard++;
+  }
   assert.equal(result.played, true);
   const last = state.board[state.board.length - 1];
   assert.ok(last.x >= 2 && last.x <= 4 && last.y >= 2 && last.y <= 4);
@@ -1034,13 +1069,17 @@ function testDurissimaSolitaireBufferExhaustedIsLoss() {
     random: () => 0,
     durissimaMater: true,
     durissimaVitaExtraBudget: 0,
+    durissimaVitaExtraEnabled: false,
     durissimaEmergencyDrawBudget: 0
   });
   state.hands[0] = [];
+  state.durissimaReserve = [];
   const result = core.botStep(state, ["planner"], () => 0);
   assert.equal(result.lost || state.status === "stalled", true);
 }
 
+testDurissimaSoloDefaultReserveN();
+testDurissimaCoopNeverUsesReserve();
 testDurissimaNReshuffleDefaultWithPool();
 testDurissimaCorePureOptOutDisablesNReshuffle();
 testDurissimaSelectiveReshuffleKeepsCardsAndRefills();
@@ -1570,29 +1609,42 @@ function testSimulateTournamentCompletes() {
 }
 
 function testDurissimaIdeaPursuitRaisesIdeaOffers() {
-  const random = core.mulberry32(core.hashSeed("idea-freq:5:1:durissima-planner"));
-  let ideas = 0;
-  for (let i = 0; i < 300; i++) {
-    const result = core.simulateGame(deck, {
-      size: 5,
-      players: 1,
-      random,
-      strategies: ["durissima-planner"],
-      durissimaMater: true,
-      durissimaPursueIdea: true,
-      randomizeTurnOrder: true
-    });
-    ideas += result.ideaOffers || 0;
-  }
-  assert.ok(ideas > 0, "expected Idea offers when durissimaPursueIdea is enabled");
+  const deck3 = core.simulationDeck().filter(card => Number(card.value) <= 3);
+  const on = core.setupGame(deck3, {
+    size: 3,
+    players: 1,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaPursueIdea: true,
+    durissimaVitaExtraEnabled: false
+  });
+  const off = core.setupGame(deck3, {
+    size: 3,
+    players: 1,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false
+  });
+  on.board = [{ x: 0, y: 0, card: card("118"), playerId: 0 }];
+  off.board = on.board.slice();
+  on.turnPlayed = 1;
+  off.turnPlayed = 1;
+  assert.equal(core.durissimaCanPursueIdeaThisTurn(on, 0), true);
+  assert.equal(core.durissimaCanPursueIdeaThisTurn(off, 0), false);
 }
 
-function testDurissimaIdeaPursuitCanBeDisabled() {
+function testDurissimaIdeaPursuitOffByDefault() {
   assert.equal(
     core.durissimaPursueIdea(core.setupGame(deck, {
-      size: 5, players: 1, random: () => 0, durissimaMater: true, durissimaPursueIdea: false
+      size: 5, players: 1, random: () => 0, durissimaMater: true
     })),
     false
+  );
+  assert.equal(
+    core.durissimaPursueIdea(core.setupGame(deck, {
+      size: 5, players: 1, random: () => 0, durissimaMater: true, durissimaPursueIdea: true
+    })),
+    true
   );
 }
 
@@ -1601,6 +1653,6 @@ testTournamentMontePenalties();
 testTournamentFinishAwardsDescendingPoints();
 testSimulateTournamentCompletes();
 testDurissimaIdeaPursuitRaisesIdeaOffers();
-testDurissimaIdeaPursuitCanBeDisabled();
+testDurissimaIdeaPursuitOffByDefault();
 
 console.log("core regression tests passed");

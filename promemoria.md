@@ -116,27 +116,38 @@ La chat Grok non e' persistente: il diario e' `SESSIONI.md` (su Git).
 ## Giocabilità (provvisoria, giugno 2026)
 
 - **Dura (competitiva + torneo):** chiusa come prodotto — `G_min … 2N`, **nessun solitario** (`G = 1` escluso da UI e regole prodotto). Sweep `G >= G_min`: vittoria 74-100%.
-- **Solitario:** solo **Durissima** (`G = 1`, griglia piena); **Dura solitario abbandonato** (giugno 2026) — troppo breve / fortunoso a N basso, banale a N alto.
-- **Durissima:** variante di riferimento **N reshuffle** (core + pool N). Coop consigliato `G = N`; **3x3/4x4** core; **5x5** molto difficile; **6x6+** estremo/epico. G legali `1..2N` (no G_min competitivo).
+- **Solitario:** solo **Durissima** (`G = 1`, griglia piena); **Dura solitario abbandonato** (giugno 2026). Regola extra solitario: **pool riserva N** (prime N del tallone, scoperte) — **non** in coop. Bilanciamento epico **chiuso** (lug 2026).
+- **Durissima coop (G >= 2):** variante di riferimento **N reshuffle** (core + pool N). Coop consigliato `G = N`; **3x3/4x4** core; **5x5** molto difficile; **6x6+** estremo/epico. G legali `2..2N` (solitario G=1 a parte).
 - Dettaglio in `RULES.md` e `scripts/BILANCIAMENTO-PAUSA.md`. JSON probe Durissima: non eliminare.
 
 ## Focus attuale
 
+**Stato luglio 2026 — gioco RISOLTO (bilanciamento):** Dura competitiva chiusa; Durissima coop G>=2 chiusa (coordinatore TG); Durissima **solitario G=1** chiuso con **pool riserva N** + coordinatore (v0.1.7). Win% probe attuali (50-150 seed) sono **indicativi**, non definitivi per il prodotto.
+
+### Prossima sessione (priorita' utente)
+
+1. **Statistica solitario «seria»:** rifare probe con **molti piu' seed** (es. 1000+ per L, IC95 strette) su configurazione prodotto: G=1, riserva N ON, coordinatore ON, vita extra OFF. Script: `scripts/solo-coordinator-variant-probe.js` (estendere `--seeds` / worker 8). Obiettivo: percentuali epiche **statisticamente realistiche** (7x7, 8x8, curva 3x3-8x8).
+2. **Regole mancanti:** scrivere/completare in `RULES.md` (e allineare Word fisico se richiesto) — dettaglio tavolo, solitario vs coop, testo giocatore.
+3. **Web giocabile:** sistemare UI per **giocare** il prodotto (non solo simulare) — `gioco.html` human-first, varianti chiare, revamp select regole rinviato ma UX partita da rifinire.
+
 - **Dura:** competitiva + torneo — **chiusa** (bot planner adeguato).
-- **Durissima G=N — coordinatore squadra:** risolto. Implementato coordinatore "una mente vs mazzo" (`mpcards-core.js` + oracle). Piano completo una volta per deal (lib per 4 + findPerfectPlanForDeal), seguito strict con passi. 
-  - **Risultato:** 100% su 3x3..8x8 (G=N) in test estesi (fino 20 deal per formato, 0 nodi per 4-8). 8x8 è il massimo (64 carte).
-  - Metodo: precomp/oracle → normalize → strict follower (pass per titolare). Chiusura soluzione (2026-07-10).
-- **Prossimo:** eventuale estensione a varianti (reshuffle, tallone) o uso del solver A+B in altri contesti. Per ora la forma G=N Durissima è risolta dal bot.
-- **Report solvibilita' (2026-07-09):** `Dropbox\...\17 - DURA MATER\Report_Solvibilita_Dura_Durissima.docx`
-- **In pausa:** layout ideali come linea principale (`GN_SKIP_IDEAL_LAYOUT=1` se serve). Opt-out coordinatore: `GN_LEGACY_PER_PLAYER=1`.
+- **Durissima coop (G >= 2) — coordinatore "una mente vs mazzo":** **archiviata / risolta** (2026-07-11).
+  - Metodo: piano dal pool noto (mani + tallone) con carte specifiche + strict follower con passi; per G > N anche safe prefix + relax endgame.
+  - **G = N** (3x3 .. 8x8): **100%** (0 nodi, precomp/oracle + strict follow).
+  - **G = 2 .. 2N** legali (mano iniziale >= 3): **98.3%** overall con tallone <= 20 (417/424 deal). G=N sempre 100%.
+  - Casi epici accettati: **8x2** 4% (2/50); G molto basso + tallone enorme difficile per design.
+  - Soglia pratica: tallone <= 12-15 quasi sempre ok; calo sotto 80% da tallone ~15-20 (peggio con mano piccola).
+  - Codice: `mpcards-core.js`. Opt-out legacy: `GN_LEGACY_PER_PLAYER=1`. Layout ideali in pausa: `GN_SKIP_IDEAL_LAYOUT=1`.
+- **Durissima Mater solitario** (G = 1): **risolto** (v0.1.7). Pool riserva N **integrato in prodotto** (automatico G=1); coordinatore una mente; 7x7 ~5%, 8x8 ~1%. Vita extra opzionale in UI (non default). **Non** usare il nome "Nefanda Mater" (scartato).
+- **Artefatti:** `results/Risultati_Durissima_Coordinatore_One_Mind.docx` + copia in Dropbox `17 - DURA MATER\`. Report precedente: `Report_Solvibilita_Dura_Durissima.docx`.
+- **In pausa:** layout ideali come linea principale. Handoff 2026-07-09 (`scripts/HANDOFF-COORDINATORE-DURISSIMA.md`) superato dalla chiusura G>=2.
 - **Da definire (torneo):** punteggio bersaglio per G molto alto (es. 16).
 - **Editore:** integrare tabella configurazioni finali in `Analisi-Mazzo-Dura-Mater.docx`.
 
 ## Da sistemare (regole)
 
 - **Pesca / monte (2026-06):** competitiva — pesca anche su pass; monte dopo G pass senza posate (anche con tallone pieno). Durissima coop — pesca solo dopo posata; stesso monte. Implementato in `mpcards-core.js` + `RULES.md`.
-- **Durissima solitario:** da rivedere con la modalità Durissima (monte / stallo, bilanciamento); non in Dura.
-- **Nefanda Mater:** nome provvisorio per la modalità solitario (G=1). Trattata come gioco a parte. Si partirà dal bot attuale e si testeranno soluzioni già esplorate (vite extra, reshuffle, pool N, ecc.) con target >=1% di successi. Fase Durissima one-mind (G>=2) archiviata il 2026-07-11.
+
 
 ## Task tipici ancora aperti (opzionali)
 
@@ -146,4 +157,4 @@ La chat Grok non e' persistente: il diario e' `SESSIONI.md` (su Git).
 
 ---
 
-*Ultimo aggiornamento promemoria: 2026-07-09 — coordinatore squadra Durissima implementato; handoff in `scripts/HANDOFF-COORDINATORE-DURISSIMA.md`.*
+*Ultimo aggiornamento promemoria: 2026-07-11 — Gioco risolto; riserva N in prodotto (v0.1.7); prossimo: probe seed massivi, regole, web gioco.*

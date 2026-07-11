@@ -197,6 +197,14 @@
       color: var(--muted);
     }
 
+    .durissima-options {
+      width: 100%;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      padding-top: 2px;
+    }
+
     body.playing .setup {
       display: none;
     }
@@ -1045,12 +1053,12 @@
     }
   </style>
 </head>
-<body>
+<body data-default-variant="durissima">
   <main>
     <header class="page-head">
       <div>
         <h1>Dura Mater</h1>
-        <p>Simulazione di partita singola: mano visibile, confronto strategie bot.</p>
+        <p>Simulazione singola: Dura competitiva o Durissima (coop/solitario) con bot TG e confronto strategie.</p>
       </div>
       <nav>
         <a href="gioco.html">Gioco</a>
@@ -1066,8 +1074,15 @@
       </div>
       <div class="controls">
         <label>
+          Modalita'
+          <select id="game-variant">
+            <option value="dura">Dura Mater (competitiva)</option>
+            <option value="durissima" selected>Durissima Mater (coop / solitario)</option>
+          </select>
+        </label>
+        <label>
           Giocatori
-          <input id="players" type="number" min="2" max="21" value="3">
+          <input id="players" type="number" min="1" max="21" value="4">
           <span id="players-range-hint" class="prefs-hint" aria-live="polite"></span>
         </label>
         <label>
@@ -1095,12 +1110,25 @@
           <input id="tournament-mode" type="checkbox" aria-label="Torneo a punteggio">
           Torneo a punteggio
         </label>
+        <div id="durissima-options" class="durissima-options">
+          <label class="option-check">
+            <input id="durissima-coordinator" type="checkbox" checked aria-label="Coordinatore una mente">
+            Coordinatore una mente (TG) — coop G=2..2N (N reshuffle); solitario G=1 (pool riserva N)
+          </label>
+          <p id="durissima-solo-reserve" class="prefs-hint durissima-solo-rule" hidden>
+            Solitario (G=1): regola extra <strong>pool riserva N</strong> — le prime N del tallone, scoperte e giocabili (non in coop).
+          </p>
+          <label class="option-check">
+            <input id="durissima-vita-extra" type="checkbox" aria-label="Vita extra pool N">
+            Vita extra (pool N reshuffle, opzionale solitario)
+          </label>
+        </div>
         <button id="new-game">Avvia partita</button>
         <button id="load-game-setup" class="secondary" type="button">Carica partita</button>
         <button id="reset-prefs" class="secondary" type="button">Ripristina opzioni default</button>
       </div>
       <p id="format-tier-hint" class="format-tier-hint prefs-hint" data-tier="core" aria-live="polite"></p>
-      <p class="prefs-hint">Le impostazioni si salvano in questo browser (nome G1, giocatori, matrice, velocità, seed e configurazione). G2…G8: Dotto, Brontolo, Gongolo, Pisolo, Mammolo, Eolo, Cucciolo.</p>
+      <p class="prefs-hint">Default: Durissima 4x4 G=4, coordinatore on. Solitario G=1: pool riserva N automatico. G2…G8: Dotto, Brontolo, …</p>
       <div id="player-config" class="players"></div>
     </section>
 
@@ -1199,13 +1227,14 @@
         </div>
       </div>
     </div>
-    <div id="app-version" class="app-version">v0.1.2 · UI layout mano 2026-06-05</div>
+    <div id="app-version" class="app-version">v0.1.5</div>
   </main>
 
   <input id="load-game-file" type="file" accept="application/json,.json" hidden>
 
   <script src="version.js"></script>
   <script src="mpcards-core.js"></script>
+  <script src="durissima-coordinator-browser.js"></script>
   <script src="card-art.js"></script>
   <script src="card-names.js"></script>
   <script src="game-state.js"></script>

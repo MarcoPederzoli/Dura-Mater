@@ -445,7 +445,7 @@ const MPCARDS_CORE_SOURCE = `
 
   function candidateCells(state) {
     if (state.board.length === 0) {
-      const coordinated = gnUseCoordinatedTeamPlanner(state);
+      const coordinated = gnUseCoordinatedDurissimaPlanner(state);
       if (coordinated && state._gnFullSequence && state._gnFullSequence.length > 0) {
         // allow the seq to dictate where its first card goes (after we normalized the plan to min=0)
         const firstStep = state._gnFullSequence[0];
@@ -1858,7 +1858,8 @@ const MPCARDS_CORE_SOURCE = `
         options.targetPlan = state._gnTargetPlan;
       } else if (!state._gnTargetPlanTried) {
         try {
-          const ms = require("./scripts/durissima-matrix-solver");
+          const ms = dmRequireModule("./scripts/durissima-matrix-solver");
+          if (!ms) throw new Error("solver unavailable");
           let plan = null;
           if (state.size >= 4 && state.hands && Array.isArray(state.hands) && state.players === state.size && ms.createPlayerAwarePlanForDeal) {
             plan = ms.createPlayerAwarePlanForDeal(state.size, state.hands, { maxNodesA: 20000000, maxNodes: 1500000 });
@@ -1882,11 +1883,16 @@ const MPCARDS_CORE_SOURCE = `
     const baseMoveLimit = gnPerMoveNodesForSize(state.size);
     let moveLimit = baseMoveLimit;
 
-    // Per perfect-info G=N (una mente) dai più budget al search, specialmente su 4x4
+    // Per perfect-info G=N (una mente) o solitario G=1: più budget al search
     const perfectGN = gnUseCoordinatedTeamPlanner(state) && isDurissimaGnIdeal(state);
+    const soloGN = gnUseCoordinatedSoloPlanner(state);
     if (perfectGN) {
       if (state.size === 4) moveLimit = Math.max(moveLimit, 800000);
       else if (state.size <= 5) moveLimit = Math.max(moveLimit, Math.floor(baseMoveLimit * 2));
+    } else if (soloGN) {
+      if (state.size <= 4) moveLimit = Math.max(moveLimit, 600000);
+      else if (state.size <= 6) moveLimit = Math.max(moveLimit, Math.floor(baseMoveLimit * 1.8));
+      else moveLimit = Math.max(moveLimit, Math.floor(baseMoveLimit * 1.2));
     }
     const reserve = gnEndgameReserveNodes(state.size);
     const spent = ctx.stats.nodes;
@@ -3906,6 +3912,8 @@ const MPCARDS_CORE_SOURCE = `
     // la mente ha scelto l'ordine e la cella esatta una volta; finalize altererebbe il piano.
     if (state && state._gnFullSequence) {
       const seq = state._gnFullSequence;
+      const hasCards = seq.length > 0 && seq[0].card !== undefined;
+      if (!hasCards) return action;
       const m = action.move;
       for (let i = 0; i < seq.length; i++) {
         const step = seq[i];
@@ -4816,6 +4824,19 @@ const MPCARDS_CORE_SOURCE = `
     return relay ? { type: "move", move: relay } : null;
   }
 
+  /** Carica solver/oracolo in Node (require) o in browser (globalThis). */
+  function dmRequireModule(modulePath) {
+    const g = typeof globalThis !== "undefined" ? globalThis : {};
+    if (modulePath.indexOf("durissima-matrix-solver") >= 0 && g.DurissimaMatrixSolver) {
+      return g.DurissimaMatrixSolver;
+    }
+    if (modulePath.indexOf("durissima-gn-decoupled-oracle") >= 0 && g.DurissimaGnDecoupledOracle) {
+      return g.DurissimaGnDecoupledOracle;
+    }
+    if (typeof require !== "undefined") return require(modulePath);
+    return null;
+  }
+
   /**
    * Durissima coop: un solo pianificatore per la squadra (carte scoperte).
    * I G giocatori sono solo vincoli di proprieta' sulla carta da posare.
@@ -4828,6 +4849,89 @@ const MPCARDS_CORE_SOURCE = `
     if (durissimaUsesCompetitiveDraw(state)) return false;
     if (isDurissimaScartiNReshuffle(state)) return false;
     return true;
+  }
+
+  /** Durissima solitario G=1: pool noto (mano + tallone), pesca dopo posata, no pass. */
+  function gnUseCoordinatedSoloPlanner(state) {
+    if (typeof process !== "undefined" && process.env && process.env.GN_LEGACY_PER_PLAYER === "1") {
+      return false;
+    }
+    if (!isDurissimaMater(state) || state.players !== 1) return false;
+    if (durissimaUsesCompetitiveDraw(state)) return false;
+    if (isDurissimaScartiNReshuffle(state)) return false;
+    return true;
+  }
+
+  /** Coordinatore una mente: coop G>=2 oppure solitario G=1 (senza reshuffle competitivo). */
+  function gnUseCoordinatedDurissimaPlanner(state) {
+    return gnUseCoordinatedTeamPlanner(state) || gnUseCoordinatedSoloPlanner(state);
+  }
+
+  function gnBoardHasCell(state, x, y) {
+    return state.board.some(entry => entry.x === x && entry.y === y);
+  }
+
+  /**
+   * Solitario: verifica che la sequenza carta+cella sia realizzabile con pesca FIFO dal tallone.
+   * Simula posate, fine turno e pesca senza pass o reshuffle.
+   */
+  function gnSoloIsPlanSchedulable(state, plan) {
+    if (!plan || !plan.length || state.players !== 1) return true;
+    const target = state.size * state.size;
+    if (plan.length !== target) return false;
+    const fork = gnForkSearchState(state);
+    let stepIdx = 0;
+    let guard = 0;
+    const maxGuard = target * 48;
+    while (stepIdx < plan.length && guard++ < maxGuard) {
+      if (fork.status !== "playing") break;
+      const step = plan[stepIdx];
+      if (gnBoardHasCell(fork, step.x, step.y)) {
+        stepIdx++;
+        continue;
+      }
+      const requirement = placementRequirement(fork);
+      if (requirement === null || (requirement > 4 && requirement !== 1)) return false;
+      const hand = fork.hands[0] || [];
+      const legals = legalPlacements(fork, 0, requirement);
+      const live = step.card && hand.find(card => card.uid === step.card.uid);
+      const legal = live && legals.find(
+        move => move.x === step.x && move.y === step.y && move.card.uid === live.uid
+      );
+      if (legal) {
+        const frame = gnApplyPlacementInPlace(fork, 0, legal);
+        if (!frame) return false;
+        if (fork.turnPlayed >= 5) {
+          const endFrame = gnApplyEndTurnInPlace(fork);
+          if (!endFrame || fork.status !== "playing") return false;
+        }
+        stepIdx++;
+        continue;
+      }
+      if (fork.turnPlayed === 0) return false;
+      if (fork.turnPlayed > 0 && fork.turnPlayed < 5) {
+        const endFrame = gnApplyEndTurnInPlace(fork);
+        if (!endFrame || fork.status !== "playing") return false;
+        continue;
+      }
+      return false;
+    }
+    return fork.status === "success" || fork.board.length >= target;
+  }
+
+  /** Solitario: nessuna mossa fuori da legalPlacements (candidateCells + regole posa). */
+  function gnEnsureLegalSoloMove(state, playerId, action) {
+    if (!gnUseCoordinatedSoloPlanner(state) || !action || action.type !== "move" || !action.move) {
+      return action;
+    }
+    const requirement = placementRequirement(state);
+    const legals = legalPlacements(state, playerId, requirement);
+    const move = action.move;
+    const hit = legals.find(
+      entry => entry.card.uid === move.card.uid && entry.x === move.x && entry.y === move.y
+    );
+    if (hit) return { type: "move", move: hit };
+    return legals.length ? { type: "move", move: legals[0] } : { type: "stop" };
   }
 
   function gnAllTeamLegalPlacements(state, requirement) {
@@ -4973,7 +5077,8 @@ const MPCARDS_CORE_SOURCE = `
     if (_4x4SolutionLibrary) return _4x4SolutionLibrary;
     _4x4SolutionLibrary = [];
     try {
-      const ms = require("./scripts/durissima-matrix-solver");
+      const ms = dmRequireModule("./scripts/durissima-matrix-solver");
+      if (!ms) return _4x4SolutionLibrary;
       // Precomputiamo un pool di soluzioni "NxN" una volta per tutte (per N=4).
       // Ogni soluzione e' un piano completo (16 step card+cell) generato dal solver A+B.
       // In fase di deal ne scegliamo una il cui *insieme completo* di carte matcha le mani.
@@ -5001,7 +5106,8 @@ const MPCARDS_CORE_SOURCE = `
     if (state.turnPlayed >= 4 && requirement > 4) return { type: "stop" };
     if (state.turnPlayed < 4 && requirement > 4) return { type: "stop" };
 
-    const coordinated = gnUseCoordinatedTeamPlanner(state);
+    const coordinated = gnUseCoordinatedDurissimaPlanner(state);
+    const soloCoordinated = coordinated && state.players === 1;
     const perfectGNLive = coordinated && isDurissimaGnIdeal(state);
 
     // Force 1-card activations for sequence following (ensures req=1, sup>=1 safe for any valid growth seq).
@@ -5023,7 +5129,8 @@ const MPCARDS_CORE_SOURCE = `
         const isIdeal = isDurissimaGnIdeal(state);
         const drawPileLen = (state.drawPile || []).length;
 
-        const ms = require("./scripts/durissima-matrix-solver");
+        const ms = dmRequireModule("./scripts/durissima-matrix-solver");
+        if (!ms) throw new Error("solver unavailable");
 
         if (isIdeal) {
           // === G = N IDEAL: restore old reliable card-specific full match logic ===
@@ -5047,7 +5154,7 @@ const MPCARDS_CORE_SOURCE = `
           // oracle or sampling with full owned
           if (!chosen) {
             try {
-              const oracle = require("./scripts/durissima-gn-decoupled-oracle");
+              const oracle = dmRequireModule("./scripts/durissima-gn-decoupled-oracle");
               const dealState = { size, hands: state.hands, players: state.players };
               const res = oracle.findPerfectPlanForDeal(dealState, 200);
               if (res && res.success && res.script && res.script.length === targetLen && res.script.every(s => ownedUids.has(s.card.uid))) {
@@ -5076,7 +5183,8 @@ const MPCARDS_CORE_SOURCE = `
             state._gnSeqIdx = 0;
           }
         } else {
-          // === G > N: piano con carte specifiche dal pool noto completo (mani + tallone) ===
+          // === G > N o G=1 solitario: piano dal pool noto (mani + tallone) ===
+          const isSolo = state.players === 1;
           const fullPool = [];
           for (let p = 0; p < (state.hands || []).length; p++) if (state.hands[p]) fullPool.push(...state.hands[p]);
           if (state.drawPile) fullPool.push(...state.drawPile);
@@ -5088,12 +5196,19 @@ const MPCARDS_CORE_SOURCE = `
           }
 
           let bestPlan = null;
-          const maxTries = 2000;
+          let bestCellPlan = null;
+          const maxTries = isSolo ? Math.min(160, 40 + size * 12) : 2000;
+          const soloNodes = { maxNodesA: 1200000, maxNodesB: 350000 };
+          const poolNodes = isSolo ? soloNodes : { maxNodesA: 2000000, maxNodesB: 500000 };
           for (let t = 0; t < maxTries && !bestPlan; t++) {
-            const asm = ms.findSchedulableMatrix(size, { maxNodesA: 2000000, maxNodesB: 500000 });
+            const asm = ms.findSchedulableMatrix(size, poolNodes);
             if (!asm || !asm.success) continue;
             const p = ms.getTargetPlan(asm);
             if (!p || p.length !== targetLen) continue;
+
+            if (isSolo && !bestCellPlan) {
+              bestCellPlan = p.map(step => ({ x: step.x, y: step.y }));
+            }
 
             let mapped = [];
             let ok = true;
@@ -5104,7 +5219,14 @@ const MPCARDS_CORE_SOURCE = `
               if (!gameC) { ok = false; break; }
               mapped.push({ x: p[i].x, y: p[i].y, card: gameC });
             }
-            if (ok) bestPlan = mapped;
+            if (!ok) continue;
+            if (isSolo) {
+              if (t < 24 && gnSoloIsPlanSchedulable(state, mapped)) {
+                bestPlan = mapped;
+              }
+              continue;
+            }
+            bestPlan = mapped;
           }
 
           if (!bestPlan) {
@@ -5124,10 +5246,20 @@ const MPCARDS_CORE_SOURCE = `
             }
           }
 
+          if (!bestPlan && isSolo && bestCellPlan && bestCellPlan.length === targetLen) {
+            let minX = Infinity, minY = Infinity;
+            for (const s of bestCellPlan) { minX = Math.min(minX, s.x); minY = Math.min(minY, s.y); }
+            bestPlan = bestCellPlan.map(s => ({ x: s.x - minX, y: s.y - minY }));
+          }
+
           if (bestPlan && bestPlan.length === targetLen) {
             let minX = Infinity, minY = Infinity;
             for (const s of bestPlan) { minX = Math.min(minX, s.x); minY = Math.min(minY, s.y); }
-            const normalized = bestPlan.map(s => ({ x: s.x - minX, y: s.y - minY, card: s.card }));
+            const normalized = bestPlan.map(s => ({
+              x: s.x - minX,
+              y: s.y - minY,
+              card: s.card
+            }));
             state._gnFullSequence = normalized;
             state._gnSeqIdx = 0;
             state._gnDrawPileAtPlanning = (state.drawPile || []).length;
@@ -5154,15 +5286,17 @@ const MPCARDS_CORE_SOURCE = `
 
         const isEndgame = remainingCount <= 6 || (state.size * state.size - state.board.length) <= 6;
 
-        // Find all remaining steps whose specific card I hold
+        // Find all remaining steps whose specific card I hold (solo usa legalPlacements)
+        const legals = legalPlacements(state, playerId, requirement);
         let candidates = [];
         for (let i = 0; i < seq.length; i++) {
           const step = seq[i];
           if (state.board.some(b => b.x === step.x && b.y === step.y)) continue;
-          const live = myHand.find(c => c.uid === step.card.uid);
-          if (live && canPlaceCardAt(state, live, step.x, step.y, requirement)) {
-            candidates.push({ idx: i, live });
-          }
+          const legal = legals.find(
+            move => step.card && move.card.uid === step.card.uid
+              && move.x === step.x && move.y === step.y
+          );
+          if (legal) candidates.push({ idx: i, live: legal.card, legal });
         }
 
         if (candidates.length > 0) {
@@ -5177,7 +5311,18 @@ const MPCARDS_CORE_SOURCE = `
             const hasNext = myHand.some(c => c.uid === nextStep.card.uid && canPlaceCardAt(state, c, nextStep.x, nextStep.y, requirement));
             if (hasNext) state._gnJustPlayedSeqStep = false;
           }
-          return { type: "move", move: { x: seq[chosen.idx].x, y: seq[chosen.idx].y, card: chosen.live, cardUid: chosen.live.uid } };
+          const pick = chosen.legal || {
+            x: seq[chosen.idx].x,
+            y: seq[chosen.idx].y,
+            card: chosen.live,
+            cardUid: chosen.live.uid
+          };
+          return { type: "move", move: pick };
+        }
+
+        if (soloCoordinated && state.turnPlayed === 0 && state.size <= 4 && !state._gnFullSequence) {
+          const dfsAction = solveGnCoordinatedBestAction(state, playerId, random);
+          if (dfsAction) return dfsAction;
         }
 
         // For awkward high-G endgame (7x10 etc.), do not force stop here.
@@ -5190,29 +5335,31 @@ const MPCARDS_CORE_SOURCE = `
         // Cell-only plan (G > N): gioca la cella più precoce del piano per cui ho una carta che ci si può posare.
         // Questo rispetta l'ordine geometrico deciso dalla mente, usando qualsiasi carta adatta quando arriva.
         const myHand = state.hands[playerId] || [];
+        const cellLegals = legalPlacements(state, playerId, requirement);
         for (let i = 0; i < seq.length; i++) {
           const t = seq[i];
           if (state.board.some(b => b.x === t.x && b.y === t.y)) continue;
-          const fit = myHand.find(c => canPlaceCardAt(state, c, t.x, t.y, requirement));
+          const fit = cellLegals.find(
+            move => move.x === t.x && move.y === t.y && myHand.some(c => c.uid === move.card.uid)
+          );
           if (fit) {
             state._gnSeqIdx = i + 1;
             state._gnJustPlayedSeqStep = true;
-            return { type: "move", move: { x: t.x, y: t.y, card: fit, cardUid: fit.uid } };
+            return { type: "move", move: fit };
           }
           break;
         }
 
-        const legals = legalPlacements(state, playerId, requirement);
-        if (legals.length) {
+        if (cellLegals.length) {
           if (state.players > state.size) {
             // high G: prefer any plan cell to advance and draw
             for (let i = 0; i < Math.min(seq.length, 6); i++) {
               const t = seq[i];
               if (state.board.some(b => b.x === t.x && b.y === t.y)) continue;
-              const m = legals.find(mm => mm.x === t.x && mm.y === t.y);
+              const m = cellLegals.find(mm => mm.x === t.x && mm.y === t.y);
               if (m) return { type: "move", move: m };
             }
-            return { type: "move", move: legals[0] };
+            return { type: "move", move: cellLegals[0] };
           }
           return { type: "stop" };
         }
@@ -5220,9 +5367,10 @@ const MPCARDS_CORE_SOURCE = `
       }
     }
 
-    // Search solo come fallback se NON abbiamo una sequenza pre-scelta valida da seguire.
-    // Quando la seq (da lib/oracle/sample) viene acquisita, il follower strict la esegue (con pass).
-    if (coordinated && state.size <= 5 && !state._gnFullSequence) {
+    // Search come fallback se NON abbiamo una sequenza pre-scelta valida da seguire.
+    // Solitario: DFS anche su griglie grandi (no pass coop).
+    if (coordinated && !state._gnFullSequence
+        && (state.size <= 5 || (soloCoordinated && state.size <= 4))) {
       const searchOpts = gnMoveSearchOptions(state, { coordinatedTeam: true });
       if (searchOpts) {
         if (state.size === 4) searchOpts.maxNodes = Math.max(searchOpts.maxNodes || 0, 1000000);
@@ -5677,10 +5825,12 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   function chooseAction(state, playerId, strategy, random) {
-    if (gnUseCoordinatedTeamPlanner(state)
+    if (gnUseCoordinatedDurissimaPlanner(state)
         && (strategy === "durissima-global-planner" || strategy === "durissima-team-planner")) {
-      const action = chooseDurissimaCoordinatedAction(state, playerId, random);
-      if (strategy === "durissima-global-planner" && action.type === "move") {
+      let action = chooseDurissimaCoordinatedAction(state, playerId, random);
+      action = gnEnsureLegalSoloMove(state, playerId, action);
+      if (strategy === "durissima-global-planner" && action.type === "move"
+          && !gnUseCoordinatedSoloPlanner(state)) {
         return gnFinalizeGlobalMoveAction(state, playerId, action);
       }
       return action;
@@ -5996,8 +6146,14 @@ const MPCARDS_CORE_SOURCE = `
     return true;
   }
 
+  /** Solitario G=1: pool riserva N sempre attivo (regola prodotto). Coop G>=2: mai riserva. */
   function defaultDurissimaReserveEnabled(options) {
-    return options.durissimaMater === true && options.durissimaReserveEnabled === true;
+    if (options.durissimaMater !== true) return false;
+    if (options.durissimaScartiNReshuffle === true) return false;
+    const players = Number(options.players);
+    if (Number.isInteger(players) && players > 1) return false;
+    if (players === 1) return options.durissimaReserveEnabled !== false;
+    return options.durissimaReserveEnabled === true;
   }
 
   function defaultDurissimaVitaExtraPool(size, options) {
@@ -7033,6 +7189,10 @@ const MPCARDS_CORE_SOURCE = `
     gnShallowMaxDepth,
     gnShallowNodesPerMove,
     gnUseCoordinatedTeamPlanner,
+    gnUseCoordinatedSoloPlanner,
+    gnUseCoordinatedDurissimaPlanner,
+    gnSoloIsPlanSchedulable,
+    gnEnsureLegalSoloMove,
     gnAllTeamLegalPlacements,
     gnChooseGlobalTeamPlacement,
     chooseDurissimaCoordinatedAction,
