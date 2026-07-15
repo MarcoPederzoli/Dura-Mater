@@ -1881,3 +1881,69 @@ Pronti.
 **Test:** `node temp-8x8-ge8-test.js --workers 7 --seeds 15` — G=8..16.
 **Risultato:** **135/135 = 100%**, avg placed 64/64 su ogni G. Tempi ~250-640ms/deal.
 **Sintesi ladder G>=N (15 seed/config):** 5x5, 6x6, 7x7, 8x8 tutti 100% su G da N al max legale. Path unificato validato.
+
+## 2026-07-15 — Implementazione G<N (G>1, senza pool, no G=1)
+
+**Approccio:** regimi per conoscenza.
+- fullKnown (draw < G): stesso path G>=N (assembly residuo sul board + replan).
+- partial (G>1, G<N, tallone grande): prefisso owned su scheletro celle + target flex + replan periodico; handoff a fullKnown.
+- Planning spostato PRIMA del follow (fix handoff stale).
+- G=1 escluso da questo ramo. Nessun pool condiviso.
+
+**Test** `temp-gltN-test.js` 10 seed, 100 deal:
+- Overall win **4%** (4/100); prima era 0%.
+- avg placed alto (es. 7x6 ~46/49, 8x6 ~61/64) — chiude quasi ma manca la coda.
+- 4x3 20%, 5x4 10%, 7x5 10% primi solve.
+- Regressione 5x5 G>=5 e 6x6 G>=6: ancora 100%.
+
+**Prossimo:** migliorare piano residuo fullKnown mid-game (backtrack/assembly) e/o realistico di chiusura; poi eventuale pool solo solitario.
+
+## 2026-07-15 — G<N migliorato (residuo greedy+DFS, endgame, sweep completo)
+
+**Modifiche:**
+- Piano residuo mid-game fullKnown: greedy + DFS/MRV se incompleto e vuoti <=12 (budget stretti).
+- Finish search solo senza fullSeq completa (non rovina G>=N).
+- Realistico endgame aggressivo (empty <=8/5/3).
+- G=1 escluso; no pool.
+
+**Regressione G>=N:** 5x5 e 6x6 ancora 100%.
+
+**Sweep G<N legali G>1, N=3..8, 10 seed, 210 deal** (`temp-gltN-test.js`):
+
+| NxG | tall | win% | avgP |
+|-----|------|------|------|
+| 3x2 | 3 | 100% | 9/9 |
+| 4x2 | 8 | 20% | 14.3/16 |
+| 4x3 | 4 | 90% | 15.9/16 |
+| 5x2 | 15 | 30% | 24.2/25 |
+| 5x3 | 10 | 20% | 24.1/25 |
+| 5x4 | 5 | 70% | 24.7/25 |
+| 6x2 | 24 | 10% | 34.4/36 |
+| 6x3 | 18 | 40% | 35.1/36 |
+| 6x4 | 12 | 20% | 34.8/36 |
+| 6x5 | 6 | 0% | 34.4/36 |
+| 7x2..6 | 7-35 | 0-20% | ~47/49 |
+| 8x2..7 | 8-48 | 0% | ~61/64 |
+
+**Overall: 22.4% (47/210)** — era 4% sul subset precedente.
+**Osservazione:** tallone medio-basso vicino a N va meglio (4x3 90%, 5x4 70%, 3x2 100%); 8xN e 6x5 ancora 0% ma placed molto alti.
+
+## 2026-07-15 — G<N: obiettivo >=1 win per ogni N>G>1 RAGGIUNTO
+
+**Fix coda (Priorita 1):**
+- Replan forzato a empty 8 e 4 (G<N / partial).
+- FullSeq stale/illegale ? null + flex (no stuck).
+- Finish search mirata in coda G<N (empty<=4).
+- Lookahead anti-buco + bonus residual greedy complete.
+- Forza mossa se residual greedy completa (empty<=5).
+
+**Obiettivo utente:** almeno 1 vittoria per ogni config legale N>G>1 (non 100%).
+
+**Verifica:** tutte le 21 celle legali hanno >=1 win (seed documentati):
+3x2 gltN:0; 4x2 gltN:5; 4x3 gltN:0; 5x2 gltN:3; 5x3 gltN:6; 5x4 gltN:1;
+6x2 gltN:4; 6x3 gltN:2; 6x4 gltN:6; 6x5 gltN:30;
+7x2 gltN:1; 7x3 gltN:2; 7x4 gltN:3; 7x5 gltN:1; 7x6 gltN:19;
+8x2 huntB:0; 8x3 gltN:66; 8x4 huntA:0; 8x5 gltN:20; 8x6 gltN:29; 8x7 huntA:41.
+
+**Sweep 15 seed gltN:** overall ~20% (alcune celle rare restano 0/15 ma win esistono con piu' sample).
+**Regressione G>=N:** 5x5 ok al 100%.

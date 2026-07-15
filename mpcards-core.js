@@ -5109,166 +5109,93 @@ const MPCARDS_CORE_SOURCE = `
     const coordinated = gnUseCoordinatedDurissimaPlanner(state);
     const soloCoordinated = coordinated && state.players === 1;
     const perfectGNLive = coordinated && isDurissimaGnIdeal(state);
+    // ONE MIND vs mazzo — path unificato per conoscenza:
+    // - fullKnown (draw < G, o G>=N): griglia A + assembly owned-first/fingi + fullSeq strict
+    // - partial (G>1, G<N, tallone grande): prefisso owned + scheletro celle + replan; handoff a fullKnown
+    // - G=1: non entra qui nel ramo partial (solitario a parte, eventuale pool dopo)
+    if (coordinated && (state.players || 1) > 1) {
+      const size = state.size;
+      const targetLen = size * size;
+      const players = state.players || 1;
+      const drawPileLen = (state.drawPile || []).length;
+      const isIdeal = isDurissimaGnIdeal(state);
+      const isSmallTallone = drawPileLen < players;
+      const gAtLeastN = players >= size;
+      // Set pieno noto: tallone < G (eliminazione) oppure G>=N all'inizio (tallone sempre < G)
+      const fullKnown = isIdeal || isSmallTallone || (gAtLeastN && drawPileLen < players);
+      const emptyCount = targetLen - ((state.board && state.board.length) || 0);
+      const pendingFullSeq = state._gnFullSequence
+        ? state._gnFullSequence.filter(
+            s => s && s.card && !(state.board || []).some(b => b.x === s.x && b.y === s.y)
+          ).length
+        : 0;
+      const hasCompleteFullSeq =
+        state._gnFullSequence &&
+        state._gnFullSequence.length > 0 &&
+        state._gnFullSequence[0] &&
+        state._gnFullSequence[0].card &&
+        !state._gnPartialMode &&
+        pendingFullSeq >= emptyCount &&
+        emptyCount > 0;
 
-    // === PATH UNICO G>=N / smallTallone (stesso per OGNI N = 3..8) ===
-    // Set carte noto (G=N oppure tallone < G per eliminazione). Niente DFS per-turno N-specifico:
-    // un solo algoritmo = piano A+B una volta + follow strict + passi. Search solo finish
-    // opzionale uguale per tutti gli N quando restano poche celle.
-    const drawPileLenEarly = (state.drawPile || []).length;
-    const playersEarly = state.players || 1;
-    const smallTallone = drawPileLenEarly < playersEarly;
-    const useOraclePlanPath = coordinated && (perfectGNLive || smallTallone);
-    if (useOraclePlanPath) {
-      // Finish opzionale (identico per ogni N): solo se restano poche celle.
-      const remainingCells = (state.size * state.size) - ((state.board && state.board.length) || 0);
-      if (remainingCells > 0 && remainingCells <= 4) {
-        const searchOpts = gnMoveSearchOptions(state, { coordinatedTeam: true });
-        if (searchOpts) {
-          searchOpts.maxNodes = Math.max(searchOpts.maxNodes || 0, 150000);
-          const fork = gnForkSearchState(state);
-          const outcome = solveGnStateOutcome(fork, {
-            ...searchOpts,
-            _gnInPlace: true,
-            trackAction: true,
-            coordinatedTeam: true
-          });
-          if (outcome.result === "solved" && outcome.action) return outcome.action;
+      // Replan: mai pianificato | handoff a fullKnown | partial periodico | soglie di coda
+      const placedNow = (state.board && state.board.length) || 0;
+      const drawNow = drawPileLen;
+      let needPlan = emptyCount > 0 && !state._gnPlanningDone;
+      if (emptyCount > 0 && state._gnPlanningDone) {
+        const lastPlaced = state._gnPlanAtPlaced || 0;
+        const lastDraw = state._gnPlanDrawLen != null ? state._gnPlanDrawLen : drawNow;
+        const periodic =
+          drawNow < lastDraw || placedNow - lastPlaced >= Math.max(1, players);
+        if (fullKnown && !hasCompleteFullSeq) {
+          if (!state._gnHadFullKnownPlan || periodic) needPlan = true;
+        } else if (state._gnPartialMode && !fullKnown && periodic) {
+          needPlan = true;
         }
-      }
-      // Strict follow se il piano e' gia' pronto (altrimenti fallthrough al planning).
-      if (state._gnFullSequence && state._gnFullSequence.length > 0) {
-        const seq = state._gnFullSequence;
-        const hand = state.hands[playerId] || [];
-        for (let i = 0; i < seq.length; i++) {
-          const step = seq[i];
-          if (state.board.some(b => b.x === step.x && b.y === step.y)) continue;
-          if (!step.card) break;
-          const inHand = hand.find(c => c.uid === step.card.uid);
-          if (inHand && canPlaceCardAt(state, inHand, step.x, step.y, requirement)) {
-            state._gnSeqIdx = i + 1;
-            state._gnJustPlayedSeqStep = true;
-            return {
-              type: "move",
-              move: { cardUid: inHand.uid, card: inHand, x: step.x, y: step.y, fromReserve: false }
-            };
+        // Coda: forza replan a empty 8 e 4 (una volta per soglia) se non G=N ideal perfetto
+        const gLessN = players < size;
+        if ((gLessN || state._gnPartialMode || !hasCompleteFullSeq) && !perfectGNLive) {
+          if (emptyCount <= 8 && state._gnEmptyReplan8 !== true) {
+            needPlan = true;
+            state._gnEmptyReplan8 = true;
           }
-          break;
-        }
-      }
-      // Fallthrough: planning (prima volta) o pass/follow piu' sotto. Mai stop blanket.
-    }
-
-    // Force 1-card activations for sequence following (ensures req=1, sup>=1 safe for any valid growth seq).
-    if (coordinated && state._gnJustPlayedSeqStep) {
-      state._gnJustPlayedSeqStep = false;
-      return { type: "stop" };
-    }
-
-    // === LOGICA PER G >= N o tallone piccolo (< G): segui percorso ideale di celle o piano specifico ===
-    // Piazziamo la migliore carta disponibile nella mano che si adatta alla cella target più precoce (o la carta esatta del piano specifico).
-    // Non usiamo l'ordine del tallone. Quando il tallone è piccolo (< G) il set rimanente è noto per eliminazione;
-    // aggiorniamo man mano che nuove carte arrivano (il tallone si esaurisce in fretta).
-    // Per piani con carte specifiche (G=N o small tallone), usa follow stretto hasCards.
-    // Per tallone grande, usa logica flessibile su celle target.
-    if (coordinated && state._gnFullSequence && state._gnFullSequence.length > 0 && state._gnFullSequence[0].card) {
-      // Strict follow oracolo: solo earliest pending + uid esatto. Pass fino al titolare.
-      // Usa canPlaceCardAt (non solo legalPlacements) cosi' non dipendiamo da candidateCells/filtri.
-      const seq = state._gnFullSequence;
-      const hand = state.hands[playerId] || [];
-      for (let i = 0; i < seq.length; i++) {
-        const step = seq[i];
-        if (state.board.some(b => b.x === step.x && b.y === step.y)) continue;
-        if (!step.card) return { type: "stop" };
-        const inHand = hand.find(c => c.uid === step.card.uid);
-        if (inHand && canPlaceCardAt(state, inHand, step.x, step.y, requirement)) {
-          state._gnSeqIdx = i + 1;
-          state._gnJustPlayedSeqStep = true;
-          return {
-            type: "move",
-            move: { cardUid: inHand.uid, card: inHand, x: step.x, y: step.y, fromReserve: false }
-          };
-        }
-        return { type: "stop" };
-      }
-      return { type: "stop" };
-    }
-
-    if (coordinated && !perfectGNLive) {
-      let targetSeq = state._gnTargetCellSequence;
-      if (!targetSeq && state._gnFullSequence) {
-        targetSeq = state._gnFullSequence.map(s => ({ x: s.x, y: s.y }));
-      }
-      if (targetSeq && targetSeq.length > 0) {
-        const myHand = state.hands[playerId] || [];
-        const legals = legalPlacements(state, playerId, requirement);
-
-        // Find the *earliest* pending target cell (by plan order) for which I have a legal fit now.
-        // Do not stop at the first pending if I can't fill it; scan for any reachable in the priority list.
-        // This makes the plan a "preferred cell priority" rather than rigid sequence, allowing higher completion
-        // while still following a good global layout (chosen with owned-safe prefix in mind for small tallone).
-        let bestI = -1;
-        let bestFit = null;
-        for (let i = 0; i < targetSeq.length; i++) {
-          const t = targetSeq[i];
-          if (state.board.some(b => b.x === t.x && b.y === t.y)) continue;
-          const fits = legals.filter(m => m.x === t.x && m.y === t.y);
-          if (fits.length > 0) {
-            if (bestI < 0 || i < bestI) {
-              bestI = i;
-              bestFit = fits[0];
-            }
+          if (emptyCount <= 4 && state._gnEmptyReplan4 !== true) {
+            needPlan = true;
+            state._gnEmptyReplan4 = true;
           }
         }
-        if (bestFit) {
-          state._gnSeqIdx = bestI + 1;
-          state._gnJustPlayedSeqStep = true;
-          return { type: "move", move: bestFit };
-        }
-
-        // No immediate plan cell fillable now: fall through to realistico (with plan bias below) so we always play if any legal.
-        // The targetSeq remains for future bias / prioritization.
       }
-    }
 
-    // ONE MIND vs mazzo (generalizzato a G qualsiasi): usa soluzioni generate dal matrix solver (libreria per N=4 + oracle deal-aware + campionamento).
-    // Obiettivo: definire **una volta per deal** una sequenza completa (card+cell) compatibile con le mani correnti,
-    // poi seguirla STRICT: passa (skip) fino al titolare della prossima carta della seq, gioca ESATTAMENTE quella in quella cella.
-    // Funziona per G = N e per G > N (fino a 2N): le mani sono note, il piano usa solo carte già in mano ai giocatori.
-    // Con i pass si attiva il titolare senza monte (gap <= G-1). Non ricalcoliamo il path durante la partita.
-    if (coordinated && !state._gnFullSequence && !state._gnPlanningDone) {
+      if (needPlan) {
       state._gnPlanningDone = true;
       try {
-        const size = state.size;
-        const targetLen = size * size;
-        const isIdeal = isDurissimaGnIdeal(state);
-        const drawPileLen = (state.drawPile || []).length;
-        const players = state.players || 1;
-        // Per G>=N: tallone iniziale = N^2 % G < G sempre → set noto. Stesso path per ogni N.
-        const isSmallTallone = drawPileLen < players;
-        const gAtLeastN = players >= size;
-        const treatAsIdeal = isIdeal || isSmallTallone || gAtLeastN;
-
         const ms = dmRequireModule("./scripts/durissima-matrix-solver");
         if (!ms) throw new Error("solver unavailable");
 
-        if (treatAsIdeal) {
-          // === ALGORITMO UNICO (N=3..8, G>=N o tallone < G) ===
+        if (fullKnown) {
+          state._gnPartialMode = false;
+          state._gnHadFullKnownPlan = true;
+          // === ALGORITMO UNICO fullKnown (N=3..8, G>=N o draw < G, anche mid-game) ===
           // 1) Griglia A fissa (matrix-solver) con carte specifiche del mazzo
-          // 2) Assembly B: crescita connessa req=1, preferendo carte GIA' in mano (owned)
-          //    prima di minLate; le missing restano sulle loro celle ma si posano tardi (FINGI)
-          // 3) Commit fullSequence → follow strict uid + passi (vedi sotto)
+          // 2) Assembly B: crescita connessa req=1, preferendo owned; missing tarde (FINGI)
+          // 3) Se board gia' parziale: pianifica solo carte/celle residue (board resta vincolo)
+          // 4) Commit fullSequence → follow strict uid + passi
+          const boardUids = new Set((state.board || []).map(b => b.card && b.card.uid).filter(Boolean));
           const remaining = [];
           for (let p = 0; p < (state.hands || []).length; p++) {
-            if (state.hands[p]) remaining.push(...state.hands[p].map(c => ({ ...c })));
+            if (state.hands[p]) {
+              for (const c of state.hands[p]) {
+                if (!boardUids.has(c.uid)) remaining.push({ ...c });
+              }
+            }
           }
           const ownedUids = new Set(remaining.map(c => c.uid));
           let minLateForTallone = 0;
           const fullGame = simulationDeck().filter(c => Number(c.value) <= size);
-          const knownUids = new Set(remaining.map(c => c.uid));
+          const knownUids = new Set([...remaining.map(c => c.uid), ...boardUids]);
           const missing = fullGame.filter(c => !knownUids.has(c.uid));
           if (missing.length > 0) {
             remaining.push(...missing.map(c => ({ ...c })));
-            // minLate = (ceil(missing/G) + 1) * G  — margine +1 giro
             const minRounds = Math.ceil(missing.length / players) + 1;
             minLateForTallone = minRounds * players;
           }
@@ -5436,18 +5363,173 @@ const MPCARDS_CORE_SOURCE = `
             for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) cellPlan.push({ x, y });
           }
 
-          if (mapped.length === targetLen) {
+          // Mid-game fullKnown: piano residuo sul board reale con DFS/MRV (backtrack).
+          // Greedy falliva sulla coda; con draw < G i vuoti sono spesso gestibili da search.
+          if ((state.board || []).length > 0) {
+            const baseBoard = (state.board || []).map(b => ({
+              x: b.x, y: b.y, card: b.card
+            }));
+            const pool = remaining.slice();
+            const emptyCells = [];
+            for (let y = 0; y < size; y++) {
+              for (let x = 0; x < size; x++) {
+                if (!baseBoard.some(b => b.x === x && b.y === y)) emptyCells.push({ x, y });
+              }
+            }
+            const dirs4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+            const keyOf = (x, y) => x + "," + y;
+            const nEmpty = emptyCells.length;
+            const adjCount = (c, board) => {
+              let n = 0;
+              for (const d of dirs4) {
+                if (board.some(t => t.x === c.x + d[0] && t.y === c.y + d[1])) n++;
+              }
+              return n;
+            };
+
+            // 1) Greedy veloce (sempre)
+            const greedy = () => {
+              const tempBoard = baseBoard.map(b => ({ x: b.x, y: b.y, card: b.card }));
+              const usedR = new Set();
+              const remOrder = [];
+              while (remOrder.length < nEmpty) {
+                let best = null;
+                let bestSc = -Infinity;
+                for (const cell of emptyCells) {
+                  if (remOrder.some(s => s.x === cell.x && s.y === cell.y)) continue;
+                  const ac = adjCount(cell, tempBoard);
+                  if (tempBoard.length > 0 && ac === 0) continue;
+                  for (const c of pool) {
+                    if (usedR.has(c.uid)) continue;
+                    const sim = { board: tempBoard, size, turnPlayed: 0 };
+                    if (!canPlaceCardAt(sim, c, cell.x, cell.y, 1)) continue;
+                    const isOwned = ownedUids.has(c.uid);
+                    const sc = (isOwned ? 20 : 0) + ac * 3;
+                    if (sc > bestSc) {
+                      bestSc = sc;
+                      best = { x: cell.x, y: cell.y, card: c };
+                    }
+                  }
+                }
+                if (!best) break;
+                usedR.add(best.card.uid);
+                remOrder.push(best);
+                tempBoard.push({ x: best.x, y: best.y, card: best.card });
+              }
+              return remOrder;
+            };
+
+            let bestOrder = greedy();
+
+            // 2) DFS/MRV solo se greedy incompleto e code corte
+            if (bestOrder.length < nEmpty && nEmpty <= 12) {
+              const maxBtNodes = nEmpty <= 6 ? 60000 : nEmpty <= 9 ? 25000 : 10000;
+              let btNodes = 0;
+              let dfsBest = bestOrder.slice();
+              const legalCardsFor = (board, cell, used) => {
+                const out = [];
+                const sim = { board, size, turnPlayed: 0 };
+                for (const c of pool) {
+                  if (used.has(c.uid)) continue;
+                  if (canPlaceCardAt(sim, c, cell.x, cell.y, 1)) out.push(c);
+                }
+                out.sort((a, b) => (ownedUids.has(b.uid) ? 1 : 0) - (ownedUids.has(a.uid) ? 1 : 0));
+                return out;
+              };
+              const frontierCells = (board, placedKeys) => {
+                const filled = new Set(board.map(b => keyOf(b.x, b.y)));
+                for (const k of placedKeys) filled.add(k);
+                const out = [];
+                for (const cell of emptyCells) {
+                  const k = keyOf(cell.x, cell.y);
+                  if (filled.has(k)) continue;
+                  let adj = false;
+                  for (const d of dirs4) {
+                    if (filled.has(keyOf(cell.x + d[0], cell.y + d[1]))) {
+                      adj = true;
+                      break;
+                    }
+                  }
+                  if (adj || board.length === 0) out.push(cell);
+                }
+                return out;
+              };
+              const dfs = (board, used, order, placedKeys) => {
+                btNodes++;
+                if (btNodes > maxBtNodes) return false;
+                if (order.length > dfsBest.length) dfsBest = order.slice();
+                if (order.length === nEmpty) return true;
+                const fr = frontierCells(board, placedKeys);
+                if (!fr.length) return false;
+                let pickCell = null;
+                let pickOpts = null;
+                let minOpts = Infinity;
+                for (const cell of fr) {
+                  const opts = legalCardsFor(board, cell, used);
+                  if (!opts.length) continue;
+                  if (opts.length < minOpts) {
+                    minOpts = opts.length;
+                    pickCell = cell;
+                    pickOpts = opts;
+                    if (minOpts === 1) break;
+                  }
+                }
+                if (!pickCell) return false;
+                const limit = Math.min(pickOpts.length, 8);
+                for (let oi = 0; oi < limit; oi++) {
+                  const c = pickOpts[oi];
+                  used.add(c.uid);
+                  board.push({ x: pickCell.x, y: pickCell.y, card: c });
+                  order.push({ x: pickCell.x, y: pickCell.y, card: c });
+                  placedKeys.add(keyOf(pickCell.x, pickCell.y));
+                  if (dfs(board, used, order, placedKeys)) return true;
+                  placedKeys.delete(keyOf(pickCell.x, pickCell.y));
+                  order.pop();
+                  board.pop();
+                  used.delete(c.uid);
+                  if (btNodes > maxBtNodes) return false;
+                }
+                return false;
+              };
+              const boardWork = baseBoard.map(b => ({ x: b.x, y: b.y, card: b.card }));
+              dfs(boardWork, new Set(), [], new Set());
+              if (dfsBest.length > bestOrder.length) bestOrder = dfsBest;
+            }
+
+            if (bestOrder.length === nEmpty && nEmpty > 0) {
+              mapped = bestOrder;
+              cellPlan = bestOrder.map(s => ({ x: s.x, y: s.y }));
+              state._gnPartialMode = false;
+            } else if (bestOrder.length > 0) {
+              mapped = bestOrder;
+              const filledK = new Set(bestOrder.map(s => keyOf(s.x, s.y)));
+              cellPlan = [
+                ...bestOrder.map(s => ({ x: s.x, y: s.y })),
+                ...emptyCells.filter(c => !filledK.has(keyOf(c.x, c.y)))
+              ];
+              state._gnPartialMode = true;
+            } else {
+              mapped = [];
+            }
+          }
+
+          if (mapped.length > 0 && mapped[0].card) {
             state._gnFullSequence = mapped;
             state._gnSeqIdx = 0;
-            state._gnTargetCellSequence = mapped.map(s => ({ x: s.x, y: s.y }));
+            state._gnTargetCellSequence = (cellPlan.length ? cellPlan : mapped).map(s => ({ x: s.x, y: s.y }));
+            state._gnPlanAtPlaced = placedNow;
+            state._gnPlanDrawLen = drawPileLen;
           } else {
             state._gnTargetCellSequence = cellPlan.map(s => ({ x: s.x, y: s.y }));
             state._gnSeqIdx = 0;
             state._gnFullSequence = null;
+            state._gnPlanAtPlaced = placedNow;
+            state._gnPlanDrawLen = drawPileLen;
           }
         } else {
-          // === Solo G < N con tallone grande (set NON tutto noto): cell path flessibile ===
-          // (G>=N non arriva qui.) Da raffinare in seguito; non mescolare col path oracolo.
+          // === G>1, G<N, tallone grande: prefisso OWNED + scheletro celle (no uid del tallone) ===
+          // Senza pool condiviso. Replan periodico / a pesca; handoff a fullKnown quando draw < G.
+          state._gnPartialMode = true;
           let cellPlan = null;
           try {
             const asm = ms.findSchedulableMatrix(size, { maxNodesA: 2000000, maxNodesB: 500000 });
@@ -5462,27 +5544,171 @@ const MPCARDS_CORE_SOURCE = `
             cellPlan = [];
             for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) cellPlan.push({ x, y });
           }
-          state._gnTargetCellSequence = cellPlan;
+          // Solo celle ancora vuote nello scheletro
+          const emptyPlan = cellPlan.filter(
+            t => !(state.board || []).some(b => b.x === t.x && b.y === t.y)
+          );
+          const ownedCards = [];
+          for (let p = 0; p < (state.hands || []).length; p++) {
+            if (state.hands[p]) ownedCards.push(...state.hands[p].map(c => ({ ...c })));
+          }
+          const usedO = new Set();
+          const tempBoard = (state.board || []).map(b => ({ x: b.x, y: b.y, card: b.card }));
+          const prefix = [];
+          // Prefisso: per ogni cella dello scheletro (o frontiera), assegna una owned legale
+          for (let i = 0; i < emptyPlan.length; i++) {
+            const t = emptyPlan[i];
+            let best = null;
+            let bestSc = -Infinity;
+            for (const c of ownedCards) {
+              if (usedO.has(c.uid)) continue;
+              const sim = { board: tempBoard, size, turnPlayed: 0 };
+              if (!canPlaceCardAt(sim, c, t.x, t.y, 1)) continue;
+              // Soft: valori bassi early se core, alti late (N-agnostic soft)
+              const val = Number(c.value) || 0;
+              const coreish = i < Math.floor(emptyPlan.length * 0.55);
+              let sc = coreish ? (10 - val) : val;
+              // Clustering soft
+              for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const nb = tempBoard.find(b => b.x === t.x + d[0] && b.y === t.y + d[1]);
+                if (!nb) continue;
+                if (nb.card.value === c.value) sc += 4;
+                if (nb.card.shape === c.shape) sc += 2;
+                if (nb.card.color === c.color) sc += 2;
+              }
+              if (sc > bestSc) {
+                bestSc = sc;
+                best = c;
+              }
+            }
+            if (!best) break; // stop al primo buco: prefisso connesso solo sulle owned legali in ordine scheletro
+            usedO.add(best.uid);
+            prefix.push({ x: t.x, y: t.y, card: best });
+            tempBoard.push({ x: t.x, y: t.y, card: best });
+          }
+          // Se prefisso vuoto (board vuota e scheletro non matcha owned): bootstrap 1+ owned ovunque legali
+          if (prefix.length === 0 && ownedCards.length > 0) {
+            const sim0 = { board: tempBoard, size, turnPlayed: 0 };
+            for (const c of ownedCards) {
+              if (tempBoard.length === 0) {
+                prefix.push({ x: Math.floor(size / 2), y: Math.floor(size / 2), card: c });
+                tempBoard.push({ x: Math.floor(size / 2), y: Math.floor(size / 2), card: c });
+                usedO.add(c.uid);
+                break;
+              }
+            }
+            // estendi frontiera
+            let grew = true;
+            while (grew) {
+              grew = false;
+              for (const c of ownedCards) {
+                if (usedO.has(c.uid)) continue;
+                const legs = [];
+                // prova celle candidate vicine
+                for (const b of tempBoard) {
+                  for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                    const x = b.x + d[0];
+                    const y = b.y + d[1];
+                    if (x < 0 || y < 0 || x >= size || y >= size) continue;
+                    if (tempBoard.some(t => t.x === x && t.y === y)) continue;
+                    const sim = { board: tempBoard, size, turnPlayed: 0 };
+                    if (canPlaceCardAt(sim, c, x, y, 1)) legs.push({ x, y, card: c });
+                  }
+                }
+                if (legs.length > 0) {
+                  const pick = legs[0];
+                  usedO.add(c.uid);
+                  prefix.push(pick);
+                  tempBoard.push({ x: pick.x, y: pick.y, card: pick.card });
+                  grew = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          if (prefix.length > 0) {
+            state._gnFullSequence = prefix;
+            state._gnSeqIdx = 0;
+          } else {
+            state._gnFullSequence = null;
+          }
+          state._gnTargetCellSequence = emptyPlan.length ? emptyPlan : cellPlan;
           state._gnSeqIdx = 0;
-          state._gnFullSequence = null;
+          state._gnPlanAtPlaced = placedNow;
+          state._gnPlanDrawLen = drawPileLen;
         }
       } catch (e) {
         // fallback silenzioso
       }
-    }
+      } // needPlan
+    } // coordinated && G>1
 
-    // If we have (or just set) a gn plan/seq for ideal or smallTallone, drive the action from it
-    // on this turn too (planning runs late in the function). This restores plan-once + strict follow.
-    if (coordinated && (state._gnFullSequence || state._gnTargetCellSequence)) {
-      const legalsP = legalPlacements(state, playerId, requirement);
-      if (state._gnFullSequence && state._gnFullSequence.length > 0 && state._gnFullSequence[0] && state._gnFullSequence[0].card) {
+
+    // Pianificazione PRIMA del follow (altrimenti handoff fullKnown non scatta e si resta sul prefisso stale).
+    // Blocco completo: vedi sotto "ONE MIND vs mazzo — path unificato" (needPlan).
+    // Qui solo flag early per oracle path dopo eventuale replan.
+    const drawPileLenEarly = (state.drawPile || []).length;
+    const playersEarly = state.players || 1;
+    // (planning inject point — eseguito subito sotto se G>1)
+
+    // === PATH UNICO G>=N / smallTallone (stesso per OGNI N = 3..8) ===
+    // Set carte noto (G=N oppure tallone < G per eliminazione). Niente DFS per-turno N-specifico:
+    // un solo algoritmo = piano A+B una volta + follow strict + passi. Search solo finish
+    // opzionale uguale per tutti gli N quando restano poche celle.
+    const smallTallone = drawPileLenEarly < playersEarly;
+    const useOraclePlanPath = coordinated && (perfectGNLive || smallTallone);
+    // Finish search: solo senza fullSeq "sana" (non rompere G>=N). Budget un po' piu' alto in coda G<N.
+    if (coordinated && (state.players || 1) > 1) {
+      const remainingCells = (state.size * state.size) - ((state.board && state.board.length) || 0);
+      const hasWorkingFullSeq =
+        state._gnFullSequence &&
+        state._gnFullSequence[0] &&
+        state._gnFullSequence[0].card &&
+        !state._gnPartialMode;
+      const gLessN = (state.players || 1) < state.size;
+      if (remainingCells > 0 && remainingCells <= 6 && (!hasWorkingFullSeq || (gLessN && remainingCells <= 4))) {
+        const searchOpts = gnMoveSearchOptions(state, { coordinatedTeam: true });
+        if (searchOpts) {
+          let boost = remainingCells <= 3 ? 250000 : remainingCells <= 5 ? 120000 : 60000;
+          if (gLessN && remainingCells <= 4) boost = Math.max(boost, 300000);
+          searchOpts.maxNodes = Math.max(searchOpts.maxNodes || 0, boost);
+          const fork = gnForkSearchState(state);
+          const outcome = solveGnStateOutcome(fork, {
+            ...searchOpts,
+            _gnInPlace: true,
+            trackAction: true,
+            coordinatedTeam: true
+          });
+          if (outcome.result === "solved" && outcome.action) return outcome.action;
+        }
+      }
+    }
+    if (useOraclePlanPath) {
+      // Strict follow se piano sano; se step illegale/stale → abilita flex (no stuck).
+      if (state._gnFullSequence && state._gnFullSequence.length > 0) {
         const seq = state._gnFullSequence;
-        const handP = state.hands[playerId] || [];
+        const hand = state.hands[playerId] || [];
         for (let i = 0; i < seq.length; i++) {
           const step = seq[i];
           if (state.board.some(b => b.x === step.x && b.y === step.y)) continue;
           if (!step.card) break;
-          const inHand = handP.find(c => c.uid === step.card.uid);
+          const placeOk = canPlaceCardAt(state, step.card, step.x, step.y, 1);
+          let someoneHas = false;
+          for (let p = 0; p < (state.hands || []).length; p++) {
+            if ((state.hands[p] || []).some(c => c.uid === step.card.uid)) {
+              someoneHas = true;
+              break;
+            }
+          }
+          if ((state.drawPile || []).some(c => c.uid === step.card.uid)) someoneHas = true;
+          if (!placeOk || !someoneHas) {
+            // Piano rotto sulla coda: lascia flex/realistico/finish
+            state._gnPartialMode = true;
+            state._gnFullSequence = null;
+            break;
+          }
+          const inHand = hand.find(c => c.uid === step.card.uid);
           if (inHand && canPlaceCardAt(state, inHand, step.x, step.y, requirement)) {
             state._gnSeqIdx = i + 1;
             state._gnJustPlayedSeqStep = true;
@@ -5493,17 +5719,81 @@ const MPCARDS_CORE_SOURCE = `
           }
           break;
         }
+      }
+    }
+
+    // Force 1-card activations for sequence following (ensures req=1, sup>=1 safe for any valid growth seq).
+    if (coordinated && state._gnJustPlayedSeqStep) {
+      state._gnJustPlayedSeqStep = false;
+      return { type: "stop" };
+    }
+
+    // === LOGICA PER G >= N o tallone piccolo (< G): segui percorso ideale di celle o piano specifico ===
+    // Piazziamo la migliore carta disponibile nella mano che si adatta alla cella target più precoce (o la carta esatta del piano specifico).
+    // Non usiamo l'ordine del tallone. Quando il tallone è piccolo (< G) il set rimanente è noto per eliminazione;
+    // aggiorniamo man mano che nuove carte arrivano (il tallone si esaurisce in fretta).
+    // Per piani con carte specifiche (G=N o small tallone), usa follow stretto hasCards.
+    // Per tallone grande, usa logica flessibile su celle target.
+    if (coordinated && state._gnFullSequence && state._gnFullSequence.length > 0 && state._gnFullSequence[0].card) {
+      // Strict follow: earliest pending + uid esatto. Pass fino al titolare.
+      // Step illegale/stale → null fullSeq e fallthrough (coda G<N).
+      const seq = state._gnFullSequence;
+      const hand = state.hands[playerId] || [];
+      let pending = false;
+      for (let i = 0; i < seq.length; i++) {
+        const step = seq[i];
+        if (state.board.some(b => b.x === step.x && b.y === step.y)) continue;
+        pending = true;
+        if (!step.card) break;
+        const placeOk = canPlaceCardAt(state, step.card, step.x, step.y, 1);
+        let someoneHas = false;
+        for (let p = 0; p < (state.hands || []).length; p++) {
+          if ((state.hands[p] || []).some(c => c.uid === step.card.uid)) {
+            someoneHas = true;
+            break;
+          }
+        }
+        if ((state.drawPile || []).some(c => c.uid === step.card.uid)) someoneHas = true;
+        if (!placeOk || !someoneHas) {
+          state._gnPartialMode = true;
+          state._gnFullSequence = null;
+          pending = false;
+          break;
+        }
+        const inHand = hand.find(c => c.uid === step.card.uid);
+        if (inHand && canPlaceCardAt(state, inHand, step.x, step.y, requirement)) {
+          state._gnSeqIdx = i + 1;
+          state._gnJustPlayedSeqStep = true;
+          return {
+            type: "move",
+            move: { cardUid: inHand.uid, card: inHand, x: step.x, y: step.y, fromReserve: false }
+          };
+        }
+        // Non in mano a me ma ancora valida → pass (titolare)
         return { type: "stop" };
-      } else if (state._gnTargetCellSequence && state._gnTargetCellSequence.length > 0) {
-        const tseq = state._gnTargetCellSequence;
-        const startI = state._gnSeqIdx || 0;
-        // Earliest reachable target (relaxed)
+      }
+      if (pending && !state._gnPartialMode) return { type: "stop" };
+    }
+
+    if (coordinated && !perfectGNLive) {
+      let targetSeq = state._gnTargetCellSequence;
+      if (!targetSeq && state._gnFullSequence) {
+        targetSeq = state._gnFullSequence.map(s => ({ x: s.x, y: s.y }));
+      }
+      if (targetSeq && targetSeq.length > 0) {
+        const myHand = state.hands[playerId] || [];
+        const legals = legalPlacements(state, playerId, requirement);
+
+        // Find the *earliest* pending target cell (by plan order) for which I have a legal fit now.
+        // Do not stop at the first pending if I can't fill it; scan for any reachable in the priority list.
+        // This makes the plan a "preferred cell priority" rather than rigid sequence, allowing higher completion
+        // while still following a good global layout (chosen with owned-safe prefix in mind for small tallone).
         let bestI = -1;
         let bestFit = null;
-        for (let i = startI; i < tseq.length; i++) {
-          const t = tseq[i];
+        for (let i = 0; i < targetSeq.length; i++) {
+          const t = targetSeq[i];
           if (state.board.some(b => b.x === t.x && b.y === t.y)) continue;
-          const fits = legalsP.filter(m => m.x === t.x && m.y === t.y);
+          const fits = legals.filter(m => m.x === t.x && m.y === t.y);
           if (fits.length > 0) {
             if (bestI < 0 || i < bestI) {
               bestI = i;
@@ -5515,6 +5805,84 @@ const MPCARDS_CORE_SOURCE = `
           state._gnSeqIdx = bestI + 1;
           state._gnJustPlayedSeqStep = true;
           return { type: "move", move: bestFit };
+        }
+
+        // No immediate plan cell fillable now: fall through to realistico (with plan bias below) so we always play if any legal.
+        // The targetSeq remains for future bias / prioritization.
+      }
+    }
+
+    // If we have (or just set) a gn plan/seq for ideal or smallTallone, drive the action from it
+    // on this turn too (planning runs late in the function). This restores plan-once + strict follow.
+    if (coordinated && (state._gnFullSequence || state._gnTargetCellSequence)) {
+      const legalsP = legalPlacements(state, playerId, requirement);
+      if (state._gnFullSequence && state._gnFullSequence.length > 0 && state._gnFullSequence[0] && state._gnFullSequence[0].card) {
+        const seq = state._gnFullSequence;
+        const handP = state.hands[playerId] || [];
+        let pending = false;
+        for (let i = 0; i < seq.length; i++) {
+          const step = seq[i];
+          if (state.board.some(b => b.x === step.x && b.y === step.y)) continue;
+          pending = true;
+          if (!step.card) break;
+          const placeOk = canPlaceCardAt(state, step.card, step.x, step.y, 1);
+          let someoneHas = false;
+          for (let p = 0; p < (state.hands || []).length; p++) {
+            if ((state.hands[p] || []).some(c => c.uid === step.card.uid)) {
+              someoneHas = true;
+              break;
+            }
+          }
+          if ((state.drawPile || []).some(c => c.uid === step.card.uid)) someoneHas = true;
+          if (!placeOk || !someoneHas) {
+            state._gnPartialMode = true;
+            state._gnFullSequence = null;
+            pending = false;
+            break;
+          }
+          const inHand = handP.find(c => c.uid === step.card.uid);
+          if (inHand && canPlaceCardAt(state, inHand, step.x, step.y, requirement)) {
+            state._gnSeqIdx = i + 1;
+            state._gnJustPlayedSeqStep = true;
+            return {
+              type: "move",
+              move: { cardUid: inHand.uid, card: inHand, x: step.x, y: step.y, fromReserve: false }
+            };
+          }
+          return { type: "stop" };
+        }
+        if (pending && !state._gnPartialMode) return { type: "stop" };
+      }
+      if (state._gnTargetCellSequence && state._gnTargetCellSequence.length > 0) {
+        // blockTarget solo se fullSeq sana e non partial
+        const blockTarget =
+          state._gnFullSequence &&
+          state._gnFullSequence[0] &&
+          state._gnFullSequence[0].card &&
+          !state._gnPartialMode &&
+          state._gnFullSequence.some(
+            s => s.card && !(state.board || []).some(b => b.x === s.x && b.y === s.y)
+          );
+        if (!blockTarget) {
+          const tseq = state._gnTargetCellSequence;
+          let bestI = -1;
+          let bestFit = null;
+          for (let i = 0; i < tseq.length; i++) {
+            const t = tseq[i];
+            if (state.board.some(b => b.x === t.x && b.y === t.y)) continue;
+            const fits = legalsP.filter(m => m.x === t.x && m.y === t.y);
+            if (fits.length > 0) {
+              if (bestI < 0 || i < bestI) {
+                bestI = i;
+                bestFit = fits[0];
+              }
+            }
+          }
+          if (bestFit) {
+            state._gnSeqIdx = bestI + 1;
+            state._gnJustPlayedSeqStep = true;
+            return { type: "move", move: bestFit };
+          }
         }
         // fall to realistico (plan bias will apply)
       }
@@ -5540,9 +5908,103 @@ const MPCARDS_CORE_SOURCE = `
         [...known, ...unk].forEach(c => counts[tr][c[tr]] = (counts[tr][c[tr]]||0)+1);
       });
 
+      const emptyLeft = (state.size * state.size) - ((state.board && state.board.length) || 0);
+      const poolLeft = [...known, ...unk].filter(c => c && c.uid !== undefined);
+      // Lookahead anti-buco + "greedy residual complete?"
+      const residualGreedyComplete = (board0, pool0) => {
+        const board = board0.map(b => ({ x: b.x, y: b.y, card: b.card }));
+        const used = new Set(board.map(b => b.card.uid));
+        const size = state.size;
+        const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+        let guard = 0;
+        while (guard++ < size * size) {
+          const empties = [];
+          for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+              if (!board.some(b => b.x === x && b.y === y)) empties.push({ x, y });
+            }
+          }
+          if (empties.length === 0) return true;
+          let best = null;
+          for (const cell of empties) {
+            let adj = 0;
+            for (const d of dirs) {
+              if (board.some(b => b.x === cell.x + d[0] && b.y === cell.y + d[1])) adj++;
+            }
+            if (board.length > 0 && adj === 0) continue;
+            for (const c of pool0) {
+              if (used.has(c.uid)) continue;
+              const sim = { board, size, turnPlayed: 0 };
+              if (!canPlaceCardAt(sim, c, cell.x, cell.y, 1)) continue;
+              best = { cell, c, adj };
+              break;
+            }
+            if (best) break;
+          }
+          if (!best) return false;
+          used.add(best.c.uid);
+          board.push({ x: best.cell.x, y: best.cell.y, card: best.c });
+        }
+        return false;
+      };
+      const holePenalty = (move) => {
+        if (emptyLeft > 10) return 0;
+        const board2 = (state.board || []).map(b => ({ x: b.x, y: b.y, card: b.card }));
+        board2.push({ x: move.x, y: move.y, card: move.card });
+        const used = new Set([move.card.uid]);
+        const size = state.size;
+        const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+        let unfillable = 0;
+        let fillable = 0;
+        for (let y = 0; y < size; y++) {
+          for (let x = 0; x < size; x++) {
+            if (board2.some(b => b.x === x && b.y === y)) continue;
+            let adj = 0;
+            for (const d of dirs) {
+              if (board2.some(b => b.x === x + d[0] && b.y === y + d[1])) adj++;
+            }
+            if (adj === 0 && board2.length > 0) continue;
+            const sim = { board: board2, size, turnPlayed: 0 };
+            let ok = false;
+            for (const c of poolLeft) {
+              if (used.has(c.uid) || c.uid === move.card.uid) continue;
+              if (canPlaceCardAt(sim, c, x, y, 1)) {
+                ok = true;
+                break;
+              }
+            }
+            if (ok) fillable++;
+            else if (adj > 0) unfillable++;
+          }
+        }
+        let sc = 0;
+        if (unfillable > 0) sc -= 80 * unfillable;
+        if (emptyLeft <= 6) sc += fillable * 3;
+        // Bonus forte se greedy residuo chiude tutto
+        if (emptyLeft <= 7) {
+          const pool2 = poolLeft.filter(c => c.uid !== move.card.uid);
+          if (residualGreedyComplete(board2, pool2)) sc += 200;
+          else if (emptyLeft <= 4) sc -= 50;
+        }
+        return sc;
+      };
       const score = (move) => {
         const card = move.card;
         let sc = 0;
+
+        // Endgame aggressivo: con pochi vuoti, chiudere conta piu' delle euristiche midgame
+        if (emptyLeft <= 8) sc += 40;
+        if (emptyLeft <= 5) sc += 35;
+        if (emptyLeft <= 3) sc += 40;
+        sc += holePenalty(move);
+        // Preferisci celle del piano target se presenti
+        if (state._gnTargetCellSequence) {
+          const ti = state._gnTargetCellSequence.findIndex(
+            t => t.x === move.x && t.y === move.y &&
+              !(state.board || []).some(b => b.x === t.x && b.y === t.y)
+          );
+          if (ti >= 0) sc += Math.max(0, 25 - ti);
+        }
 
         // "Cosa fare"
         known.forEach(o => {
@@ -5554,14 +6016,15 @@ const MPCARDS_CORE_SOURCE = `
           sc += m;
         });
 
-        // "Cosa non fare" + rarità
+        // "Cosa non fare" + rarità (toned down in endgame)
         const sC = counts.shape[card.shape]||1;
         const cC = counts.color[card.color]||1;
         const vC = counts.value[card.value]||1;
-        if (sC<=1) sc -= 12;
-        else if (sC==2) sc -= 6;
-        if (cC<=2) sc -= 7;
-        if (vC<=2) sc -= 5;
+        const rarePen = emptyLeft <= 6 ? 0.35 : 1;
+        if (sC<=1) sc -= 12 * rarePen;
+        else if (sC==2) sc -= 6 * rarePen;
+        if (cC<=2) sc -= 7 * rarePen;
+        if (vC<=2) sc -= 5 * rarePen;
 
         // Fattori specifici per N crescente (da osservazioni umane su 5x5 vs 4x4):
         // - Gli insiemi per VALORE crescono (soprattutto i valori alti come il 5: +8 carte nel 5x5).
@@ -5674,26 +6137,25 @@ const MPCARDS_CORE_SOURCE = `
         return sc;
       };
 
+      // Coda: se una mossa lascia un residuo greedy-complete, prendila subito
+      if (emptyLeft <= 5) {
+        for (const m of legals) {
+          const board2 = (state.board || []).map(b => ({ x: b.x, y: b.y, card: b.card }));
+          board2.push({ x: m.x, y: m.y, card: m.card });
+          const pool2 = poolLeft.filter(c => c.uid !== m.card.uid);
+          if (residualGreedyComplete(board2, pool2)) {
+            state._gnJustPlayedSeqStep = true;
+            return { type: "move", move: m };
+          }
+        }
+      }
+
       let best = legals[0];
       let bs = score(best);
       legals.forEach(m => {
         const s = score(m);
         if (s > bs) { bs = s; best = m; }
       });
-
-      // Controllo "esatto" di sicurezza (per "cosa non devo fare")
-      // Se dopo la mossa il parziale non è più completabile con le carte rimanenti (set), penalità
-      // (usiamo il matrix solver sul set rimanente per il size)
-      try {
-        const ms = require("./scripts/durissima-matrix-solver");
-        const afterBoard = [...state.board, {x: best.x, y: best.y, card: best.card}]; // approx
-        // Semplice: se il solver trova una soluzione per il size con le carte rimanenti, ok
-        // Per ora aggiungiamo una penalità se la mossa usa l'ultima di una forma rara e ci sono ancora molte celle
-        const remainingCells = state.size * state.size - state.board.length - 1;
-        if (sC <= 1 && remainingCells > 3) {
-          bs -= 20;
-        }
-      } catch(e){}
 
       return { type: "move", move: best };
     }
