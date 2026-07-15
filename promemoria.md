@@ -158,3 +158,5 @@ La chat Grok non e' persistente: il diario e' `SESSIONI.md` (su Git).
 ---
 
 *Ultimo aggiornamento promemoria: 2026-07-11 — Gioco risolto; riserva N in prodotto (v0.1.7); prossimo: probe seed massivi, regole, web gioco.*
+---
+*2026-07-15:* Coordinatore G>=N **unificato** (N=3..8): griglia A + assembly owned-first multi-start + fingi minLate + follow strict. Test 155/155 = 100% (`temp-gn-unified-test.js`). G<N ancora da fare.

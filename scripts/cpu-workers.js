@@ -1,16 +1,104 @@
 "use strict";
 
+const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { Worker } = require("worker_threads");
+
+const HEAVY_PROBE_LOCK_PATH = path.join(__dirname, ".heavy-probe.lock");
 
 function logicalCpuCount() {
   return os.cpus().length || 4;
 }
 
-/** Worker CLI paralleli: tutti i core logici meno uno per il sistema. */
+/** Worker CLI paralleli: 6 (margine CPU per altra istanza agente sullo stesso PC). */
 function defaultCliWorkers() {
-  return Math.max(1, logicalCpuCount() - 1);
+  return Math.min(6, Math.max(1, logicalCpuCount() - 2));
+}
+
+/** Probe pesanti (DFS G=N, simulazioni lunghe): 1 worker per non contendere CPU/RAM. */
+function defaultHeavyCliWorkers() {
+  return 1;
+}
+
+function hasForceLockFlag(argv) {
+  return argv.includes("--force-lock");
+}
+
+function isProcessAlive(pid) {
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err && err.code === "EPERM";
+  }
+}
+
+function readHeavyProbeLock() {
+  try {
+    if (!fs.existsSync(HEAVY_PROBE_LOCK_PATH)) return null;
+    return JSON.parse(fs.readFileSync(HEAVY_PROBE_LOCK_PATH, "utf8"));
+  } catch (_err) {
+    return null;
+  }
+}
+
+function clearHeavyProbeLock() {
+  try {
+    if (fs.existsSync(HEAVY_PROBE_LOCK_PATH)) fs.unlinkSync(HEAVY_PROBE_LOCK_PATH);
+  } catch (_err) {
+    /* lock gia rimosso */
+  }
+}
+
+/**
+ * Un solo probe pesante alla volta. Evita N processi Node con 7 worker che si pestano.
+ * @param {string} scriptName nome script (per messaggio)
+ * @param {string[]} argv process.argv.slice(2)
+ */
+function acquireHeavyProbeLock(scriptName, argv = []) {
+  const existing = readHeavyProbeLock();
+  if (existing && !isProcessAlive(existing.pid)) {
+    clearHeavyProbeLock();
+  } else if (existing && existing.pid !== process.pid) {
+    if (!hasForceLockFlag(argv)) {
+      process.stderr.write(
+        "\nProbe pesante gia in esecuzione:\n" +
+          `  script: ${existing.script || "?"}\n` +
+          `  pid:    ${existing.pid}\n` +
+          `  avvio:  ${existing.started || "?"}\n\n` +
+          "Attendere la fine o killare il processo. Per ignorare: --force-lock\n"
+      );
+      process.exit(2);
+    }
+    clearHeavyProbeLock();
+  }
+
+  const payload = {
+    script: scriptName,
+    pid: process.pid,
+    started: new Date().toISOString()
+  };
+  fs.writeFileSync(HEAVY_PROBE_LOCK_PATH, JSON.stringify(payload));
+
+  let released = false;
+  function release() {
+    if (released) return;
+    released = true;
+    const current = readHeavyProbeLock();
+    if (current && current.pid === process.pid) clearHeavyProbeLock();
+  }
+
+  process.once("exit", release);
+  process.once("SIGINT", () => {
+    release();
+    process.exit(130);
+  });
+  process.once("SIGTERM", () => {
+    release();
+    process.exit(143);
+  });
 }
 
 function parseWorkersFlag(argv, fallback = defaultCliWorkers()) {
@@ -30,6 +118,7 @@ function filterArgv(argv) {
       i++;
       continue;
     }
+    if (argv[i] === "--force-lock") continue;
     out.push(argv[i]);
   }
   return out;
@@ -83,6 +172,8 @@ function runWorkerPool(workerFile, tasks, opts = {}) {
 module.exports = {
   logicalCpuCount,
   defaultCliWorkers,
+  defaultHeavyCliWorkers,
+  acquireHeavyProbeLock,
   parseWorkersFlag,
   filterArgv,
   runWorkerPool

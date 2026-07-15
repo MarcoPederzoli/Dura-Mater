@@ -3,7 +3,7 @@
 Lista di lavoro per quando si riprende il progetto.  
 Contesto: probe regole (scarti, reshuffle, hand-cap) e tentativi 7×7 god-hand **non sono conclusivi** finche' il bot non separa i livelli del problema.
 
-Ultimo aggiornamento: 2026-06-19.
+Ultimo aggiornamento: 2026-07-09.
 
 ---
 
@@ -12,6 +12,11 @@ Ultimo aggiornamento: 2026-06-19.
 - [ ] Usare `durissima-grid-probe` / sweep simulator per decidere bilanciamento regole (scarti, n-reshuffle, hand-cap).
 - [ ] Interpretare `% vittoria bot` come difficolta' intrinseca del mazzo o del formato.
 - [ ] Certificare formati su 3 seed (es. 7×7 1/3): campione troppo piccolo per qualsiasi conclusione.
+- [ ] **Attaccare Livello C con piani Livello A+B** (griglia+assembly senza mani): direct follower 7x7 = 1 mossa media — vedi `SESSIONI.md` 2026-07-09 chiusura e report `Report_Solvibilita_Dura_Durissima.docx`.
+- [ ] Sweep / full DFS 7/8 «per risolvere il bot» senza piani **player-aware** o salto CP-SAT.
+- [ ] Patch euristiche al global-planner senza validare allineamento piano-mani sul deal.
+
+**Prima di riprendere (anche con Grok 4.5):** leggere report `.docx` + voce SESSIONI chiusura 2026-07-09.
 
 ---
 
@@ -33,20 +38,20 @@ Riferimenti esistenti: `BILANCIAMENTO-PAUSA.md`, `BOT-STRATEGIA-GN.md`, `durissi
 
 **Thought experiment:** solitario con pool di tutte le N² carte scoperte, nessun limite di pose/turno — solo incastro compatibilita'.
 
-- [ ] Prototipare solver CSP minimo (MRV + forward checking) su mazzo fisso `SIM_DECK_CODES`.
-- [ ] Output: `solvibile sì/no` + una griglia esempio (se sì).
-- [ ] Campione: almeno **20–50 seed** per N = 3..8 (non 3 seed).
-- [ ] Confronto atteso: livello A quasi sempre sì per N ammessi; se no → problema mazzo/deal, non bot.
+- [x] Prototipare solver CSP minimo (MRV + forward checking) su mazzo fisso `SIM_DECK_CODES`. **Fatto 2026-07-09** in `deck-grid-solution-count-lib.js` + `durissima-matrix-solver.js` (bitmask, propagate, MRV).
+- [x] Output: `solvibile sì/no` + una griglia esempio (se sì). **Fatto**: `findOneSolutionForSize` + `findSchedulableMatrix`.
+- [ ] Campione: almeno **20–50 seed** per N = 3..8 (non 3 seed). (oracoli veloci ora, facile ampliare).
+- [x] Confronto atteso: livello A quasi sempre sì per N ammessi. **Confermato** — tutte le griglie 3..8 hanno soluzioni, e assembly B pure.
 
-Non confondere con god-hand attuale (quello e' ancora livello B).
+Non confondere con god-hand attuale (quello e' ancora livello B). Livello A+B ora ha oracolo forte e veloce (ms per 8x8).
 
 ---
 
 ## Priorita' 3 — Scheduler livello B
 
-- [ ] Dato un incastro A, decidere se esiste **linearizzazione in turni** (<=4 pose, progressione requisiti, DM).
-- [ ] Riutilizzare/estendere `solveGnStateOutcome` / `durissima-gn-solver-lib.js` (4×4: bot ~7% vs solver ~93% sullo stesso deal — gia' documentato).
-- [ ] Benchmark 5×5, 6×6, 7×7, 8×8 con budget nodi esplicito e tabella fill% / schedulabile%.
+- [x] Dato un incastro A, decidere se esiste **linearizzazione in turni** (<=4 pose, progressione requisiti, DM). **Fatto** 2026-07: `findSchedulableAssembly` in nuovo solver (DFS con supporto >= req, end turn flessibile).
+- [ ] Riutilizzare/estendere `solveGnStateOutcome` / `durissima-gn-solver-lib.js` (4×4: bot ~7% vs solver ~93% sullo stesso deal — gia' documentato). (Integrazione target A+B nel planner globale da fare).
+- [x] Benchmark 5×5, 6×6, 7×7, 8×8 ... **Fatto** (tutti schedulabili in ms con il nuovo oracolo A+B separato; il solver DFS completo resta per ownership mani).
 
 ---
 
@@ -54,11 +59,15 @@ Non confondere con god-hand attuale (quello e' ancora livello B).
 
 Sostituire il «labirinto» euristico (`durissima-planner` / patch ad hoc) con pipeline:
 
-1. [ ] **Piano globale** — incastro o ordine di riempimento (morfologia cubo / grafo compatibilita' in `deck-compat-graph.js`, `deck-cube-morphology.js`).
-2. [ ] **Turnizzazione** — pacchetti da <=4 mosse per turno.
-3. [ ] **Esecuzione** — solo in partita reale: mani, ordine giocatori, pesca.
+1. [x] **Piano globale A+B** — incastro + assembly (`durissima-matrix-solver.js`). **Fatto** per griglia ideale.
+1b. [ ] **Piano player-aware** — stesso deal: mani, ordine turni, DM. **Blocco attuale su 7/8** — prerequisito prima di bot C.
+2. [x] **Turnizzazione** — pacchetti <=4 mosse (`findSchedulableAssembly`). **Fatto** su piano A.
+3. [~] **Esecuzione C** — partita reale: mani, ordine giocatori, pesca.
+   - [x] **Coordinatore squadra** (2026-07-09): una mente vs mazzo in `mpcards-core.js` — `chooseDurissimaCoordinatedAction`, DFS con pass coop. Handoff: `scripts/HANDOFF-COORDINATORE-DURISSIMA.md`.
+   - [ ] Win% 4x4+ ancora insufficiente; serve passo **1b** integrato nel coordinatore.
+   - Oracle parziale (`durissima-gn-oracle.js`); 7/8 in pausa finche' 4x4 non migliora.
 
-Idee gia' nel core ma non unificate: `durissima-global-planner`, patch 7×7/8×8, `gnTryForcedMove`, rollout, matching timeline (`diag-gn-*`).
+Idee gia' nel core: patch 7×7/8×8 (agganciata al coordinatore), `gnTryForcedMove`, rollout. **Non** estendere patch senza piano player-aware sul deal.
 
 ---
 
