@@ -69,8 +69,8 @@ function isDurissimaVariantSelected() {
   return els.gameVariant?.value === "durissima";
 }
 
-/** Pool riserva N: regola fissa del solitario Durissima (G=1), non usata in coop. */
-function isDurissimaSoloReserveRule(players, variant) {
+/** Solitario Durissima (G=1): opzione carte extra / vita (non usate in coop). */
+function isDurissimaSoloRule(players, variant) {
   return variant === "durissima" && players === 1;
 }
 
@@ -160,6 +160,8 @@ const els = {
   durissimaOptions: document.querySelector("#durissima-options"),
   durissimaVitaExtra: document.querySelector("#durissima-vita-extra"),
   durissimaSoloReserveNote: document.querySelector("#durissima-solo-reserve"),
+  durissimaExtraCards: document.querySelector("#durissima-extra-cards"),
+  durissimaExtraCardsLabel: document.querySelector("#durissima-extra-cards-label"),
   durissimaCoordinator: document.querySelector("#durissima-coordinator"),
   playerOneName: document.querySelector("#player-one-name"),
   setupSection: document.querySelector("#setup-section"),
@@ -360,6 +362,9 @@ function syncVariantUi() {
   }
   if (els.durissimaSoloReserveNote) {
     els.durissimaSoloReserveNote.hidden = !solo;
+  }
+  if (els.durissimaExtraCardsLabel) {
+    els.durissimaExtraCardsLabel.hidden = !solo;
   }
 }
 
@@ -656,13 +661,15 @@ function renderTournamentRanking() {
 
 function buildDurissimaSetupOptions(size, players) {
   const solo = players === 1;
+  // Carte extra in mano (k); 0 = core. Tabella per-N da tarare in futuro.
+  const extraCards = solo ? Number(els.durissimaExtraCards?.value || 0) || 0 : 0;
   return {
     durissimaMater: true,
     players,
     drawOnlyAfterPlacement: true,
     durissimaVitaExtraEnabled: solo && Boolean(els.durissimaVitaExtra?.checked),
-    durissimaReserveEnabled: solo,
-    durissimaReserveSize: size
+    durissimaReserveEnabled: false,
+    durissimaExtraCards: Math.max(0, extraCards)
   };
 }
 
@@ -680,22 +687,30 @@ function describeFormatTier(size, players) {
   }
   if (variant === "durissima" && players === 1) {
     const tier = durissimaGnTierLabel(size);
-    const deal = core.computeInitialDeal(size, 1);
-    const drawAfterReserve = Math.max(0, deal.drawCount - size);
+    const extra = Number(els.durissimaExtraCards?.value || 0) || 0;
+    const deal = core.computeInitialDeal(size, 1, {
+      durissimaMater: true,
+      players: 1,
+      durissimaExtraCards: extra
+    });
+    const tall = deal.drawCount;
+    const hand = deal.cardsPerPlayer;
     if (isCoordinatorBotEnabled()) {
       const bundle = coordinatorBundleReady() ? "solver browser ok" : "solver browser mancante — ricarica pagina";
       return {
-        level: drawAfterReserve <= 12 ? "core" : tier.level,
+        level: tall <= 12 ? "core" : tier.level,
         text:
-          `Durissima Mater solitario (${size}x${size}): pool riserva ${size} + coordinatore una mente, ` +
-          `piano da mano + riserva + tallone (${drawAfterReserve} carte). ${bundle}. ${tier.text}`
+          `Durissima Mater solitario (${size}x${size}): mano ${hand}` +
+          (extra ? ` (N+${extra} carte extra)` : " (core)") +
+          `, tallone ${tall}, coordinatore una mente. ${bundle}. ${tier.text}`
       };
     }
     return {
       level: tier.level,
       text:
-        `Durissima Mater solitario (${size}x${size}) — pool riserva ${size}, tallone ${drawAfterReserve}. ` +
-        `${tier.text}. Bot consigliato: G (durissima-planner).`
+        `Durissima Mater solitario (${size}x${size}) — mano ${hand}` +
+        (extra ? ` (N+${extra})` : " core") +
+        `, tallone ${tall}. ${tier.text}. Bot consigliato: G (durissima-planner).`
     };
   }
   if (variant === "durissima" && isCoordinatorBotEnabled()) {
@@ -1625,8 +1640,13 @@ function renderBoard() {
           ? " · altezza al limite N"
           : "";
   const reserveCount = core.isDurissimaMater(state) ? (state.durissimaReserve || []).length : 0;
-  const reserveLabel = reserveCount ? `, riserva ${reserveCount}` : "";
-  els.boardStatus.textContent = `${state.board.length}/${state.size * state.size} carte, pesca ${state.drawPile.length}${reserveLabel}${closed}`;
+  const reserveLabel = reserveCount ? `, legacy-riserva ${reserveCount}` : "";
+  const handN = (state.hands && state.hands[0] ? state.hands[0].length : 0);
+  const extraHint =
+    core.isDurissimaMater(state) && state.players === 1 && handN > state.size
+      ? `, mano ${handN}`
+      : "";
+  els.boardStatus.textContent = `${state.board.length}/${state.size * state.size} carte, pesca ${state.drawPile.length}${extraHint}${reserveLabel}${closed}`;
 }
 
 function boardCellSize() {
@@ -2105,7 +2125,10 @@ function renderSummary() {
     ["Giocatore", `${playerLabel(player)} (${game.modes[player]})`],
     ["Strategia", game.modes[player] === "bot" ? core.strategyLabel(game.strategies[player]) : "Manuale"],
     ["Mazzo pesca", state.drawPile.length],
-    ...(durissima && reserveCount ? [["Pool riserva", reserveCount]] : []),
+    ...(durissima && reserveCount ? [["Legacy riserva", reserveCount]] : []),
+    ...(durissima && state.players === 1
+      ? [["Mano (carte extra incluse)", (state.hands[0] || []).length]]
+      : []),
     ...(durissima && state.durissimaVitaExtraEnabled
       ? [["Vita extra", `${core.durissimaVitaExtraPoolLeft(state)} rimaste`]]
       : []),

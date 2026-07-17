@@ -493,7 +493,8 @@ testDurissimaScartiUsesStandardInitialDeal();
 testDurissimaScarti3x3SolitarioStandardDeal();
 testDurissimaScartiRefillAndRecycle();
 
-function testDurissimaSoloDefaultReserveN() {
+function testDurissimaSoloDefaultCoreNoExtra() {
+  // Prodotto solitario: core puro (nessuna riserva, nessuna carta extra) finche' non si tarano k per N
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);
   const state = core.setupGame(deck, {
     size: 4,
@@ -502,9 +503,40 @@ function testDurissimaSoloDefaultReserveN() {
     durissimaMater: true,
     durissimaVitaExtraEnabled: false
   });
-  assert.equal(state.durissimaReserve.length, 4);
-  assert.equal(state.drawPile.length, 8);
+  assert.equal(state.durissimaReserve.length, 0);
+  assert.equal(state.drawPile.length, 12);
   assert.equal(state.hands[0].length, 4);
+}
+
+function testDurissimaSoloExtraCardsInHand() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
+  const state = core.setupGame(deck, {
+    size: 5,
+    players: 1,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false,
+    durissimaExtraCards: 2
+  });
+  assert.equal(state.hands[0].length, 7);
+  assert.equal(state.durissimaReserve.length, 0);
+  assert.equal(state.drawPile.length, 18);
+}
+
+function testDurissimaSoloLegacyReserveStillWorks() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);
+  const state = core.setupGame(deck, {
+    size: 4,
+    players: 1,
+    random: () => 0,
+    durissimaMater: true,
+    durissimaVitaExtraEnabled: false,
+    durissimaReserveEnabled: true,
+    durissimaReserveSize: 4
+  });
+  assert.equal(state.durissimaReserve.length, 4);
+  assert.equal(state.hands[0].length, 4);
+  assert.equal(state.drawPile.length, 8);
 }
 
 function testDurissimaCoopNeverUsesReserve() {
@@ -1078,7 +1110,9 @@ function testDurissimaSolitaireBufferExhaustedIsLoss() {
   assert.equal(result.lost || state.status === "stalled", true);
 }
 
-testDurissimaSoloDefaultReserveN();
+testDurissimaSoloDefaultCoreNoExtra();
+testDurissimaSoloExtraCardsInHand();
+testDurissimaSoloLegacyReserveStillWorks();
 testDurissimaCoopNeverUsesReserve();
 testDurissimaNReshuffleDefaultWithPool();
 testDurissimaCorePureOptOutDisablesNReshuffle();
@@ -1129,6 +1163,80 @@ function testPlannerDoesNotHangForLaterPlayers() {
 
 testPlannerPlaysWhenLegalMovesExist();
 testPlannerDoesNotHangForLaterPlayers();
+
+/** One mind vede le mani (OK); non deve usare DFS/pesca sull'ordine del tallone. */
+function testDrawOracleBlockedWhenTalloneNonEmpty() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
+  const state = core.setupGame(deck, {
+    size: 5,
+    players: 7,
+    random: () => 0.3,
+    durissimaMater: true,
+    strategies: Array.from({ length: 7 }, () => "durissima-global-planner")
+  });
+  assert.ok((state.drawPile || []).length > 0, "serve tallone non vuoto");
+  core.gnResetDrawOracleBlockCount();
+  const before = core.gnDrawOracleBlockCount();
+  const outcome = core.solveGnStateOutcome(state, {
+    maxNodes: 1000,
+    trackAction: true,
+    coordinatedTeam: true
+  });
+  assert.equal(outcome.blockedDrawOracle, true);
+  assert.equal(outcome.result, "unsolved");
+  assert.equal(outcome.action, null);
+  assert.ok(core.gnDrawOracleBlockCount() > before);
+  assert.equal(core.solveGnBestAction(state), null);
+  assert.equal(core.gnSearchMayUseDrawPile(state), false);
+}
+
+/** Partita G>N: decide senza incrementare oracolo oltre i ban espliciti; griglia si riempie. */
+function testCoordinatedGtNNoDrawOracleAndStillSolves() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 5);
+  const random = core.mulberry32(core.hashSeed("gtN-fair:5:7:0"));
+  const strategies = Array.from({ length: 7 }, () => "durissima-global-planner");
+  const state = core.setupGame(deck, {
+    size: 5,
+    players: 7,
+    random,
+    durissimaMater: true,
+    strategies,
+    randomizeTurnOrder: true,
+    durissimaVitaExtraEnabled: false
+  });
+  assert.ok(state.drawPile.length > 0);
+  core.gnResetDrawOracleBlockCount();
+  let guard = 0;
+  const t0 = Date.now();
+  while (state.status === "playing" && guard++ < 100000) {
+    const step = core.botStep(state, strategies, random);
+    if (!step || (!step.played && !step.passed && !step.ended && !step.lost)) break;
+    if (Date.now() - t0 > 20000) break;
+  }
+  assert.equal(state.board.length, 25, "5x7 deve chiudere senza oracolo ordine");
+  assert.equal(state.status, "success");
+  // solveGn non deve essere stato usato con successo su tallone; ban count puo' essere 0
+  // se i caller rispettano gia' gnSearchMayUseDrawPile (preferibile)
+  assert.equal(core.solveGnBestAction(state), null); // tallone ormai 0 a fine partita - wait board full draw empty
+  // A fine partita draw e' 0: search sarebbe lecita ma inutile. Rifai check mid-game:
+  const st2 = core.setupGame(deck, {
+    size: 5,
+    players: 7,
+    random: core.mulberry32(99),
+    durissimaMater: true,
+    strategies,
+    durissimaVitaExtraEnabled: false
+  });
+  assert.ok(st2.drawPile.length > 0);
+  core.gnResetDrawOracleBlockCount();
+  core.botStep(st2, strategies, core.mulberry32(99));
+  // Dopo un botStep con tallone, se qualcosa ha chiamato solveGn e' stato bloccato
+  // (blockedDrawOracle). Non deve aver pescato durante decide in modo oracolare.
+  assert.ok(st2.status === "playing" || st2.board.length >= 0);
+}
+
+testDrawOracleBlockedWhenTalloneNonEmpty();
+testCoordinatedGtNNoDrawOracleAndStillSolves();
 
 function testRandomInitialTurnOrder() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);

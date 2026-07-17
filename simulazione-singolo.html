@@ -1113,14 +1113,18 @@
         <div id="durissima-options" class="durissima-options">
           <label class="option-check">
             <input id="durissima-coordinator" type="checkbox" checked aria-label="Coordinatore una mente">
-            Coordinatore una mente (TG) — coop G=2..2N (N reshuffle); solitario G=1 (pool riserva N)
+            Coordinatore una mente (TG) — coop G=2..2N (N reshuffle); solitario G=1 (core + carte extra opzionali)
           </label>
           <p id="durissima-solo-reserve" class="prefs-hint durissima-solo-rule" hidden>
-            Solitario (G=1): regola extra <strong>pool riserva N</strong> — le prime N del tallone, scoperte e giocabili (non in coop).
+            Solitario (G=1): <strong>core</strong> = mano N. Opzionale: <strong>carte extra</strong> in mano dal 1° turno (non in coop).
           </p>
+          <label id="durissima-extra-cards-label" class="option-check" hidden>
+            Carte extra in mano (solitario)
+            <input id="durissima-extra-cards" type="number" min="0" max="16" value="0" aria-label="Carte extra solitario">
+          </label>
           <label class="option-check">
-            <input id="durissima-vita-extra" type="checkbox" aria-label="Vita extra pool N">
-            Vita extra (pool N reshuffle, opzionale solitario)
+            <input id="durissima-vita-extra" type="checkbox" aria-label="Vita extra reshuffle">
+            Vita extra (reshuffle limitati, opzionale solitario)
           </label>
         </div>
         <button id="new-game">Avvia partita</button>
@@ -1128,7 +1132,7 @@
         <button id="reset-prefs" class="secondary" type="button">Ripristina opzioni default</button>
       </div>
       <p id="format-tier-hint" class="format-tier-hint prefs-hint" data-tier="core" aria-live="polite"></p>
-      <p class="prefs-hint">Default: Durissima 4x4 G=4, coordinatore on. Solitario G=1: pool riserva N automatico. G2…G8: Dotto, Brontolo, …</p>
+      <p class="prefs-hint">Default: Durissima 4x4 G=4, coordinatore on. Solitario G=1: core (mano N) + carte extra opzionali. G2…G8: Dotto, Brontolo, …</p>
       <div id="player-config" class="players"></div>
     </section>
 

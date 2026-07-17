@@ -1947,3 +1947,291 @@ Pronti.
 
 **Sweep 15 seed gltN:** overall ~20% (alcune celle rare restano 0/15 ma win esistono con piu' sample).
 **Regressione G>=N:** 5x5 ok al 100%.
+
+## 2026-07-15 � Solitario G=1 allineato a fullKnown (3x3)
+
+**Problema:** coordinatore solitario a ~2-12% su 3x3 (inaccettabile; umani risolvono facilmente).
+**Fix:** G=1 entra nel path fullKnown unificato.
+- Set noto = mano + riserva N + tallone
+- owned = mano + riserva; missing = tallone (fingi/minLate)
+- Follow: uid da mano o riserva
+- Piani filtrati con gnSoloIsPlanSchedulable (FIFO pesca)
+- Replan a ogni pesca in solitario
+
+**Test** `solo-coordinator-variant-probe.js 3 80`:
+- reserve-n (prodotto): **91.3%** (73/80) � era ~2%
+- n-reshuffle: **95%** (76/80)
+- emerg-x3 / after-x3: ~90-91%
+- core (no reserve): 10% (tallone 6, solo 3 owned: piu' duro FIFO)
+- free-draw/legacy: invariati (COORD off)
+- Regressione 5x5 G>=5: 100%
+
+**Decisione:** solitario 3x3 con pool N (prodotto) considerato ok a ~90%+; core puro migliorabile ma non prioritario.
+
+## 2026-07-15 � Solitario 5x5: bias umano (bassi first, 5 in blocco BR 3x3)
+
+**Input utente:** risolto 5x5 solo al primo colpo (regole base, no pool/reshuffle) tenendo i 9 cinque in 3x3 basso-destra e usando prima i valori bassi.
+
+**Implementazione:**
+- Piano crescita solitario con score: core early (bassi, evitare zona BR), poi massimi nel blocco 3x3 BR (N>=5).
+- minLate solitario ridotto (non piu' impossibile con tallone 20).
+- Follow solitario: se step piano non in mano, prova step successivi giocabili.
+- Realistico solitario: stesso bias layout.
+
+**Risultati 5x5 (40 seed):**
+- reserve-n / n-reshuffle: **17.5%** (era 2%)
+- emerg-x3: **32.5%** (era 8%)
+- core base: ancora **0%** (tallone 20 + FIFO resta durissimo)
+
+**3x3 regressione (20 seed):** reserve-n/n-reshuffle **100%**; core **65%** (era ~10%).
+**Coop 5x5 G>=5:** ok 100% quick.
+
+**Nota:** strategia umana aiuta con pool/riserva; core puro 5x5 ancora epico per il bot.
+
+## 2026-07-16 - Solitario 5x5 core + fix pesca mano vuota + sweep pool
+
+**Contesto:** utente chiede (1) 5x5 senza pool e' risolvibile? (2) formula pool != N perche' pool=N non scala (3x3: 67% carte disponibili = troppo facile).
+
+**Bug regole critico (fix):** in `endTurn`, pesca post-posata solo se `!handEmpty`. In Durissima la mano vuota NON e' vittoria: dopo aver posato l'ultima carta della mano non si pescava e la partita stallava con tallone ancora pieno. Molti seed 5x5 core fallivano cosi' (mano 0, draw 6+).
+
+**Fix:** `turnPlayed > 0 && (isDurissimaMater(state) || !handEmpty)` — Durissima pesca anche con mano vuota se ha posato.
+
+**Planner solitario (gia' in corso, raffinato):**
+- Bootstrap con sole carte giocabili (mano+riserva), no fullSeq 25 rigida early
+- Densita': tratti abbondanti late + cluster; mid-game penalita' su abundant isolati
+- Residuale completo in coda (closePhase ~48% celle) + DFS anti-buco
+- Replan a pesca e a ogni posa se empty<=12
+
+**Risultati solitario (core = no riserva, no vita extra):**
+
+| Config | win% | avgP | note |
+|--------|------|------|------|
+| 3x1 core | ~90-98% | ~8.2-8.8/9 | era ~10-65% |
+| 3x1 reserve-n | 100% | 9/9 | prodotto |
+| 4x1 core | ~87-93% | ~15-16/16 | |
+| 5x1 core | **10-15%** | **~21-22/25** | era **0%**; win esistono |
+| 5x1 reserve-n | ~18-25% | ~22/25 | pool=N non domina |
+| Coop 5x5 G>=5 | 100% | 25/25 | no regressione |
+
+**Conclusione 5x5 senza pool:** SI' e' risolvibile (bot ~10-15%, umani possono di piu'). Difficile ma non impossibile. Fallimenti tipici: buchi topologici in coda (placed 22-24), non blocco iniziale.
+
+**Sweep pool** (`temp-pool-sweep.js`, 20 seed, 7 worker, `durissimaReserveSize`):
+
+| N | pool | frac (hand+pool)/N2 | win% bot |
+|---|------|---------------------|----------|
+| 3 | 0 | 33% | 85% |
+| 3 | 1 | 44% | 35% (peggio!) |
+| 3 | 3 | 67% | 90% |
+| 4 | 0 | 25% | 80% |
+| 4 | 4 | 50% | 20% (peggio!) |
+| 5 | 0 | 20% | 15% |
+| 5 | 3 | 32% | **40%** (picco) |
+| 5 | 5 | 40% | 15% |
+
+**Insight:** pool=N non scala (`frac=2/N` cala mentre la difficolta' sale). Sul bot il pool non e' monotono: troppe carte giocabili early possono peggiorare (over-commit). Picco 5x5 a pool~3 (frac~32%).
+
+**Formula candidata (da validare con playtest umano):**
+- Target frazione fissa di carte disponibili a inizio: `pool = max(0, ceil(f * N^2) - N)` con f~0.30-0.35
+- Es. f=1/3: N=3→0, N=4→2, N=5→4, N=6→6, N=8→14
+- Alternativa piu' soft f=1/4: N=3→0, N=4→0, N=5→2, N=8→8
+- **Non** usare pool=N come regola prodotto generica
+
+**Artefatti:** `temp-pool-sweep.js`; fix in `mpcards-core.js` (endTurn + solo planner).
+
+**Prossimo:** playtest umano su pool formula; eventuale fix bot "meno greedy con pool grande"; commit se richiesto.
+
+
+## 2026-07-16 - Retest rapido G<N (dopo lavoro solitario)
+
+**Motivo:** verificare regressioni coop 1<G<N dopo fix pesca + planner solo.
+**Comando:** `node temp-gltN-test.js --seeds 10 -j 7` (210 deal, 21 config).
+
+**Overall: 22.4% (47/210)** — identico allo sweep 2026-07-15 post-miglioramenti.
+Celle con 0/10 su sample: 6x5, 7x6, 8x2..8x7 (come prima; win rare documentate con hunt/seed dedicati, non ricalcolate qui).
+Avg placed restano altissimi (quasi griglia piena). Nessuna regressione evidente.
+
+**Nota strategia:** se un giorno il solver copre tutto G<N, pool condiviso non serve come crutch regole.
+
+
+## 2026-07-16 - G<N celle a 0/10: ritest 100 seed
+
+**Celle (0% su retest 10 seed):** 6x5, 7x6, 8x2..8x7. Hash `gltN:N:G:seed`, 7 worker, 800 deal, ~10 min.
+
+| NxG | tall | win% | wins | avgP | first win seeds |
+|-----|------|------|------|------|-----------------|
+| 6x5 | 6 | 3% | 3/100 | 34.2/36 | 30,82,89 |
+| 7x6 | 7 | 3% | 3/100 | 47.0/49 | 19,41,92 |
+| 8x2 | 48 | 1% | 1/100 | 59.6/64 | 93 |
+| 8x3 | 40 | 1% | 1/100 | 61.3/64 | 66 |
+| 8x4 | 32 | 5% | 5/100 | 61.9/64 | 33,35,41,59,88 |
+| 8x5 | 24 | 3% | 3/100 | 62.0/64 | 20,69,97 |
+| 8x6 | 16 | 3% | 3/100 | 62.0/64 | 29,65,99 |
+| 8x7 | 8 | **0%** | **0/100** | 61.1/64 | — |
+
+**Subset:** 2.4% (19/800). Conferma: win rare esistono su quasi tutte le celle "0/10"; **8x7 resta 0/100** con prefisso gltN (in passato win con hunt dedicata).
+
+
+## 2026-07-16 - Ripresa solitario (dopo detour G<N)
+
+**Stato stabile (post rollback tentativi aggressivi):**
+
+| Config | win% | note |
+|--------|------|------|
+| 3x1 core | ~90% | ok |
+| 3x1 reserve-n (pool=N) | **100%** | prodotto |
+| 4x1 core | ~88% | ok |
+| 5x1 core | **~10%** | avgP ~21.6/25; risolvibile, epico |
+| 5x1 pool f=1/3 (pool=4) | **~21%** | meglio del core; simile a pool=N (~25%) |
+| 5x1 reserve-n | ~25% | pool=N non domina sul bot |
+| Coop 5x5 G>=5 | 100% | no regressione |
+
+**Tenuto:** fix pesca mano vuota Durissima; bootstrap+densita'+residuale solitario.
+**Scartato (regressioni):** replan ogni posa N>=5; residuale solo-owned su N>=5; bootstrap 1-3 step; interchange valore sul follow (rompeva reserve 3x3 100%→60%).
+
+**Pool formula in codice:** `defaultDurissimaReserveSize` + override `durissimaReserveFrac` (es. 1/3). Default prodotto resta **pool=N**.
+
+**Prossimo solitario:** (1) endgame anti-buco 5x5 core se serve >10%; (2) decidere se prodotto passa a `durissimaReserveFrac=1/3`; (3) commit.
+
+
+## 2026-07-16 - Solitario N=6..8: core vs pool minimo (bot attuale)
+
+**Domanda utente:** core 6+ e' impossibile? Target: 6 ~8-10%, 7 ~2-5%, 8 ~1%; pool solo se serve, minimo. 3x3 senza pool; 5x5 core ~10% ok.
+
+**Probe** (`temp-solo-hi-probe` / worker), 7 worker, timeout 35s/partita:
+
+### Core (no pool, no vita)
+
+| N | seeds | win% | avgP | maxP | note |
+|---|-------|------|------|------|------|
+| 6 | 120 | **0%** | 27.6/36 | **35**/36 | a un buco dalla vittoria spesso |
+| 7 | 80 | **0%** | 36.9/49 | **48**/49 | idem |
+| 8 | 60 | **0%** | 46.9/64 | **58**/64 | lontano ma non "blocco a meta'" |
+
+### Pool minimo (sample ridotto)
+
+| N | pool | frac hand+pool | win% | wins | maxP |
+|---|------|----------------|------|------|------|
+| 6 | 1 | 19% | **4%** | 1/24 seed4 | 36 |
+| 6 | 3 | 25% | **17%** | 4/24 | 36 |
+| 6 | 4 | 28% | 8% | 2/24 | 36 |
+| 6 | 6 | 33% | 21% | 5/24 | 36 |
+| 7 | 2..14 | 18-43% | **0%** | 0/16 each | fino a 48 |
+| 8 | 2..16 | 16-38% | **0%** | 0/12 each | fino a 62 |
+
+**Conclusioni (bot, non oracolo umano):**
+1. **Non siamo certi** che core 6+ sia *matematicamente* impossibile: maxP 35/36 e 48/49 dicono "quasi".
+2. **Siamo certi** che col **coordinatore attuale** core 6/7/8 = 0 win su sample grandi (120/80/60).
+3. **6x6** diventa risolvibile col **pool minimo 1** (almeno 1 win); pool~3 entra nella banda target ~10-17%.
+4. **7x7 e 8x8**: anche pool fino a ~N o 2N non sblocca win% bot su sample; serve **solver migliore** (coda), non solo piu' carte in pool.
+
+**Design prodotto (preferenze utente):**
+- 3x3: core puro (no pool/reshuffle)
+- 5x5 core ~10%: ok
+- 6+ : prioritario migliorare bot core; fallback pool min (6: pool 1-3)
+
+
+## 2026-07-17 - Solitario: «carte extra» al posto del pool riserva + idee aiuti N alti
+
+**Rewrite prodotto:** niente pool riserva separato come regola default.
+- Setup solitario: mano = N + k (`durissimaExtraCards`), k default **0** (core).
+- Legacy riserva: solo `durissimaReserveEnabled: true` (probe).
+- UI: `gioco.html` / `simulazione-singolo.html` + `game.js`; RULES.md aggiornato.
+
+**Ispirazione solitari (da esplorare per N alti, non implementati):**
+vedi risposta sessione — freecell parking, mulligan, peek, reshuffle limitato, jolly una volta, seconda passata tallone, token vita, ecc.
+
+
+## 2026-07-17 - Solitario EQUO: bot non usa ordine del tallone
+
+**Problema (utente):** il bot "barava" usando l ordine reale di `drawPile` in pianificazione/FIFO/finish search. I % solitario precedenti NON sono confrontabili con un umano col foglio (insieme noto, ordine ignoto).
+
+**Fix (mpcards-core.js):**
+- Piani solitario: SOLO carte in mano/riserva. Mai schedulare uid del tallone.
+- Residuo completo solo se tallone vuoto (tutto in mano).
+- Rimosso assembly FIFO su drawList reale.
+- `gnSoloIsPlanSchedulable`: rifiuta piani con carte non owned; verifica senza pesca ordinata.
+- Finish solitario: `gnSoloFairFinishAction` (expectimax 1-ply su multiset, o DFS se tallone vuoto). Niente `solveGnStateOutcome` con fork che pesca in ordine reale.
+- Matrix-solver solitario solo se tallone vuoto.
+
+**Probe equo (seed solo-fair, core, no extra):**
+| N | win% | avgP | vs "barato" prima |
+|---|------|------|-------------------|
+| 3x1 | 30% (9/30) | 7.8/9 | era ~90% |
+| 4x1 | 15% (3/20) | 12.1/16 | era ~88% |
+| 5x1 | 0% (0/25) | 19.1/25 | era ~10% |
+| 5x5 G=5 | 100% smoke | ok coop non toccata in modo dannoso |
+
+**Conclusione:** i test solitario pre-fix misuravano un bot con info extra; da ora i numeri solitario = proxy piu onesto per umani. Serve ritarare bot equo e/o regole (carte extra, reshuffle) con questa baseline.
+
+
+## 2026-07-17 - Pulizia oracolo draw + retest G>N N=4 e N=5
+
+**Codice:** `gnSearchMayUseDrawPile` — DFS finish/solveGn* vietati se drawPile.length>0.
+Solo piano fullKnown (set + fingi/minLate) + follow. Solitario gia' equo da prima.
+
+**Retest** `temp-gtN-fair-probe.js` 30 seed, 7 worker, hash `gtN-fair:N:G:seed`:
+
+| NxG | tall | win% | wins | avgP |
+|-----|------|------|------|------|
+| 4x5 | 1 | **100%** | 30/30 | 16/16 |
+| 5x6 | 1 | **100%** | 30/30 | 25/25 |
+| 5x7 | 4 | **100%** | 30/30 | 25/25 |
+| 5x8 | 1 | **100%** | 30/30 | 25/25 |
+
+**Conclusione:** senza oracolo ordine, G>N su N=4 e N=5 resta 100%. Il metodo fingi/set non collassa. Non serve reintrodurre pool condiviso per queste config. Stop come richiesto (non proseguito N=6+).
+
+
+## 2026-07-17 - G>N fair N=6 (tutte le G>6)
+
+`node temp-gtN-fair-probe.js 6 30 7` — no draw-oracle search.
+
+| NxG | tall | win% | wins |
+|-----|------|------|------|
+| 6x7 | 1 | 100% | 30/30 |
+| 6x8 | 4 | 100% | 30/30 |
+| 6x9 | 0 | 100% | 30/30 |
+| 6x10 | 6 | 100% | 30/30 |
+| 6x11 | 3 | 100% | 30/30 |
+| 6x12 | 0 | 100% | 30/30 |
+
+**Overall: 100% (180/180).** Anche tallone 6 (6x10) chiude sempre.
+
+
+## 2026-07-17 - G>N fair N=7 (tutte le G>7)
+
+`node temp-gtN-fair-probe.js 7 30 7` — 210 deal.
+
+| NxG | tall | win% | wins |
+|-----|------|------|------|
+| 7x8..7x14 | 1..10 | **100%** | 30/30 ciascuna |
+
+**Overall: 100% (210/210).** Incluso 7x13 tallone 10.
+
+
+## 2026-07-17 - G>N fair N=8 (tutte le G>8)
+
+`node temp-gtN-fair-probe.js 8 30 7` — 240 deal.
+
+| NxG | tall | win% | wins |
+|-----|------|------|------|
+| 8x9..8x16 | 0..12 | **100%** | 30/30 ciascuna |
+
+**Overall: 100% (240/240).** Incluso 8x13 tallone 12.
+
+**Sintesi ladder G>N fair N=4..8:** tutto 100% senza oracolo ordine tallone.
+
+
+## 2026-07-17 - Assert anti DRAW-ORACLE (ordine tallone)
+
+**Confermato utente:** one mind che vede tutte le mani e' corretto (umani collaborano mostrando le carte).
+**Vietato:** usare l ordine reale del tallone in search/decisione.
+
+**Implementazione:**
+- `solveGnStateOutcome`: HARD BAN se `drawPile.length>0` → `{blockedDrawOracle:true, unsolved}`
+- `drawForPlayer`: se `_gnInCoordinatedDecide` e tallone non vuoto → no pesca + record
+- `chooseDurissimaCoordinatedAction`: flag `_gnInCoordinatedDecide` per tutta la decide
+- `gnApplyEndTurnInPlace`: record se decide+tallone
+- `GN_DRAW_ORACLE_STRICT=1` → throw invece di soft-block
+- API: `gnDrawOracleBlockCount`, `gnResetDrawOracleBlockCount`
+- Test: `testDrawOracleBlockedWhenTalloneNonEmpty`, `testCoordinatedGtNNoDrawOracleAndStillSolves` (5x7 chiude)
+

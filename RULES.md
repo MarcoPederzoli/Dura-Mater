@@ -280,17 +280,18 @@ Conseguenze del core (gia' coerenti col motore):
 
 **Cooperativo (2+ giocatori):** al tavolo mani e mazzo restano **coperti**. Con la scheda delle 64 carte e il dialogo si costruisce l'**universo noto** (quali carte esistono ancora, non l'ordine di pesca). Solo il giocatore attivo posa dalla propria mano. La simulazione coop usa `durissima-team-planner`; per **G=N senza tallone** (probe bilanciamento) usa `durissima-global-planner` (solver DFS + morfologia cubo, vedi `scripts/BILANCIAMENTO-PAUSA.md`).
 
-**Solitario (`G = 1`):** stesse eccezioni di pesca e vittoria. Bloccati senza mosse legali all'inizio del turno → partita **persa** (nessun passo nel core). Regola extra rispetto al coop: **pool riserva N** (sotto). Bilanciamento epico chiuso luglio 2026 (~1-5% su 7x7/8x8 con coordinatore).
+**Solitario (`G = 1`):** stesse eccezioni di pesca e vittoria. Bloccati senza mosse legali all'inizio del turno → partita **persa** (nessun passo nel core). Nessun pool condiviso (quello non ha senso a un giocatore). Opzionale: **carte extra** in mano (sotto). Il solitario e' pensato come **modalita' piu' dura** del gioco: default = **core puro** (mano = N).
 
-### Pool riserva N — regola solitario (`G = 1` only)
+### Carte extra — regola solitario (`G = 1` only)
 
-Differenzia il solitario dalla Durissima cooperativa (`G >= 2`), che usa **N reshuffle** e **non** la riserva.
+Sostituisce il vecchio «pool riserva» separato. Per un solo giocatore avere carte giocabili subito e' la stessa cosa che tenerle **tutte in mano**.
 
-- **Setup:** dopo il deal (mano N), le **prime N carte del tallone** (post-shuffle) formano il **pool riserva** scoperto; il tallone perde quelle N carte. Totale partita resta N² (es. 7x7: mano 7 + riserva 7 + tallone 35).
-- **In gioco:** carte in riserva sono **giocabili** come la mano (stesse regole di posa). Posa da riserva: la carta esce dalla riserva, non dalla mano; **non** si ricarica la riserva.
-- **Pesca:** regola core Durissima (solo dopo posata nel turno). Coordinatore/bot: riserva nel pool noto con mano + tallone.
-- **Coop (`G >= 2`):** riserva **disattivata** — solo reshuffle N come variante di riferimento.
-- **Codice:** `durissimaReserveEnabled` automatico con `players === 1`; opt-out esplicito solo per probe (`durissimaReserveEnabled: false`).
+- **Default prodotto:** **0 carte extra** (mano = N, tallone = N² − N). Core puro.
+- **Con k carte extra:** al setup ricevi **mano = N + k** (le k carte vengono dal tallone). Totale partita resta N². Esempio 6×6 con k=1: mano 7, tallone 29.
+- **In gioco:** solo la mano (niente seconda zona). Stesse regole di posa e pesca del core.
+- **Taratura k per N:** da definire (candidati: k=0 su 3–5; k piccolo su 6–8 se serve). In codice: `durissimaExtraCards` o tabella `durissimaExtraCardsByN`.
+- **Coop (`G >= 2`):** carte extra **disattivate** — si usa **N reshuffle** come aiuto di riferimento.
+- **Legacy:** il motore puo' ancora simulare un pool riserva separato (`durissimaReserveEnabled: true`) per probe storici; **non** e' la regola prodotto.
 
 ### N reshuffle — regola operativa (riferimento Durissima coop)
 
