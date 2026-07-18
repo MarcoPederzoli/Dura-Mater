@@ -4,6 +4,18 @@ File **pesanti o rigenerabili**: non in Git (vedi `.gitignore`). Le **conclusion
 
 ---
 
+## Refill Durissima G>1 (2026-07-18)
+
+| File | Contenuto |
+|------|-----------|
+| `durissima-refill-ggt1-2026-07-18.txt` | Sweep 20 seed N=3..8 G>=2: overall 67.5%, G>=N 100%, G<N ~20% |
+| `durissima-refill-hunt-ggt1-2026-07-18.txt` | Hunt: >=1 win su tutte le 21 celle G<N + seed documentati |
+
+**Script:** `temp-durissima-refill-probe.js`, `temp-durissima-refill-worker.js`, `temp-durissima-refill-hunt.js`  
+**Sessione:** `SESSIONI.md` voci 2026-07-18 (regola + hunt).
+
+---
+
 ## `results/tournament-audit/` — Audit torneo Dura (2026-06-10)
 
 | File | Contenuto | Dimensione indicativa |

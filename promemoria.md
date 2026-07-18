@@ -122,13 +122,18 @@ La chat Grok non e' persistente: il diario e' `SESSIONI.md` (su Git).
 
 ## Focus attuale
 
-**Stato luglio 2026 — gioco RISOLTO (bilanciamento):** Dura competitiva chiusa; Durissima coop G>=2 chiusa (coordinatore TG); Durissima **solitario G=1** chiuso con **pool riserva N** + coordinatore (v0.1.7). Win% probe attuali (50-150 seed) sono **indicativi**, non definitivi per il prodotto.
+**Stato 2026-07-18 — regola refill Durissima:** pesca **solo se posato** + **refill** a `initialHandSize` (default ON). Sweep G>=2: overall **67.5%** (702/1040), G>=N **100%**, G<N ~20%. **Hunt: >=1 win su tutte le 21 celle G<N + G>=N** (seed in `results/durissima-refill-hunt-ggt1-2026-07-18.txt`). **Prossimo: G=1 con refill.** Jolly/pool/vite/open-growth archiviati su 7–8 equo.
 
-### Prossima sessione (priorita' utente)
+### Non rifare / errori costosi
+- Dichiarare cause senza controprova (es. «problema #1 = frazione mano/mazzo» smentito: 4x4 25% ok, 8x8 mano16 25% no).
+- Mixare freecell + vite nello stesso test.
+- Search che usa l'ordine reale del tallone (DRAW-ORACLE).
+- Re-sweep G>=2 refill stessi seed senza cambio codice.
 
-1. **Statistica solitario «seria»:** rifare probe con **molti piu' seed** (es. 1000+ per L, IC95 strette) su configurazione prodotto: G=1, riserva N ON, coordinatore ON, vita extra OFF. Script: `scripts/solo-coordinator-variant-probe.js` (estendere `--seeds` / worker 8). Obiettivo: percentuali epiche **statisticamente realistiche** (7x7, 8x8, curva 3x3-8x8).
-2. **Regole mancanti:** scrivere/completare in `RULES.md` (e allineare Word fisico se richiesto) — dettaglio tavolo, solitario vs coop, testo giocatore.
-3. **Web giocabile:** sistemare UI per **giocare** il prodotto (non solo simulare) — `gioco.html` human-first, varianti chiare, revamp select regole rinviato ma UX partita da rifinire.
+### Prossima sessione (priorita')
+1. **G=1 con refill** (draw only after place + refill-to-N): probe core equo 3..8.
+2. Allineare `RULES.md` / regolamento alla nuova regola fondamentale.
+3. Se G=1 non basta: diagnosi early-game / packing (non re-provare jolly massicci).
 
 - **Dura:** competitiva + torneo — **chiusa** (bot planner adeguato).
 - **Durissima coop (G >= 2) — coordinatore "una mente vs mazzo":** **archiviata / risolta** (2026-07-11).

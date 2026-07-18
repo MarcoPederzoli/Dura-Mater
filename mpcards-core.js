@@ -471,8 +471,44 @@ const MPCARDS_CORE_SOURCE = `
     return entry && entry.ideaBlind === true;
   }
 
+  /** Solitario: carta jolly a faccia in giu' (stesso ruolo geometrico soft dell'Idea). */
+  function isWildBlindBoardEntry(entry) {
+    return entry && entry.wildBlind === true;
+  }
+
   function isIdeaBlindTurn(state) {
     return state && state.turnPlayed === 4;
+  }
+
+  function gnSoloWildUidSet(state) {
+    if (!state) return new Set();
+    if (Array.isArray(state.durissimaSoloWildUids) && state.durissimaSoloWildUids.length) {
+      return new Set(state.durissimaSoloWildUids);
+    }
+    // legacy singolo uid
+    if (state.durissimaSoloWildUid != null && state.durissimaSoloWildUid !== "") {
+      return new Set([state.durissimaSoloWildUid]);
+    }
+    return new Set();
+  }
+
+  function isDurissimaSoloWildEnabled(state) {
+    return isDurissimaMater(state) && state.players === 1 && gnSoloWildUidSet(state).size > 0;
+  }
+
+  function isPlayingSoloWildCard(state, card) {
+    if (!card || !isDurissimaSoloWildEnabled(state)) return false;
+    return gnSoloWildUidSet(state).has(card.uid);
+  }
+
+  function countPhysicalNeighbors(state, x, y) {
+    const map = boardMap(state.board);
+    const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }];
+    let n = 0;
+    for (const dir of dirs) {
+      if (map.has(coordKey(x + dir.x, y + dir.y))) n++;
+    }
+    return n;
   }
 
   function placementScore(state, card, x, y) {
@@ -485,6 +521,13 @@ const MPCARDS_CORE_SOURCE = `
     for (const dir of dirs) {
       const adjacent = map.get(coordKey(x + dir.x, y + dir.y));
       if (!adjacent) continue;
+      // Wild face-down: conta come vicino sempre compatibile (nessun vincolo di tratto)
+      if (isWildBlindBoardEntry(adjacent)) {
+        neighbors++;
+        compatibleNeighbors++;
+        continue;
+      }
+      // Idea classica: non conta per tratti ne' per grado (comportamento storico)
       if (isIdeaBlindBoardEntry(adjacent)) continue;
       neighbors++;
       const shared = sharedProperties(card, adjacent.card);
@@ -501,13 +544,18 @@ const MPCARDS_CORE_SOURCE = `
   function placementPassesTraitAnchor(state, score) {
     if (!state || state.board.length === 0) return true;
     if (isIdeaBlindTurn(state)) return true;
+    if (score && score._soloWildPlacement) return true;
     return score.traitAnchorNeighbors >= 1;
   }
 
   function placementIsLegal(state, card, x, y, requirement) {
     if (state.board.length === 0) return true;
+    // Solitario wild: posa come Idea (connessione fisica, no vincoli di tratto)
+    if (isPlayingSoloWildCard(state, card)) {
+      return countPhysicalNeighbors(state, x, y) >= 1;
+    }
     const score = placementScore(state, card, x, y);
-    if (isIdeaBlindTurn(state)) return score.neighbors >= 1;
+    if (isIdeaBlindTurn(state)) return score.neighbors >= 1 || countPhysicalNeighbors(state, x, y) >= 1;
     if (score.neighbors < requirement) return false;
     if (score.compatibleNeighbors !== score.neighbors) return false;
     return placementPassesTraitAnchor(state, score);
@@ -517,14 +565,61 @@ const MPCARDS_CORE_SOURCE = `
     return isDurissimaMater(state) && Array.isArray(state.durissimaReserve);
   }
 
+  /**
+   * Free cell (solitario): slot di parcheggio stile Freecell.
+   * Carte parcheggiate restano giocabili sulla griglia e NON entrano nel reshuffle vita.
+   * Default 0 (core puro); probe: options.durissimaFreeCellSlots = 1..4.
+   */
+  function isDurissimaFreeCellsEnabled(state) {
+    return (
+      isDurissimaMater(state) &&
+      state.players === 1 &&
+      Array.isArray(state.durissimaFreeCells) &&
+      state.durissimaFreeCells.length > 0
+    );
+  }
+
+  function durissimaFreeCellSlotsCount(state) {
+    if (!isDurissimaFreeCellsEnabled(state)) return 0;
+    return state.durissimaFreeCells.length;
+  }
+
+  function durissimaFreeCellEmptyIndex(state) {
+    if (!isDurissimaFreeCellsEnabled(state)) return -1;
+    for (let i = 0; i < state.durissimaFreeCells.length; i++) {
+      if (!state.durissimaFreeCells[i]) return i;
+    }
+    return -1;
+  }
+
+  function durissimaFreeCellOccupiedCount(state) {
+    if (!isDurissimaFreeCellsEnabled(state)) return 0;
+    let n = 0;
+    for (const c of state.durissimaFreeCells) if (c) n++;
+    return n;
+  }
+
   function playableCardSources(state, playerId) {
     const sources = [];
     for (const card of (state.hands[playerId] || [])) {
-      sources.push({ card, fromReserve: false });
+      sources.push({ card, fromReserve: false, fromFreeCell: false });
     }
     if (isDurissimaReserveEnabled(state)) {
       for (const card of state.durissimaReserve) {
-        sources.push({ card, fromReserve: true });
+        sources.push({ card, fromReserve: true, fromFreeCell: false });
+      }
+    }
+    if (isDurissimaFreeCellsEnabled(state)) {
+      for (let i = 0; i < state.durissimaFreeCells.length; i++) {
+        const card = state.durissimaFreeCells[i];
+        if (card) {
+          sources.push({
+            card,
+            fromReserve: false,
+            fromFreeCell: true,
+            freeCellIndex: i
+          });
+        }
       }
     }
     return sources;
@@ -542,16 +637,22 @@ const MPCARDS_CORE_SOURCE = `
         const ideaBlind = isIdeaBlindTurn(state);
         const legal = placementIsLegal(state, source.card, cell.x, cell.y, requirement);
         if (legal) {
+          const wildPlay = isPlayingSoloWildCard(state, source.card);
           moves.push({
             cardUid: source.card.uid,
             card: source.card,
             fromReserve: source.fromReserve === true,
+            fromFreeCell: source.fromFreeCell === true,
+            freeCellIndex: source.fromFreeCell ? source.freeCellIndex : undefined,
             x: cell.x,
             y: cell.y,
             matches: score.matches,
-            neighbors: score.neighbors,
+            neighbors: wildPlay
+              ? countPhysicalNeighbors(state, cell.x, cell.y)
+              : score.neighbors,
             compatibleNeighbors: score.compatibleNeighbors,
-            ideaBlind: ideaBlind || undefined
+            ideaBlind: ideaBlind || undefined,
+            wildBlind: wildPlay || undefined
           });
         }
       }
@@ -587,13 +688,34 @@ const MPCARDS_CORE_SOURCE = `
       })),
       hands,
       durissimaReserve: (source.durissimaReserve || []).map(cloneCardSnapshot),
+      durissimaFreeCells: Array.isArray(source.durissimaFreeCells)
+        ? source.durissimaFreeCells.map(c => (c ? cloneCardSnapshot(c) : null))
+        : [],
+      durissimaSoloWildUid: source.durissimaSoloWildUid || null,
+      durissimaSoloWildUids: Array.isArray(source.durissimaSoloWildUids)
+        ? source.durissimaSoloWildUids.slice()
+        : source.durissimaSoloWildUid
+          ? [source.durissimaSoloWildUid]
+          : [],
       turnPlayed: source.turnPlayed
     };
   }
 
   function applyPlacementSim(sim, playerId, move) {
     let card = null;
-    if (move.fromReserve) {
+    if (move.fromFreeCell === true || (move.freeCellIndex != null && move.freeCellIndex >= 0)) {
+      const cells = sim.durissimaFreeCells || [];
+      let idx =
+        move.freeCellIndex != null && move.freeCellIndex >= 0
+          ? move.freeCellIndex
+          : cells.findIndex(c => c && c.uid === move.cardUid);
+      if (idx < 0 || !cells[idx] || cells[idx].uid !== move.cardUid) {
+        idx = cells.findIndex(c => c && c.uid === move.cardUid);
+      }
+      if (idx < 0 || !cells[idx]) return false;
+      card = cells[idx];
+      cells[idx] = null;
+    } else if (move.fromReserve) {
       const reserve = sim.durissimaReserve || [];
       const cardIndex = reserve.findIndex(entry => entry.uid === move.cardUid);
       if (cardIndex < 0) return false;
@@ -606,7 +728,16 @@ const MPCARDS_CORE_SOURCE = `
       card = hand.splice(cardIndex, 1)[0];
     }
     const ideaBlind = sim.turnPlayed === 4;
-    sim.board.push({ x: move.x, y: move.y, card, playerId, ideaBlind: ideaBlind || undefined });
+    const wildBlind =
+      card && gnSoloWildUidSet(sim).has(card.uid);
+    sim.board.push({
+      x: move.x,
+      y: move.y,
+      card,
+      playerId,
+      ideaBlind: ideaBlind || undefined,
+      wildBlind: wildBlind || undefined
+    });
     sim.turnPlayed++;
     return true;
   }
@@ -2196,13 +2327,25 @@ const MPCARDS_CORE_SOURCE = `
       initialHandSize: state.initialHandSize,
       drawPile: (state.drawPile || []).map(cloneCardSnapshot),
       durissimaReserve: (state.durissimaReserve || []).map(cloneCardSnapshot),
+      durissimaFreeCells: Array.isArray(state.durissimaFreeCells)
+        ? state.durissimaFreeCells.map(c => (c ? cloneCardSnapshot(c) : null))
+        : [],
+      durissimaSoloWildUid: state.durissimaSoloWildUid || null,
+      durissimaSoloWildUids: Array.isArray(state.durissimaSoloWildUids)
+        ? state.durissimaSoloWildUids.slice()
+        : state.durissimaSoloWildUid
+          ? [state.durissimaSoloWildUid]
+          : [],
+      durissimaSoloWildCard: state.durissimaSoloWildCard === true,
+      durissimaSoloWildSmartBot: state.durissimaSoloWildSmartBot !== false,
       hands: state.hands.map(hand => (hand || []).map(cloneCardSnapshot)),
       board: state.board.map(entry => ({
         x: entry.x,
         y: entry.y,
         playerId: entry.playerId,
         card: cloneCardSnapshot(entry.card),
-        ideaBlind: entry.ideaBlind === true || undefined
+        ideaBlind: entry.ideaBlind === true || undefined,
+        wildBlind: entry.wildBlind === true || undefined
       })),
       turnOrder: (state.turnOrder || []).slice(),
       winner: state.winner,
@@ -2242,13 +2385,8 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   function gnCapturePlacementFrame(state, playerId, move) {
-    const hand = state.hands[playerId] || [];
-    const handIndex = hand.findIndex(entry => entry.uid === move.cardUid);
-    if (handIndex < 0) return null;
-    return {
+    const base = {
       playerId,
-      handIndex,
-      card: hand[handIndex],
       consecutivePasses: state.consecutivePasses,
       turnPlayed: state.turnPlayed,
       lastMove: state.lastMove,
@@ -2260,8 +2398,44 @@ const MPCARDS_CORE_SOURCE = `
       closedByPlayer: state.closedByPlayer,
       firstAxisInversionDone: state.firstAxisInversionDone === true,
       turnDirection: state.turnDirection,
-      ideaOffers: state.turnPlacementStats ? state.turnPlacementStats.ideaOffers : 0
+      ideaOffers: state.turnPlacementStats ? state.turnPlacementStats.ideaOffers : 0,
+      fromReserve: false,
+      fromFreeCell: false,
+      freeCellIndex: -1,
+      reserveIndex: -1,
+      handIndex: -1,
+      card: null
     };
+    if (move.fromFreeCell === true || (move.freeCellIndex != null && move.freeCellIndex >= 0)) {
+      const cells = state.durissimaFreeCells || [];
+      let idx =
+        move.freeCellIndex != null && move.freeCellIndex >= 0
+          ? move.freeCellIndex
+          : cells.findIndex(c => c && c.uid === move.cardUid);
+      if (idx < 0 || !cells[idx] || cells[idx].uid !== move.cardUid) {
+        idx = cells.findIndex(c => c && c.uid === move.cardUid);
+      }
+      if (idx < 0 || !cells[idx]) return null;
+      base.fromFreeCell = true;
+      base.freeCellIndex = idx;
+      base.card = cells[idx];
+      return base;
+    }
+    if (move.fromReserve === true) {
+      const reserve = state.durissimaReserve || [];
+      const ridx = reserve.findIndex(entry => entry.uid === move.cardUid);
+      if (ridx < 0) return null;
+      base.fromReserve = true;
+      base.reserveIndex = ridx;
+      base.card = reserve[ridx];
+      return base;
+    }
+    const hand = state.hands[playerId] || [];
+    const handIndex = hand.findIndex(entry => entry.uid === move.cardUid);
+    if (handIndex < 0) return null;
+    base.handIndex = handIndex;
+    base.card = hand[handIndex];
+    return base;
   }
 
   function gnApplyPlacementInPlace(state, playerId, move) {
@@ -2276,7 +2450,15 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   function gnUndoPlacementInPlace(state, frame) {
-    state.hands[frame.playerId].splice(frame.handIndex, 0, frame.card);
+    if (frame.fromFreeCell) {
+      if (!state.durissimaFreeCells) state.durissimaFreeCells = [];
+      state.durissimaFreeCells[frame.freeCellIndex] = frame.card;
+    } else if (frame.fromReserve) {
+      if (!state.durissimaReserve) state.durissimaReserve = [];
+      state.durissimaReserve.splice(frame.reserveIndex, 0, frame.card);
+    } else {
+      state.hands[frame.playerId].splice(frame.handIndex, 0, frame.card);
+    }
     state.board.pop();
     state.consecutivePasses = frame.consecutivePasses;
     state.turnPlayed = frame.turnPlayed;
@@ -4930,15 +5112,23 @@ const MPCARDS_CORE_SOURCE = `
     return gnUseCoordinatedTeamPlanner(state) || gnUseCoordinatedSoloPlanner(state);
   }
 
-  /** Carta giocabile ora (mano o riserva solitario) per uid. */
+  /** Carta giocabile ora (mano, riserva o free cell) per uid. */
   function gnFindPlayableForUid(state, playerId, uid) {
     if (!uid) return null;
     const hand = state.hands[playerId] || [];
     const inHand = hand.find(c => c.uid === uid);
-    if (inHand) return { card: inHand, fromReserve: false };
+    if (inHand) return { card: inHand, fromReserve: false, fromFreeCell: false };
     if (isDurissimaReserveEnabled(state) && state.durissimaReserve) {
       const inRes = state.durissimaReserve.find(c => c.uid === uid);
-      if (inRes) return { card: inRes, fromReserve: true };
+      if (inRes) return { card: inRes, fromReserve: true, fromFreeCell: false };
+    }
+    if (isDurissimaFreeCellsEnabled(state)) {
+      for (let i = 0; i < state.durissimaFreeCells.length; i++) {
+        const c = state.durissimaFreeCells[i];
+        if (c && c.uid === uid) {
+          return { card: c, fromReserve: false, fromFreeCell: true, freeCellIndex: i };
+        }
+      }
     }
     return null;
   }
@@ -4950,6 +5140,11 @@ const MPCARDS_CORE_SOURCE = `
       if ((state.hands[p] || []).some(c => c.uid === uid)) return true;
     }
     if (state.durissimaReserve && state.durissimaReserve.some(c => c.uid === uid)) return true;
+    if (isDurissimaFreeCellsEnabled(state)) {
+      for (const c of state.durissimaFreeCells) {
+        if (c && c.uid === uid) return true;
+      }
+    }
     if ((state.drawPile || []).some(c => c.uid === uid)) return true;
     return false;
   }
@@ -4959,7 +5154,7 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   /**
-   * Solitario equo: carte in mano + riserva (giocabili ora). Non include il tallone.
+   * Solitario equo: carte in mano + riserva + free cell (giocabili ora). Non include il tallone.
    */
   function gnSoloOwnedPlayableCards(state) {
     const out = [];
@@ -4967,6 +5162,11 @@ const MPCARDS_CORE_SOURCE = `
     for (const c of hand) out.push(c);
     if (isDurissimaReserveEnabled(state) && state.durissimaReserve) {
       for (const c of state.durissimaReserve) out.push(c);
+    }
+    if (isDurissimaFreeCellsEnabled(state)) {
+      for (const c of state.durissimaFreeCells) {
+        if (c) out.push(c);
+      }
     }
     return out;
   }
@@ -4983,6 +5183,651 @@ const MPCARDS_CORE_SOURCE = `
       if (!owned.has(c.uid) && !boardUids.has(c.uid)) multi.push(c);
     }
     return multi;
+  }
+
+  /**
+   * Statistiche del multiset residuo (mano+tallone+non ancora usate): validi per ogni N.
+   * Su 8x8 valore/colore/forma hanno la stessa distribuzione marginale (1,3,...,15):
+   * la rigidita' vera e' negli INCROCI (asso-cerchi-bianco = unici su 2 assi;
+   * un 8 rosso e' scarso sul colore ma fungibile sul valore/forma abbondanti).
+   */
+  function gnSoloBuildResidStats(cards) {
+    const byV = {};
+    const byS = {};
+    const byC = {};
+    let n = 0;
+    for (const c of cards || []) {
+      if (!c) continue;
+      n++;
+      const v = c.value;
+      const s = c.shape;
+      const col = c.color;
+      byV[v] = (byV[v] || 0) + 1;
+      byS[s] = (byS[s] || 0) + 1;
+      byC[col] = (byC[col] || 0) + 1;
+    }
+    let maxV = 1;
+    let maxS = 1;
+    let maxC = 1;
+    Object.keys(byV).forEach(k => {
+      if (byV[k] > maxV) maxV = byV[k];
+    });
+    Object.keys(byS).forEach(k => {
+      if (byS[k] > maxS) maxS = byS[k];
+    });
+    Object.keys(byC).forEach(k => {
+      if (byC[k] > maxC) maxC = byC[k];
+    });
+    return { byV, byS, byC, maxV, maxS, maxC, n };
+  }
+
+  /** Profilo assi di una carta nel residuo (scarsita' / fungibilita' / colli di bottiglia). */
+  function gnSoloCardAxisProfile(card, stats) {
+    if (!card || !stats) {
+      return {
+        scarceAxes: 0,
+        multiUnique: false,
+        bottleneck: 1,
+        flex: 0.5,
+        rigid: 0.5,
+        relV: 1,
+        relS: 1,
+        relC: 1,
+        cv: 1,
+        cs: 1,
+        cc: 1
+      };
+    }
+    const cv = stats.byV[card.value] || 1;
+    const cs = stats.byS[card.shape] || 1;
+    const cc = stats.byC[card.color] || 1;
+    const scarceAxes = (cv === 1 ? 1 : 0) + (cs === 1 ? 1 : 0) + (cc === 1 ? 1 : 0);
+    const relV = cv / Math.max(1, stats.maxV);
+    const relS = cs / Math.max(1, stats.maxS);
+    const relC = cc / Math.max(1, stats.maxC);
+    const bottleneck = Math.min(relV, relS, relC);
+    // Fungibilita' primaria sul valore (i N si scambiano); pesata con media assi
+    const valShare = (cv - 1) / Math.max(1, stats.maxV - 1);
+    const flex = valShare * 0.55 + ((relV + relS + relC) / 3) * 0.45;
+    // Rigidita' da INCROCI, non solo da un asse scarso:
+    // - multiUnique (asso+cerchi): rigidissima
+    // - unico valore (asso): molto rigida
+    // - unico colore ma valore abbondante (8 rosso su 8x8): moderata (ancora fungibile come 8)
+    let rigid;
+    if (scarceAxes >= 2 || cv === 1) {
+      rigid = 0.55 + scarceAxes * 0.25 + (1 - bottleneck) * 0.2;
+    } else if (scarceAxes === 1) {
+      rigid = 0.15 + (1 - bottleneck) * 0.25 * (1 - valShare);
+    } else {
+      rigid = (1 - flex) * 0.35;
+    }
+    return {
+      scarceAxes,
+      multiUnique: scarceAxes >= 2,
+      bottleneck,
+      flex,
+      rigid,
+      relV,
+      relS,
+      relC,
+      cv,
+      cs,
+      cc
+    };
+  }
+
+  /** Grado geometrico cella su griglia fissa 0..N-1 (2 angolo, 3 bordo, 4 interno). */
+  function gnSoloCellGeoDegree(x, y, size) {
+    let d = 0;
+    if (x > 0) d++;
+    if (x < size - 1) d++;
+    if (y > 0) d++;
+    if (y < size - 1) d++;
+    return d;
+  }
+
+  /**
+   * Fase early solitario: i primi ~30% delle posate (cap 5..20).
+   * Qui si condanna spesso la partita (errori topologici irreversibili),
+   * NON la frazione mano/mazzo (smentita: 4x4=25% ok, 8x8 con mano 16=25% no).
+   */
+  function gnSoloIsEarlyPhase(boardLen, size) {
+    const total = size * size;
+    const thr = Math.min(20, Math.max(5, Math.floor(total * 0.3)));
+    return (boardLen || 0) < thr;
+  }
+
+  function gnSoloProfileIsHard(prof) {
+    if (!prof) return false;
+    // Multi-unico (asso-cerchi-bianco) o 2+ assi unici
+    if (prof.multiUnique === true || prof.scarceAxes >= 2) return true;
+    // Unico su un asse (asso; unico rosso; unica forma scarsa): va su basso grado
+    if (prof.cv === 1 || prof.cs === 1 || prof.cc === 1) return true;
+    if (prof.scarceAxes === 1 && prof.rigid >= 0.5) return true;
+    return prof.rigid >= 0.75;
+  }
+
+  /** Quanti pezzi hard restano nel residuo (escluso excludeUid). */
+  function gnSoloCountHardInResid(cards, residStats, excludeUid) {
+    let n = 0;
+    for (const c of cards || []) {
+      if (!c || c.uid === excludeUid) continue;
+      if (gnSoloProfileIsHard(gnSoloCardAxisProfile(c, residStats))) n++;
+    }
+    return n;
+  }
+
+  /**
+   * Score early-game (additivo) per una posa.
+   *
+   * Principi (2026-07-17, corretti dopo controprova utente):
+   * 1) Non e' "mano = 1/N del mazzo" la causa principale del collasso 8x8.
+   * 2) I pezzi unici scendono in % con N (asso-cerchi-bianco: 1/9 vs 1/64; bianchi fino a 15):
+   *    meno "letalita' statistica", ma restano colli di bottiglia di matching.
+   * 3) Angolo = 2 vincoli in meno, bordo = 1: i pezzi hard vanno li'; i flessibili non devono
+   *    bruciare quegli slot se nel residuo (foglio) restano pezzi hard.
+   * 4) Errori early determinano spesso l'impossibilita' di chiudere.
+   *
+   * Usa grado finale atteso (board a coordinate libere), non solo geo su 0..N-1.
+   */
+  function gnSoloEarlyPlacementScore(state, card, x, y, residStats, residualCards) {
+    if (!state || !card) return 0;
+    const board = state.board || [];
+    const size = state.size;
+    if (!gnSoloIsEarlyPhase(board.length, size)) return 0;
+
+    const prof = gnSoloCardAxisProfile(card, residStats);
+    const hardOthers = gnSoloCountHardInResid(residualCards, residStats, card.uid);
+    const thisHard = gnSoloProfileIsHard(prof);
+    let sc = 0;
+
+    // Apertura: la cella e' fissa (0,0) e il grado finale non e' ancora definito.
+    // Conta SOLO quale carta (non aprire col pezzo piu' rigido del mazzo).
+    if (board.length === 0) {
+      if (prof.multiUnique) sc -= 40;
+      else if (thisHard) sc -= 18;
+      if (!thisHard && prof.flex > 0.35 && prof.flex < 0.95) sc += 20;
+      const val = Number(card.value) || 0;
+      if (val >= 2 && val <= size - 1 && !thisHard) sc += 8;
+      // Preferisci non aprire con unico-asse se hai alternative flessibili
+      if (thisHard && hardOthers >= 0) sc -= 5;
+      return sc;
+    }
+
+    const expDeg = durissimaExpectedFinalDegree({ board, size }, x, y);
+
+    if (thisHard) {
+      // Hard: angolo/bordo early; interno early = errore tipico
+      if (expDeg <= 2.25) sc += 52;
+      else if (expDeg <= 3.25) sc += 22;
+      else sc -= 65;
+    } else {
+      // Flessibile/abbondante: non bruciare slot a basso grado se servono ai hard residui
+      if (expDeg <= 2.25) {
+        if (hardOthers > 0) sc -= 48;
+        else sc -= 12;
+      } else if (expDeg <= 3.25 && hardOthers >= 2) {
+        sc -= 10;
+      } else if (expDeg >= 3.75) {
+        sc += 8;
+      }
+    }
+
+    // Con pochi pezzi gia' posati: evita di spingere hard verso l'interno del footprint
+    if (board.length < size && thisHard && expDeg >= 3.5) {
+      sc -= 20;
+    }
+
+    return sc;
+  }
+
+  /**
+   * Set-fillability (anti-buco): esiste un riempimento delle celle vuote con le carte del pool
+   * (mano+tallone come multiset), ignorando l'ordine di pesca? Se no, la posizione e' morta
+   * topologicamente rispetto al residuo noto (foglio), indipendentemente dalla FIFO.
+   * Backtrack MRV con budget nodi; false = "quasi certo morto" / non trovato entro budget.
+   */
+  /**
+   * Ritorna true / false / null.
+   * true = trovato riempimento; false = provato morto (cella con 0 opzioni);
+   * null = budget esaurito (sconosciuto — NON trattare come morto).
+   */
+  function gnSoloSetFillable(board, size, poolCards, maxNodes) {
+    maxNodes = maxNodes == null ? 8000 : maxNodes;
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const base = (board || []).map(b => ({ x: b.x, y: b.y, card: b.card }));
+    const empties = [];
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        if (!base.some(b => b.x === x && b.y === y)) empties.push({ x, y });
+      }
+    }
+    if (empties.length === 0) return true;
+    if (!poolCards || poolCards.length < empties.length) return false;
+    // Early game: check completo troppo costoso/rumoroso — salta (null = non penalizzare)
+    if (empties.length > 14) return null;
+    const pool = poolCards.map(c => ({ ...c }));
+    let nodes = 0;
+    let exhausted = false;
+    const keyOf = (x, y) => x + "," + y;
+
+    function frontier(boardNow) {
+      const filled = new Set(boardNow.map(b => keyOf(b.x, b.y)));
+      const fr = [];
+      for (const cell of empties) {
+        if (filled.has(keyOf(cell.x, cell.y))) continue;
+        let adj = boardNow.length === 0;
+        for (const d of dirs) {
+          if (filled.has(keyOf(cell.x + d[0], cell.y + d[1]))) adj = true;
+        }
+        if (adj) fr.push(cell);
+      }
+      return fr;
+    }
+
+    function dfs(boardNow, used) {
+      nodes++;
+      if (nodes > maxNodes) {
+        exhausted = true;
+        return false;
+      }
+      if (used.size === empties.length) return true;
+      const fr = frontier(boardNow);
+      if (!fr.length) return false;
+      let bestCell = null;
+      let bestOpts = null;
+      let minO = Infinity;
+      for (const cell of fr) {
+        const opts = [];
+        const sim = { board: boardNow, size, turnPlayed: 0 };
+        for (const c of pool) {
+          if (used.has(c.uid)) continue;
+          if (canPlaceCardAt(sim, c, cell.x, cell.y, 1)) opts.push(c);
+        }
+        if (!opts.length) return false; // morto provato
+        if (opts.length < minO) {
+          minO = opts.length;
+          bestCell = cell;
+          bestOpts = opts;
+          if (minO === 1) break;
+        }
+      }
+      if (!bestCell) return false;
+      const lim = Math.min(bestOpts.length, minO <= 2 ? 6 : 4);
+      for (let i = 0; i < lim; i++) {
+        const c = bestOpts[i];
+        used.add(c.uid);
+        boardNow.push({ x: bestCell.x, y: bestCell.y, card: c });
+        if (dfs(boardNow, used)) return true;
+        boardNow.pop();
+        used.delete(c.uid);
+        if (exhausted) return false;
+      }
+      return false;
+    }
+
+    const ok = dfs(base.slice(), new Set());
+    if (ok) return true;
+    if (exhausted) return null;
+    return false;
+  }
+
+  /**
+   * Celle di frontiera su board a coordinate libere (non solo 0..N-1).
+   * Esclude posate che esploderebbero l'ingombro oltre NxN.
+   */
+  function gnSoloFrontierCells(board, size) {
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const list = board || [];
+    if (!list.length) return [];
+    const filled = new Set(list.map(b => b.x + "," + b.y));
+    const out = new Map();
+    for (const b of list) {
+      for (const d of dirs) {
+        const x = b.x + d[0];
+        const y = b.y + d[1];
+        const key = x + "," + y;
+        if (filled.has(key) || out.has(key)) continue;
+        const bounds = boardBounds(list, [{ x, y }]);
+        if (bounds.width > size || bounds.height > size) continue;
+        out.set(key, { x, y });
+      }
+    }
+    return Array.from(out.values());
+  }
+
+  function gnSoloCellAdjCount(board, x, y) {
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const filled = new Set((board || []).map(b => b.x + "," + b.y));
+    let adj = 0;
+    for (const d of dirs) {
+      if (filled.has(x + d[0] + "," + (y + d[1]))) adj++;
+    }
+    return adj;
+  }
+
+  function gnSoloCellFillerCount(board, size, poolCards, x, y) {
+    const sim = { board: board || [], size, turnPlayed: 0 };
+    let n = 0;
+    for (const c of poolCards || []) {
+      if (canPlaceCardAt(sim, c, x, y, 1)) n++;
+    }
+    return n;
+  }
+
+  /**
+   * Analisi tasche/frontiera (diagnosi 8x8: morte tipica = adj>=3 e 0 filler).
+   *
+   * Importante: adj=1 con 0 filler NON e' morte (espansione opzionale in una direzione).
+   * Morte certa = cella "chiusa" (adj>=3) senza filler nel residuo.
+   * adj=2 con 0 filler = rischio alto (corridoio) ma non sempre fatale se si espande altrove.
+   */
+  function gnSoloAnalyzePockets(board, size, poolCards) {
+    const fr = gnSoloFrontierCells(board, size);
+    let dead = 0;
+    let deadHigh = 0;
+    let tight = 0;
+    let risk = 0;
+    const deadCells = [];
+    for (const cell of fr) {
+      const adj = gnSoloCellAdjCount(board, cell.x, cell.y);
+      const fillers = gnSoloCellFillerCount(board, size, poolCards, cell.x, cell.y);
+      if (fillers === 0 && adj >= 3) {
+        // Taschia chiusa morta (il caso seed 16: adj4 fillers0)
+        dead++;
+        deadHigh++;
+        deadCells.push({ x: cell.x, y: cell.y, adj });
+        risk += adj >= 4 ? 600 : 450;
+      } else if (fillers === 0 && adj === 2) {
+        // Corridoio stretto senza filler: rischio, non hard-dead
+        tight++;
+        risk += 120;
+      } else if (adj >= 3 && fillers === 1) {
+        tight++;
+        risk += 55;
+      } else if (adj >= 4 && fillers <= 2) {
+        tight++;
+        risk += 30;
+      }
+    }
+    return { dead, deadHigh, tight, risk, deadCells, frontier: fr.length };
+  }
+
+  /**
+   * Check leggero: tasca chiusa (adj>=3) con 0 filler nel multiset residuo.
+   * Coordinate libere. Non tratta adj=1 senza filler come buco (espansione opzionale).
+   */
+  function gnSoloFrontierHasHole(board, size, poolCards) {
+    const pool = poolCards || [];
+    const list = board || [];
+    if (!list.length) return false;
+    if (!pool.length) return list.length < size * size;
+    return gnSoloAnalyzePockets(list, size, pool).dead > 0;
+  }
+
+  /**
+   * Rischio tasca se posi card@x,y (pool = carte ancora da usare, inclusa card).
+   * true se crea buco morto; risk numerico per ranking.
+   */
+  function gnSoloMovePocketRisk(board, size, poolCards, card, x, y) {
+    if (!card) return { dead: false, risk: 0, deadHigh: 0 };
+    const temp = (board || []).map(b => ({ x: b.x, y: b.y, card: b.card }));
+    const sim = { board: temp, size, turnPlayed: 0 };
+    if (!canPlaceCardAt(sim, card, x, y, 1)) {
+      return { dead: true, risk: 9999, deadHigh: 1 };
+    }
+    temp.push({ x, y, card });
+    const rest = (poolCards || []).filter(c => c.uid !== card.uid);
+    const a = gnSoloAnalyzePockets(temp, size, rest);
+    return { dead: a.dead > 0, risk: a.risk, deadHigh: a.deadHigh, tight: a.tight };
+  }
+
+  /**
+   * Policy «frontiera aperta + matching residuo» (solitario equo).
+   * Mid-game: preferisci espansione a basso grado (adj 1-2), non chiudere
+   * celle strette se il residuo ha pochi filler, non riempire interiori troppo presto.
+   * Score additivo (puo' essere fortemente negativo).
+   */
+  function gnSoloOpenGrowthScore(board, size, card, x, y, residualPool) {
+    if (!card || !size) return 0;
+    const list = board || [];
+    const filled = list.length;
+    const emptyAfter = size * size - filled - 1;
+    if (emptyAfter <= 0) return 0;
+    // Coda stretta: lasciano set-fill / deep search
+    if (emptyAfter <= 8) return 0;
+
+    const sim0 = { board: list, size, turnPlayed: 0 };
+    if (!canPlaceCardAt(sim0, card, x, y, 1)) return -8000;
+
+    const temp = list.map(b => ({ x: b.x, y: b.y, card: b.card }));
+    temp.push({ x, y, card });
+    const rest = (residualPool || []).filter(c => c && c.uid !== card.uid);
+
+    let sc = 0;
+    const expDeg = durissimaExpectedFinalDegree({ board: list, size }, x, y);
+    const early = gnSoloIsEarlyPhase(filled, size);
+    const mid = !early && emptyAfter > 10;
+    const adjBefore = gnSoloCellAdjCount(list, x, y);
+
+    // --- Crescita aperta (pesi moderati: troppa pena stallava 7/8) ---
+    if (early || mid) {
+      if (adjBefore <= 1) sc += 14;
+      else if (adjBefore === 2) sc += 3;
+      else if (adjBefore >= 3) sc -= 28;
+
+      if (expDeg <= 2.3) sc += 6;
+      else if (expDeg >= 3.7) sc -= mid ? 22 : 10;
+    }
+
+    // --- Matching residuo sulle celle strette dopo la posa ---
+    const fr = gnSoloFrontierCells(temp, size);
+    let tightUnderfilled = 0;
+    let tightOk = 0;
+    let minFillTight = 99;
+    for (let i = 0; i < fr.length; i++) {
+      const cell = fr[i];
+      const adj = gnSoloCellAdjCount(temp, cell.x, cell.y);
+      if (adj < 3) continue;
+      const fillers = gnSoloCellFillerCount(temp, size, rest, cell.x, cell.y);
+      if (fillers < minFillTight) minFillTight = fillers;
+      if (fillers === 0) {
+        // Gia' coperto da pocket dead altrove; qui solo segnale
+        sc -= adj >= 4 ? 120 : 80;
+        tightUnderfilled++;
+      } else if (fillers === 1) {
+        sc -= 35;
+        tightUnderfilled++;
+      } else if (fillers === 2) {
+        sc -= 10;
+        tightOk++;
+      } else {
+        tightOk++;
+      }
+    }
+    if (tightUnderfilled === 0 && tightOk > 0 && minFillTight >= 3) sc += 12;
+
+    // Pocket risk (senza doppio-contare dead gia' pesato altrove)
+    const pockets = gnSoloAnalyzePockets(temp, size, rest);
+    if (!pockets.dead && pockets.risk > 0) sc -= Math.min(100, pockets.risk * 0.2);
+
+    // Set-fill solo molto in coda e budget basso
+    if (emptyAfter <= 14 && emptyAfter > 8) {
+      const fill = gnSoloSetFillable(temp, size, rest, 5000);
+      if (fill === false) sc -= 180;
+      else if (fill === true) sc += 20;
+    }
+
+    return sc;
+  }
+
+  /**
+   * Quante posate "pocket-safe" esistono con le carte playable sul board dato
+   * (residuo per il check tasche = residualPool). Limitato per costo.
+   */
+  function gnSoloCountPocketSafePlacements(board, size, playableCards, residualPool, limit) {
+    limit = limit == null ? 10 : limit;
+    const list = board || [];
+    let playable = playableCards || [];
+    if (!playable.length) return 0;
+    if (!list.length) return Math.min(limit, playable.length);
+    // Cap enumerazione (1-ply deve restare leggero)
+    if (playable.length > 20) playable = playable.slice(0, 20);
+    const cells = gnSoloFrontierCells(list, size);
+    if (!cells.length) return 0;
+    const cellCap = cells.length > 16 ? cells.slice(0, 16) : cells;
+    let n = 0;
+    const sim = { board: list, size, turnPlayed: 0 };
+    for (let i = 0; i < playable.length; i++) {
+      const card = playable[i];
+      for (let j = 0; j < cellCap.length; j++) {
+        const cell = cellCap[j];
+        if (!canPlaceCardAt(sim, card, cell.x, cell.y, 1)) continue;
+        const pr = gnSoloMovePocketRisk(list, size, residualPool, card, cell.x, cell.y);
+        if (!pr.dead) {
+          n++;
+          if (n >= limit) return n;
+        }
+      }
+    }
+    return n;
+  }
+
+  /**
+   * Lookahead 1 ply solitario equo: dopo la mossa, quante continuazioni pocket-safe restano?
+   * - residualSafe: qualche carta del multiset residuo puo' ancora posarsi senza tasca morta
+   *   (se 0, posizione topologicamente morta indipendentemente dalla pesca)
+   * - drawSafe: dopo stop+pesca, con al piu' 1 carta dal tallone (campione), quante safe
+   *   (modello equo: non usa FIFO reale, solo membership multiset)
+   * Diagnosi seed 16: a #33 residual/hand safe=0 — evitare di ENTRARE in tali stati.
+   */
+  function gnSoloMoveSafeOutlook(state, move) {
+    if (!state || !move || !move.card) {
+      return { residualSafe: 0, drawSafe: 0, handSafe: 0, trapped: true };
+    }
+    const size = state.size;
+    const board = state.board || [];
+    const temp = board.map(b => ({ x: b.x, y: b.y, card: b.card }));
+    const sim = { board: temp, size, turnPlayed: 0 };
+    if (!canPlaceCardAt(sim, move.card, move.x, move.y, 1)) {
+      return { residualSafe: 0, drawSafe: 0, handSafe: 0, trapped: true };
+    }
+    temp.push({ x: move.x, y: move.y, card: move.card });
+
+    const owned = gnSoloOwnedPlayableCards(state);
+    const tallone = gnSoloTalloneMultiset(state);
+    const residual = owned.concat(tallone).filter(c => c.uid !== move.card.uid);
+    if (residual.length === 0) {
+      const empty = size * size - temp.length;
+      return {
+        residualSafe: empty <= 0 ? 1 : 0,
+        drawSafe: empty <= 0 ? 1 : 0,
+        handSafe: empty <= 0 ? 1 : 0,
+        trapped: empty > 0
+      };
+    }
+
+    const handAfter = (state.hands[0] || []).filter(c => c.uid !== move.card.uid);
+    const freeAfter = [];
+    if (isDurissimaFreeCellsEnabled(state)) {
+      for (const c of state.durissimaFreeCells || []) {
+        if (c && c.uid !== move.card.uid) freeAfter.push(c);
+      }
+    }
+    const resAfter = [];
+    if (isDurissimaReserveEnabled(state) && state.durissimaReserve) {
+      for (const c of state.durissimaReserve) {
+        if (c.uid !== move.card.uid) resAfter.push(c);
+      }
+    }
+    const playableHand = handAfter.concat(freeAfter, resAfter);
+
+    const residualSafe = gnSoloCountPocketSafePlacements(
+      temp,
+      size,
+      residual,
+      residual,
+      8
+    );
+    const handSafe = gnSoloCountPocketSafePlacements(
+      temp,
+      size,
+      playableHand,
+      residual,
+      6
+    );
+
+    // Pesca equa: prova un campione del tallone (non l'ordine reale)
+    let drawSafe = handSafe;
+    const pile = tallone.filter(c => c.uid !== move.card.uid);
+    if (pile.length && residualSafe > 0) {
+      const sample =
+        pile.length <= 10
+          ? pile
+          : pile.slice(0, 10);
+      for (let i = 0; i < sample.length; i++) {
+        const drawn = sample[i];
+        const withDraw = playableHand.concat([drawn]);
+        const n = gnSoloCountPocketSafePlacements(temp, size, withDraw, residual, 4);
+        if (n > drawSafe) drawSafe = n;
+        if (drawSafe >= 4) break;
+      }
+    }
+
+    return {
+      residualSafe,
+      drawSafe,
+      handSafe,
+      trapped: residualSafe === 0
+    };
+  }
+
+  /** true se la mossa lascia il residuo senza continuazioni pocket-safe (solo mid/late). */
+  function gnSoloMoveIsTrappedOutlook(state, move) {
+    if (!state || state.players !== 1 || !move || !move.card) return false;
+    const filled = (state.board && state.board.length) || 0;
+    // Early: rumore + costo; la trappola tipica e' mid (diagnosi ~#29-33)
+    if (filled < 18) return false;
+    const empty = state.size * state.size - filled;
+    if (empty <= 2 || empty > 40) return false;
+    try {
+      const o = gnSoloMoveSafeOutlook(state, move);
+      return o.trapped === true;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  /**
+   * Dopo una posa, il multiset residuo puo' ancora riempire i vuoti?
+   * true = ok o sconosciuto; false = morto provato (anti-buco).
+   */
+  function gnSoloMovePreservesSetFill(board, size, poolCards, card, x, y, maxNodes) {
+    if (!card) return true;
+    const temp = (board || []).map(b => ({ x: b.x, y: b.y, card: b.card }));
+    const sim = { board: temp, size, turnPlayed: 0 };
+    if (!canPlaceCardAt(sim, card, x, y, 1)) return false;
+    temp.push({ x, y, card });
+    const rest = (poolCards || []).filter(c => c.uid !== card.uid);
+    const emptyLeft = size * size - temp.length;
+    if (rest.length < emptyLeft) return false;
+    // Sempre: buco di frontiera (economico, coordinate libere)
+    if (gnSoloFrontierHasHole(temp, size, rest)) return false;
+    // Full fillability solo a meta'/coda e se board e' su griglia 0..N-1
+    // (grow solitario usa 0..N-1; gioco libero puo' essere traslato)
+    if (emptyLeft > 16) return true;
+    const budget =
+      maxNodes != null
+        ? maxNodes
+        : emptyLeft <= 6
+          ? 30000
+          : emptyLeft <= 10
+            ? 15000
+            : emptyLeft <= 14
+              ? 8000
+              : 4000;
+    const r = gnSoloSetFillable(temp, size, rest, budget);
+    return r !== false;
   }
 
   /**
@@ -5019,9 +5864,11 @@ const MPCARDS_CORE_SOURCE = `
       if (requirement === null || (requirement > 4 && requirement !== 1)) return false;
       const hand = fork.hands[0] || [];
       const res = fork.durissimaReserve || [];
+      const free = (fork.durissimaFreeCells || []).filter(Boolean);
       const live =
         (step.card && hand.find(card => card.uid === step.card.uid)) ||
-        (step.card && res.find(card => card.uid === step.card.uid));
+        (step.card && res.find(card => card.uid === step.card.uid)) ||
+        (step.card && free.find(card => card.uid === step.card.uid));
       if (!live) {
         // Carta non in mano: con tallone opaco non possiamo assumere di pescarla ora
         if (fork.turnPlayed > 0 && fork.turnPlayed < 5) {
@@ -5031,14 +5878,25 @@ const MPCARDS_CORE_SOURCE = `
         }
         return false;
       }
-      const fromReserve = !hand.some(c => c.uid === live.uid) && res.some(c => c.uid === live.uid);
+      const fromFree =
+        !hand.some(c => c.uid === live.uid) &&
+        !res.some(c => c.uid === live.uid) &&
+        free.some(c => c.uid === live.uid);
+      const fromReserve =
+        !fromFree &&
+        !hand.some(c => c.uid === live.uid) &&
+        res.some(c => c.uid === live.uid);
       const legals = legalPlacements(fork, 0, requirement);
       const legal = legals.find(
         move =>
           move.x === step.x &&
           move.y === step.y &&
           move.card.uid === live.uid &&
-          (fromReserve ? move.fromReserve === true : !move.fromReserve)
+          (fromFree
+            ? move.fromFreeCell === true
+            : fromReserve
+              ? move.fromReserve === true
+              : !move.fromReserve && !move.fromFreeCell)
       );
       if (!legal) {
         if (fork.turnPlayed > 0 && fork.turnPlayed < 5) {
@@ -5061,10 +5919,11 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   /**
-   * Finish / mossa solitario equo: solo mano/riserva, niente ordine tallone.
-   * Se tallone vuoto, DFS leggero sulle sole carte in mano (tutto noto e giocabile).
-   * Se tallone non vuoto: expectimax 1 passo sulla prossima pesca come elemento
-   * uniforme del multiset (non usa la cima reale).
+   * Finish / mossa solitario equo: solo mano/riserva.
+   * - Tallone vuoto: DFS sulle carte in mano.
+   * - Tallone coperto (default): expectimax 1 pesca su multiset (ordine ignoto).
+   * - Tallone cima visibile (durissimaPeekTopDraw): la prossima pesca e' drawPile[0]
+   *   (info legale di regola, non oracolo sull'intero ordine).
    */
   function gnSoloFairFinishAction(state, playerId) {
     const requirement = placementRequirement(state);
@@ -5073,6 +5932,11 @@ const MPCARDS_CORE_SOURCE = `
     if (!legals.length) return null;
     const multi = gnSoloTalloneMultiset(state);
     const talloneEmpty = multi.length === 0;
+    const peekTop = state.durissimaPeekTopDraw === true;
+    const knownTop =
+      peekTop && state.drawPile && state.drawPile.length > 0
+        ? state.drawPile[0]
+        : null;
 
     // Tallone vuoto: ricerca completa equa (tutte le carte residue sono in mano/riserva)
     if (talloneEmpty) {
@@ -5097,17 +5961,44 @@ const MPCARDS_CORE_SOURCE = `
 
     let best = null;
     let bestSc = -Infinity;
+    // Peek: solo la cima. Altrimenti campione del multiset (ordine ignoto).
     const sample =
       multi.length === 0
         ? []
-        : multi.length <= 16
-          ? multi.slice()
-          : multi.slice(0, 16);
+        : knownTop
+          ? [knownTop]
+          : multi.length <= 16
+            ? multi.slice()
+            : multi.slice(0, 16);
 
-    for (const move of legals) {
+    // Anti-buco + anti-pocket: preferisci mosse che non creano frontiera morta
+    const poolAll = gnSoloOwnedPlayableCards(state).concat(multi);
+    const emptyNow =
+      state.size * state.size - ((state.board && state.board.length) || 0);
+    const fillBudget =
+      emptyNow <= 8 ? 12000 : emptyNow <= 16 ? 4000 : 1500;
+    const safeLegals = legals.filter(m => {
+      if (
+        !gnSoloMovePreservesSetFill(
+          state.board,
+          state.size,
+          poolAll,
+          m.card,
+          m.x,
+          m.y,
+          fillBudget
+        )
+      ) {
+        return false;
+      }
+      const pr = gnSoloMovePocketRisk(state.board, state.size, poolAll, m.card, m.x, m.y);
+      return !pr.dead;
+    });
+    const moveList = safeLegals.length ? safeLegals : legals;
+
+    for (const move of moveList) {
       let sc = 1;
-      // Simula posa senza applicare la pesca reale
-      const baseHandLen = ((state.hands && state.hands[playerId]) || []).length;
+      if (safeLegals.length && safeLegals.indexOf(move) >= 0) sc += 15;
       const fork = gnForkSearchState(state);
       if (!gnApplyPlacementInPlace(fork, playerId, move)) continue;
       const emptyAfter =
@@ -5115,9 +6006,7 @@ const MPCARDS_CORE_SOURCE = `
       if (emptyAfter === 0) {
         sc += 1e6;
       } else if (sample.length === 0) {
-        // Niente da pescare: valuta se restano legali dopo stop
         if (fork.turnPlayed > 0 && fork.turnPlayed < 5) {
-          // non chiamare endTurn (potrebbe avere effetti collaterali): conta legali allo stato post-posa
           const req2 = placementRequirement(fork);
           sc +=
             req2 && (req2 <= 4 || req2 === 1)
@@ -5125,26 +6014,50 @@ const MPCARDS_CORE_SOURCE = `
               : 0;
         }
       } else {
-        // Expectimax: media legali dopo aver "pescato" ciascuna carta del multiset
         let sum = 0;
         for (const maybe of sample) {
           const f2 = gnForkSearchState(state);
           if (!gnApplyPlacementInPlace(f2, playerId, move)) continue;
-          // Fine turno opaca: non usare drawPile reale; inserisci la carta del multiset in mano
-          f2.drawPile = [];
+          // Dopo posa+stop: in mano arriva la carta candidata (cima se peek, o ipotesi multiset)
+          f2.drawPile = (state.drawPile || [])
+            .filter(c => c.uid !== maybe.uid)
+            .map(c => ({ ...c }));
+          // Con peek, dopo la pesca la NUOVA cima e' visibile (seconda carta attuale)
+          if (knownTop && state.drawPile && state.drawPile.length > 1) {
+            // lascia l'ordine restante solo come cima nota al turno dopo: non usiamo oltre
+            f2.drawPile = state.drawPile.slice(1).map(c => ({ ...c }));
+          } else if (!knownTop) {
+            f2.drawPile = [];
+          }
           f2.turnPlayed = 0;
           f2.consecutivePasses = 0;
           const h = (f2.hands[playerId] || []).slice();
-          // dopo una posa la mano ha baseHandLen-1 (o da riserva invariata mano)
           if (!h.some(c => c.uid === maybe.uid)) h.push({ ...maybe });
           f2.hands[playerId] = h;
           const req2 = placementRequirement(f2);
-          sum +=
+          const leg2 =
             req2 && (req2 <= 4 || req2 === 1)
-              ? legalPlacements(f2, playerId, req2).length
-              : 0;
+              ? legalPlacements(f2, playerId, req2)
+              : [];
+          let local = leg2.length;
+          // Peek: bonus se la prossima carta (unica nota) ha una posa legale dopo questa mossa
+          if (knownTop && leg2.some(m => m.card && m.card.uid === maybe.uid)) {
+            local += 12;
+          }
+          // Solo cima nota: non usare drawPile[1] (l'umano la vede solo DOPO la pesca)
+          sum += local;
         }
         sc += sum / sample.length;
+      }
+      // Bias topologia + early-game (errori inizio partita)
+      if (move.card) {
+        const left = gnSoloOwnedPlayableCards(state).concat(gnSoloTalloneMultiset(state));
+        const stats = gnSoloBuildResidStats(left);
+        const prof = gnSoloCardAxisProfile(move.card, stats);
+        const geo = gnSoloCellGeoDegree(move.x, move.y, state.size);
+        sc += gnSoloEarlyPlacementScore(state, move.card, move.x, move.y, stats, left) * 0.35;
+        if (prof.multiUnique && geo >= 4) sc -= 5;
+        if (prof.flex > 0.7 && geo >= 3) sc += 1.5;
       }
       sc += (10 - (Number(move.card && move.card.value) || 0)) * 0.02;
       if (sc > bestSc) {
@@ -5154,6 +6067,104 @@ const MPCARDS_CORE_SOURCE = `
     }
     if (!best) return null;
     return { type: "move", move: best };
+  }
+
+  /**
+   * Search equa in coda: posate dalla mano; a fine turno pesca da tallone rimescolato
+   * come multiset (seed dal set di uid, non FIFO reale del seed di partita).
+   */
+  function gnSoloFairDeepSearch(state, playerId, options) {
+    options = options || {};
+    const empty0 =
+      state.size * state.size - ((state.board && state.board.length) || 0);
+    const emptyCap =
+      options.maxEmpty != null
+        ? options.maxEmpty
+        : state.size >= 7
+          ? 14
+          : 10;
+    if (empty0 <= 0 || empty0 > emptyCap) return null;
+    const maxNodes = options.maxNodes || (empty0 <= 4 ? 120000 : empty0 <= 6 ? 60000 : 25000);
+    let nodes = 0;
+    let bestAction = null;
+    let bestFilled = (state.board && state.board.length) || 0;
+
+    function opaqueShufflePile(st, salt) {
+      const pile = (st.drawPile || []).slice();
+      if (pile.length <= 1) return;
+      const sig = pile.map(c => c.uid).sort().join(",");
+      const rng = mulberry32(hashSeed("fair-deep:" + sig + ":" + salt + ":" + st.board.length));
+      st.drawPile = shuffle(pile, rng);
+    }
+
+    function dfs(st, rootAction) {
+      nodes++;
+      if (nodes > maxNodes) return false;
+      const filled = (st.board && st.board.length) || 0;
+      if (filled > bestFilled && rootAction) {
+        bestFilled = filled;
+        bestAction = rootAction;
+      }
+      if (st.status === "success" || isBoardComplete(st)) {
+        if (rootAction) bestAction = rootAction;
+        return true;
+      }
+      const empty = st.size * st.size - filled;
+      if (empty <= 0) {
+        if (rootAction) bestAction = rootAction;
+        return true;
+      }
+      const req = placementRequirement(st);
+      if (req === null || (req > 4 && req !== 1)) {
+        if (st.turnPlayed > 0) {
+          opaqueShufflePile(st, nodes);
+          endTurn(st);
+          return dfs(st, rootAction);
+        }
+        return false;
+      }
+      let moves = legalPlacements(st, playerId, req);
+      if (!moves.length) {
+        if (st.turnPlayed > 0) {
+          opaqueShufflePile(st, nodes);
+          endTurn(st);
+          return dfs(st, rootAction);
+        }
+        return false;
+      }
+      const leftCards = gnSoloOwnedPlayableCards(st).concat(st.drawPile || []);
+      const stats = gnSoloBuildResidStats(leftCards);
+      moves = moves.slice().sort((a, b) => {
+        const pa = gnSoloCardAxisProfile(a.card, stats);
+        const pb = gnSoloCardAxisProfile(b.card, stats);
+        const ga = gnSoloCellGeoDegree(a.x, a.y, st.size);
+        const gb = gnSoloCellGeoDegree(b.x, b.y, st.size);
+        const sa = pa.flex * 3 - (pa.multiUnique && ga >= 4 ? 25 : 0) - (ga === 4 && pa.rigid > 0.5 ? 8 : 0);
+        const sb = pb.flex * 3 - (pb.multiUnique && gb >= 4 ? 25 : 0) - (gb === 4 && pb.rigid > 0.5 ? 8 : 0);
+        return sb - sa;
+      });
+      const lim = Math.min(moves.length, empty0 <= 4 ? 8 : 5);
+      for (let i = 0; i < lim; i++) {
+        const mv = moves[i];
+        const fork = gnForkSearchState(st);
+        if (!gnApplyPlacementInPlace(fork, playerId, mv)) continue;
+        opaqueShufflePile(fork, nodes + i);
+        const act = rootAction || { type: "move", move: mv };
+        if (dfs(fork, act)) return true;
+      }
+      if (st.turnPlayed > 0 && st.turnPlayed < 5) {
+        const fork = gnForkSearchState(st);
+        opaqueShufflePile(fork, nodes + 99);
+        endTurn(fork);
+        if (dfs(fork, rootAction)) return true;
+      }
+      return false;
+    }
+
+    const root = gnForkSearchState(state);
+    opaqueShufflePile(root, 0);
+    dfs(root, null);
+    return bestAction;
   }
 
   /** Solitario: nessuna mossa fuori da legalPlacements (candidateCells + regole posa). */
@@ -5358,6 +6369,54 @@ const MPCARDS_CORE_SOURCE = `
     const coordinated = gnUseCoordinatedDurissimaPlanner(state);
     const soloCoordinated = coordinated && state.players === 1;
     const perfectGNLive = coordinated && isDurissimaGnIdeal(state);
+
+    // Turni corti mid-game N>=6: SOLO se refill-to-N e' OFF (legacy).
+    // Con refill-to-N (posa K => pesca K a fine turno) le catene sono desiderabili.
+    if (
+      soloCoordinated &&
+      state.size >= 6 &&
+      state.turnPlayed >= 1 &&
+      !isDurissimaRefillToNEnabled(state)
+    ) {
+      const emptyNow =
+        state.size * state.size - ((state.board && state.board.length) || 0);
+      const shortTurnEmpty =
+        Math.max(16, Math.floor(state.size * state.size * 0.28));
+      if (emptyNow > shortTurnEmpty) {
+        return { type: "stop" };
+      }
+    }
+
+    // Solitario a inizio turno: free cell + VITA su trappola topologica.
+    // Trigger: zero legali OPPURE zero legali pocket-safe / outlook trapped.
+    // Catena di reshuffle (budget) finche' compare una mossa safe o vite esaurite.
+    if (soloCoordinated && state.turnPlayed === 0) {
+      if (isDurissimaFreeCellsEnabled(state) && durissimaFreeCellEmptyIndex(state) >= 0) {
+        if (!hasLegalPlacementsNow(state, playerId) || !gnSoloHasSafeLegalNow(state, playerId)) {
+          const parked = gnSoloFillFreeCellsBeforeVita(state, playerId);
+          if (parked === 0 && !hasLegalPlacementsNow(state, playerId)) {
+            const parkAct = gnSoloChooseParkAction(state, playerId);
+            if (parkAct) return parkAct;
+          }
+        }
+      }
+      if (
+        isDurissimaVitaExtraEnabled(state) &&
+        canUseDurissimaVitaExtra(state, playerId) &&
+        !gnSoloHasSafeLegalNow(state, playerId)
+      ) {
+        spendDurissimaVitaExtraUntilSafe(state, playerId, random, {
+          strategy: "durissima-global-planner"
+        });
+      }
+    }
+
+    // Fork bot jolly: hold/rescue/peek cima (non tocca partite senza wild)
+    if (soloCoordinated && gnSoloWildSmartEnabled(state)) {
+      const wildAct = gnSoloWildSmartAction(state, playerId, requirement);
+      if (wildAct) return wildAct;
+    }
+
     // ONE MIND vs mazzo — path unificato per conoscenza:
     // - fullKnown set: draw < G, G>=N, o G=1 (insieme carte residue noto; ORDINE tallone ignoto in solitario equo)
     // - partial (G>1, G<N, tallone grande): prefisso owned + scheletro; handoff a fullKnown
@@ -5406,9 +6465,15 @@ const MPCARDS_CORE_SOURCE = `
         } else if (state._gnPartialMode && !fullKnown && periodic) {
           needPlan = true;
         }
-        // Solitario: replan ad ogni pesca; in coda residua, replan quasi ogni posa
+        // Solitario: replan ad ogni pesca; N grandi replan piu' spesso (anti-buco mid)
         if (isSolo && drawNow < lastDraw) needPlan = true;
-        if (isSolo && emptyCount <= 12 && placedNow > lastPlaced) needPlan = true;
+        if (
+          isSolo &&
+          placedNow > lastPlaced &&
+          (emptyCount <= 16 || size >= 6 || emptyCount <= Math.floor(targetLen * 0.55))
+        ) {
+          needPlan = true;
+        }
         // Coda: forza replan a empty 8 e 4 (una volta per soglia) se non G=N ideal perfetto
         const gLessN = players < size;
         if ((gLessN || state._gnPartialMode || !hasCompleteFullSeq || isSolo) && !perfectGNLive) {
@@ -5457,6 +6522,14 @@ const MPCARDS_CORE_SOURCE = `
               }
             }
           }
+          if (isSolo && isDurissimaFreeCellsEnabled(state)) {
+            for (const c of state.durissimaFreeCells) {
+              if (c && !boardUids.has(c.uid) && !ownedUids.has(c.uid)) {
+                remaining.push({ ...c });
+                ownedUids.add(c.uid);
+              }
+            }
+          }
           let minLateForTallone = 0;
           const fullGame = simulationDeck().filter(c => Number(c.value) <= size);
           const knownUids = new Set([...remaining.map(c => c.uid), ...boardUids]);
@@ -5490,19 +6563,14 @@ const MPCARDS_CORE_SOURCE = `
 
           // --- Solitario EQUO: solo carte in mano/riserva nei piani.
           // Multiset tallone = noto (foglio); ORDINE tallone = ignoto (mai usato per schedulare uid).
+          // Strategia generale (ogni N): rigidita' da INCROCI di tratti + topologia celle
+          // (non hack "i 5 in un 3x3"). Su 8x8 gli assi sono equidistribuiti: conta il collo di bottiglia.
           if (isSolo) {
             const dirsS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
             const playableNow = remaining.filter(c => ownedUids.has(c.uid));
-            // Multiset residuo (board+mano+tallone) solo per densita' tratti — non per ordine FIFO
             const allLeftSet = remaining.filter(c => !boardUids.has(c.uid));
-            const valCnt = {};
-            allLeftSet.forEach(c => { valCnt[c.value] = (valCnt[c.value] || 0) + 1; });
-            let maxValCnt = 1;
-            Object.keys(valCnt).forEach(k => { if (valCnt[k] > maxValCnt) maxValCnt = valCnt[k]; });
-            const isAbundant = (c) => (valCnt[c.value] || 0) >= maxValCnt - 0;
+            const residStats = gnSoloBuildResidStats(allLeftSet);
             const closePhase = emptyCount <= Math.max(10, Math.floor(targetLen * 0.48));
-            // Residuo completo SOLO se tallone vuoto (ogni carta residua e' in mano = tutto giocabile ora)
-            // o se le owned coprono tutte le celle vuote. MAI pianificare uid del tallone.
             const talloneEmpty = drawPileLen === 0;
             const doFullResidual =
               talloneEmpty ||
@@ -5510,35 +6578,100 @@ const MPCARDS_CORE_SOURCE = `
 
             const scoreSolo = (x, y, card, tempBoard, stepIdx) => {
               const val = Number(card.value) || 0;
+              const prof = gnSoloCardAxisProfile(card, residStats);
+              const geo = gnSoloCellGeoDegree(x, y, size);
               let sc = 0;
               if (ownedUids.has(card.uid)) sc += 50;
-              // Early/mid: bassi e non-abundant; late: abundant + cluster (tratti numerosi)
-              // Mid-game (ancora ~meta' griglia): penalita' forte su abundant se non in cluster
+
+              // Anti-buco (A): se questa posa rende il residuo set-infeasible, penalita' fortissima
+              // (pool = tutte le carte ancora da posare: allLeftSet meno quelle gia' usate su tempBoard)
+              const usedOnTemp = new Set(tempBoard.map(b => b.card && b.card.uid).filter(Boolean));
+              const poolForCheck = allLeftSet.filter(c => !usedOnTemp.has(c.uid));
+              const emptyLeft = targetLen - tempBoard.length - 1;
+              // Controlla solo se ha senso (non a ogni micro-nodo con griglia enorme e budget 0)
+              // Anti-buco: frontiera sempre; fill completo se emptyLeft <= 16
+              if (emptyLeft >= 0) {
+                const okFill = gnSoloMovePreservesSetFill(
+                  tempBoard,
+                  size,
+                  poolForCheck,
+                  card,
+                  x,
+                  y,
+                  emptyLeft <= 6 ? 25000 : emptyLeft <= 12 ? 12000 : 5000
+                );
+                if (!okFill) sc -= 800;
+                // Anti-pocket + frontiera aperta / matching residuo
+                const pr = gnSoloMovePocketRisk(tempBoard, size, poolForCheck, card, x, y);
+                if (pr.dead) sc -= 500 + Math.min(400, pr.risk);
+                else if (pr.risk > 0) sc -= Math.min(120, pr.risk * 0.4);
+                // Peso ridotto: full score peggiorava avg 6-8 (probe 2026-07-18)
+                sc += gnSoloOpenGrowthScore(tempBoard, size, card, x, y, poolForCheck) * 0.35;
+              }
+
+              // --- Allinea pezzo e cella (generale, ogni N) ---
+              // Early: score dedicato (angoli/bordi, riserva per hard nel residuo)
+              sc += gnSoloEarlyPlacementScore(
+                { board: tempBoard, size },
+                card,
+                x,
+                y,
+                residStats,
+                allLeftSet.filter(c => !usedOnTemp.has(c.uid))
+              );
+              // Mid/late (fuori early): rigido su bordo/angolo, flex dentro
+              if (!gnSoloIsEarlyPhase(tempBoard.length, size)) {
+                if (prof.multiUnique || prof.scarceAxes >= 2) {
+                  if (geo >= 4) sc -= 40;
+                  else if (geo === 3) sc -= 12;
+                  else sc += 14;
+                } else if (prof.rigid > 0.55 || prof.scarceAxes === 1) {
+                  if (geo >= 4) sc -= 18 * prof.rigid;
+                  else if (geo === 2) sc += 8 * prof.rigid;
+                }
+                if (prof.flex > 0.65 && geo === 2 && !closePhase) sc -= 6;
+              }
+
+              // Early/mid densita' valore: abbondanti non isolati; coda cluster flex
               const midGame = !closePhase && tempBoard.length >= Math.floor(targetLen * 0.3);
               if (!closePhase) {
-                sc += (size + 1 - val) * 4;
-                if (isAbundant(card)) sc -= midGame ? 28 : 20;
+                sc += (size + 1 - val) * 3;
+                if (prof.flex > 0.7 && prof.cv >= residStats.maxV - 0) sc -= midGame ? 22 : 16;
               } else {
-                if (isAbundant(card)) sc += 14;
-                sc += val * 0.5;
+                sc += prof.flex * 12;
+                sc += val * 0.4;
               }
+
               let sameValN = 0;
+              let sameShapeN = 0;
+              let sameColorN = 0;
               for (const d of dirsS) {
                 const nb = tempBoard.find(b => b.x === x + d[0] && b.y === y + d[1]);
-                if (!nb) continue;
+                if (!nb || !nb.card) continue;
                 if (nb.card.value === card.value) {
                   sameValN++;
-                  sc += isAbundant(card) ? 16 : 6;
+                  // Cluster valore: forte se il valore e' fungibile (count alto)
+                  sc += prof.cv >= 3 ? 14 : 5;
                 }
-                if (nb.card.shape === card.shape) sc += 3;
-                if (nb.card.color === card.color) sc += 3;
+                if (nb.card.shape === card.shape) {
+                  sameShapeN++;
+                  sc += prof.cs >= 3 ? 6 : 2;
+                }
+                if (nb.card.color === card.color) {
+                  sameColorN++;
+                  sc += prof.cc >= 3 ? 6 : 2;
+                }
               }
-              // Cluster bonus: abundant in mid solo se gia' adiacente a stesso valore
-              if (!closePhase && isAbundant(card) && sameValN > 0) sc += 22;
-              // Prima posa: ancora media (non estremi unici) se possibile
+              // Cluster mid solo se gia' appoggiato (non sparpagliare abbondanti)
+              if (!closePhase && prof.flex > 0.65 && sameValN > 0) sc += 18;
+              // Isolare un pezzo scarso di forma/colore accanto a nulla di simile: ok se angolo
+              if (prof.scarceAxes >= 1 && sameShapeN + sameColorN + sameValN === 0 && geo >= 4) {
+                sc -= 10;
+              }
+
+              // Prima posa: bias leggero residuo (early score gia' copre multi-unico / flex)
               if (tempBoard.length === 0) {
-                if (val >= 2 && val <= size - 1) sc += 8;
-                if (val === 1) sc += 4;
+                if (val === 1 && !prof.multiUnique) sc += 3;
               }
               return sc;
             };
@@ -5569,19 +6702,23 @@ const MPCARDS_CORE_SOURCE = `
                     if (adj) cells.push({ x, y });
                   }
                 }
+                // Due passate: prima solo mosse set-fillable, poi fallback se nessuna
+                const candidates = [];
                 for (const cell of cells) {
                   for (const c of pool) {
                     if (used.has(c.uid)) continue;
                     const sim = { board: tempBoard, size, turnPlayed: 0 };
                     if (!canPlaceCardAt(sim, c, cell.x, cell.y, 1)) continue;
                     const sc = scoreSolo(cell.x, cell.y, c, tempBoard, step);
-                    if (sc > bestSc) {
-                      bestSc = sc;
-                      best = { x: cell.x, y: cell.y, card: c };
-                    }
+                    candidates.push({ x: cell.x, y: cell.y, card: c, sc });
                   }
                 }
-                if (!best) break;
+                candidates.sort((a, b) => b.sc - a.sc);
+                const safe = candidates.filter(c => c.sc > -200);
+                const pickFrom = safe.length ? safe : candidates;
+                if (!pickFrom.length) break;
+                best = pickFrom[0];
+                bestSc = best.sc;
                 used.add(best.card.uid);
                 order.push(best);
                 tempBoard.push({ x: best.x, y: best.y, card: best.card });
@@ -6158,7 +7295,28 @@ const MPCARDS_CORE_SOURCE = `
         state._gnFullSequence[0].card &&
         !state._gnPartialMode;
       const gLessN = (state.players || 1) < state.size;
-      if (soloCoordinated && remainingCells > 0 && remainingCells <= 10) {
+      // Solitario equo: deep search in coda (soglia piu' alta su N>=7: near-miss 48/49, 58/64)
+      const deepEmpty =
+        soloCoordinated && state.size >= 7 ? 12 : 10;
+      if (soloCoordinated && remainingCells > 0 && remainingCells <= deepEmpty) {
+        const deep = gnSoloFairDeepSearch(state, playerId, {
+          maxEmpty: deepEmpty,
+          maxNodes:
+            remainingCells <= 4
+              ? 180000
+              : remainingCells <= 6
+                ? 100000
+                : remainingCells <= 10
+                  ? 50000
+                  : 28000
+        });
+        if (deep) return deep;
+      }
+      if (
+        soloCoordinated &&
+        remainingCells > 0 &&
+        (state.durissimaPeekTopDraw === true || remainingCells <= 12)
+      ) {
         const fair = gnSoloFairFinishAction(state, playerId);
         if (fair) return fair;
       }
@@ -6204,18 +7362,24 @@ const MPCARDS_CORE_SOURCE = `
           }
           const playable = gnFindPlayableForUid(state, playerId, step.card.uid);
           if (playable && canPlaceCardAt(state, playable.card, step.x, step.y, requirement)) {
+            const seqMove = {
+              cardUid: playable.card.uid,
+              card: playable.card,
+              x: step.x,
+              y: step.y,
+              fromReserve: playable.fromReserve === true,
+              fromFreeCell: playable.fromFreeCell === true,
+              freeCellIndex: playable.freeCellIndex
+            };
+            // Solitario: non seguire il piano se 1-ply dice trappola (0 safe residuali)
+            if (soloCoordinated && gnSoloMoveIsTrappedOutlook(state, seqMove)) {
+              state._gnPartialMode = true;
+              state._gnFullSequence = null;
+              break;
+            }
             state._gnSeqIdx = i + 1;
             state._gnJustPlayedSeqStep = true;
-            return {
-              type: "move",
-              move: {
-                cardUid: playable.card.uid,
-                card: playable.card,
-                x: step.x,
-                y: step.y,
-                fromReserve: playable.fromReserve
-              }
-            };
+            return { type: "move", move: seqMove };
           }
           // Solitario: se lo step early non e' in mano, cerca il primo step successivo giocabile ora
           if (soloCoordinated) {
@@ -6225,18 +7389,19 @@ const MPCARDS_CORE_SOURCE = `
               if (!st2.card) continue;
               const pl2 = gnFindPlayableForUid(state, playerId, st2.card.uid);
               if (pl2 && canPlaceCardAt(state, pl2.card, st2.x, st2.y, requirement)) {
+                const seqMove2 = {
+                  cardUid: pl2.card.uid,
+                  card: pl2.card,
+                  x: st2.x,
+                  y: st2.y,
+                  fromReserve: pl2.fromReserve === true,
+                  fromFreeCell: pl2.fromFreeCell === true,
+                  freeCellIndex: pl2.freeCellIndex
+                };
+                if (gnSoloMoveIsTrappedOutlook(state, seqMove2)) continue;
                 state._gnSeqIdx = j + 1;
                 state._gnJustPlayedSeqStep = true;
-                return {
-                  type: "move",
-                  move: {
-                    cardUid: pl2.card.uid,
-                    card: pl2.card,
-                    x: st2.x,
-                    y: st2.y,
-                    fromReserve: pl2.fromReserve
-                  }
-                };
+                return { type: "move", move: seqMove2 };
               }
             }
             // nessun step del piano giocabile: flex realistico
@@ -6279,18 +7444,24 @@ const MPCARDS_CORE_SOURCE = `
         }
         const playable = gnFindPlayableForUid(state, playerId, step.card.uid);
         if (playable && canPlaceCardAt(state, playable.card, step.x, step.y, requirement)) {
+          const seqMove = {
+            cardUid: playable.card.uid,
+            card: playable.card,
+            x: step.x,
+            y: step.y,
+            fromReserve: playable.fromReserve === true,
+            fromFreeCell: playable.fromFreeCell === true,
+            freeCellIndex: playable.freeCellIndex
+          };
+          if (soloCoordinated && gnSoloMoveIsTrappedOutlook(state, seqMove)) {
+            state._gnPartialMode = true;
+            state._gnFullSequence = null;
+            pending = false;
+            break;
+          }
           state._gnSeqIdx = i + 1;
           state._gnJustPlayedSeqStep = true;
-          return {
-            type: "move",
-            move: {
-              cardUid: playable.card.uid,
-              card: playable.card,
-              x: step.x,
-              y: step.y,
-              fromReserve: playable.fromReserve
-            }
-          };
+          return { type: "move", move: seqMove };
         }
         if (soloCoordinated) {
           for (let j = i + 1; j < seq.length; j++) {
@@ -6299,18 +7470,19 @@ const MPCARDS_CORE_SOURCE = `
             if (!st2.card) continue;
             const pl2 = gnFindPlayableForUid(state, playerId, st2.card.uid);
             if (pl2 && canPlaceCardAt(state, pl2.card, st2.x, st2.y, requirement)) {
+              const seqMove2 = {
+                cardUid: pl2.card.uid,
+                card: pl2.card,
+                x: st2.x,
+                y: st2.y,
+                fromReserve: pl2.fromReserve === true,
+                fromFreeCell: pl2.fromFreeCell === true,
+                freeCellIndex: pl2.freeCellIndex
+              };
+              if (gnSoloMoveIsTrappedOutlook(state, seqMove2)) continue;
               state._gnSeqIdx = j + 1;
               state._gnJustPlayedSeqStep = true;
-              return {
-                type: "move",
-                move: {
-                  cardUid: pl2.card.uid,
-                  card: pl2.card,
-                  x: st2.x,
-                  y: st2.y,
-                  fromReserve: pl2.fromReserve
-                }
-              };
+              return { type: "move", move: seqMove2 };
             }
           }
           state._gnPartialMode = true;
@@ -6381,18 +7553,24 @@ const MPCARDS_CORE_SOURCE = `
           }
           const playable = gnFindPlayableForUid(state, playerId, step.card.uid);
           if (playable && canPlaceCardAt(state, playable.card, step.x, step.y, requirement)) {
+            const seqMove = {
+              cardUid: playable.card.uid,
+              card: playable.card,
+              x: step.x,
+              y: step.y,
+              fromReserve: playable.fromReserve === true,
+              fromFreeCell: playable.fromFreeCell === true,
+              freeCellIndex: playable.freeCellIndex
+            };
+            if (soloCoordinated && gnSoloMoveIsTrappedOutlook(state, seqMove)) {
+              state._gnPartialMode = true;
+              state._gnFullSequence = null;
+              pending = false;
+              break;
+            }
             state._gnSeqIdx = i + 1;
             state._gnJustPlayedSeqStep = true;
-            return {
-              type: "move",
-              move: {
-                cardUid: playable.card.uid,
-                card: playable.card,
-                x: step.x,
-                y: step.y,
-                fromReserve: playable.fromReserve
-              }
-            };
+            return { type: "move", move: seqMove };
           }
           if (soloCoordinated) {
             for (let j = i + 1; j < seq.length; j++) {
@@ -6401,18 +7579,19 @@ const MPCARDS_CORE_SOURCE = `
               if (!st2.card) continue;
               const pl2 = gnFindPlayableForUid(state, playerId, st2.card.uid);
               if (pl2 && canPlaceCardAt(state, pl2.card, st2.x, st2.y, requirement)) {
+                const seqMove2 = {
+                  cardUid: pl2.card.uid,
+                  card: pl2.card,
+                  x: st2.x,
+                  y: st2.y,
+                  fromReserve: pl2.fromReserve === true,
+                  fromFreeCell: pl2.fromFreeCell === true,
+                  freeCellIndex: pl2.freeCellIndex
+                };
+                if (gnSoloMoveIsTrappedOutlook(state, seqMove2)) continue;
                 state._gnSeqIdx = j + 1;
                 state._gnJustPlayedSeqStep = true;
-                return {
-                  type: "move",
-                  move: {
-                    cardUid: pl2.card.uid,
-                    card: pl2.card,
-                    x: st2.x,
-                    y: st2.y,
-                    fromReserve: pl2.fromReserve
-                  }
-                };
+                return { type: "move", move: seqMove2 };
               }
             }
             state._gnPartialMode = true;
@@ -6466,11 +7645,20 @@ const MPCARDS_CORE_SOURCE = `
     // Non usa mai l'ordine esatto del tallone.
     if (coordinated) {
       const legals = legalPlacements(state, playerId, requirement);
-      if (legals.length === 0) return { type: "stop" };
+      if (legals.length === 0) {
+        if (soloCoordinated) {
+          const parkAct = gnSoloChooseParkAction(state, playerId);
+          if (parkAct) return parkAct;
+        }
+        return { type: "stop" };
+      }
 
       const known = [];
       for (let p = 0; p < state.hands.length; p++) if (state.hands[p]) known.push(...state.hands[p]);
       if (state.durissimaReserve) known.push(...state.durissimaReserve);
+      if (isDurissimaFreeCellsEnabled(state)) {
+        for (const c of state.durissimaFreeCells) if (c) known.push(c);
+      }
       const unk = state.drawPile || [];
       const counts = {};
       ['shape','color','value'].forEach(tr => {
@@ -6518,9 +7706,30 @@ const MPCARDS_CORE_SOURCE = `
         return false;
       };
       const holePenalty = (move) => {
-        if (emptyLeft > 10) return 0;
         const board2 = (state.board || []).map(b => ({ x: b.x, y: b.y, card: b.card }));
         board2.push({ x: move.x, y: move.y, card: move.card });
+        const pool2 = poolLeft.filter(c => c && c.uid !== move.card.uid);
+        // Solitario: anti-pocket su coordinate libere (sempre, non solo coda)
+        if (soloCoordinated) {
+          const pr = gnSoloMovePocketRisk(
+            state.board || [],
+            state.size,
+            poolLeft,
+            move.card,
+            move.x,
+            move.y
+          );
+          let sc = 0;
+          if (pr.dead) sc -= 900 + Math.min(500, pr.risk);
+          else sc -= Math.min(180, pr.risk * 0.5);
+          if (emptyLeft <= 7) {
+            if (residualGreedyComplete(board2, pool2)) sc += 200;
+            else if (emptyLeft <= 4) sc -= 50;
+          }
+          return sc;
+        }
+        // Coop: logica precedente (griglia 0..N-1, solo coda)
+        if (emptyLeft > 10) return 0;
         const used = new Set([move.card.uid]);
         const size = state.size;
         const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -6550,9 +7759,7 @@ const MPCARDS_CORE_SOURCE = `
         let sc = 0;
         if (unfillable > 0) sc -= 80 * unfillable;
         if (emptyLeft <= 6) sc += fillable * 3;
-        // Bonus forte se greedy residuo chiude tutto
         if (emptyLeft <= 7) {
-          const pool2 = poolLeft.filter(c => c.uid !== move.card.uid);
           if (residualGreedyComplete(board2, pool2)) sc += 200;
           else if (emptyLeft <= 4) sc -= 50;
         }
@@ -6586,6 +7793,22 @@ const MPCARDS_CORE_SOURCE = `
             sc += (state.size + 1 - (Number(card.value) || 0)) * 2;
           } else if (abundant) {
             sc += 10;
+          }
+          // Refill-to-N: catene utili (posa K => pesca K). Preferisci estendere se safe.
+          if (isDurissimaRefillToNEnabled(state) && state.turnPlayed >= 1) {
+            sc += 6;
+            // 5a posa (Idea): forte se pezzo hard in "buco" a 4 vicini
+            if (state.turnPlayed === 4) {
+              sc += 22;
+              const nb = move.neighbors != null ? move.neighbors : 0;
+              if (nb >= 4) {
+                const leftResid = [...known, ...unk];
+                const stR = gnSoloBuildResidStats(leftResid);
+                const prf = gnSoloCardAxisProfile(card, stR);
+                if (gnSoloProfileIsHard(prf) || prf.multiUnique) sc += 28;
+                else sc += 12;
+              }
+            }
           }
         }
         // Preferisci celle del piano target se presenti
@@ -6632,18 +7855,47 @@ const MPCARDS_CORE_SOURCE = `
           if (cC <= 3) sc += 2;                     // color rarity meno penalizzante
         }
 
-        // Posizioni (esatta conoscenza mazzo)
-        const x=move.x, y=move.y, sz=state.size;
-        const corner = (x==0||x==sz-1) && (y==0||y==sz-1);
-        const center = sz==3 && x==1 && y==1;
-        if (corner) {
-          if (card.value==1 && card.shape==1) sc += 18;
-          if (sC <=2) sc += 7;
-        }
-        if (center) {
-          if (card.color==8) sc += 14;
-          if (card.value==3 && card.color==8) sc += 9;
-          if (card.value==2 && card.shape==3) sc += 6;
+        // Early-game topologia (angoli/bordi vs hard residui). Non hack N-specifici.
+        if (soloCoordinated) {
+          const leftResid = [...known, ...unk];
+          const residSt = gnSoloBuildResidStats(leftResid);
+          sc += gnSoloEarlyPlacementScore(
+            state,
+            card,
+            move.x,
+            move.y,
+            residSt,
+            leftResid
+          );
+          // Frontiera aperta (bias soft; full peso regrediva 6-8)
+          sc +=
+            gnSoloOpenGrowthScore(
+              state.board || [],
+              state.size,
+              card,
+              move.x,
+              move.y,
+              leftResid
+            ) * 0.45;
+          // Jolly: con smart bot non bonus greedy (lo gestisce gnSoloWildSmartAction).
+          // Solo se smart OFF: leggero bias salvataggio.
+          if (
+            isPlayingSoloWildCard(state, card) &&
+            state.durissimaSoloWildSmartBot === false
+          ) {
+            const phys = countPhysicalNeighbors(state, move.x, move.y);
+            sc += 15 + phys * 8;
+          }
+        } else {
+          // Coop: bias leggero legacy angolo/rarita'
+          const x = move.x;
+          const y = move.y;
+          const sz = state.size;
+          const corner = (x === 0 || x === sz - 1) && (y === 0 || y === sz - 1);
+          if (corner) {
+            if (card.value === 1 && card.shape === 1) sc += 18;
+            if (sC <= 2) sc += 7;
+          }
         }
 
         // Statistica (es. "so che ci sono ancora X di questo tipo")
@@ -6670,18 +7922,18 @@ const MPCARDS_CORE_SOURCE = `
         });
         sc += la * 0.7;
 
-        // Priorità carte "comode" vs problematiche (da morph/rigidity/flexibility esistente):
-        // Le carte con alta flexibility (molti legami possibili) sono comode: lasciarle per il late game dà più margine su dove posarle.
-        // Le carte rigide/problematiche (poche alternative) vanno preferite ora, quando possibile.
-        // Conferma: sì, comode per late = maggior flessibilità (shape/color per buchi).
-        try {
-          const morph = gnMorphologyForSize ? gnMorphologyForSize(state.size) : null;
-          if (morph && morph.cardMorph) {
-            const m = morph.cardMorph(card);
-            if (m.rigidity > 1.5) sc += m.rigidity * 2;  // soft
-            if (m.flexibility > 20) sc -= 1;
-          }
-        } catch(e){}
+        // Morph: solo soft mid/late. Early e' gestito da gnSoloEarlyPlacementScore
+        // (hard su angolo/bordo, non "hard ovunque adesso").
+        if (!soloCoordinated || !gnSoloIsEarlyPhase((state.board && state.board.length) || 0, state.size)) {
+          try {
+            const morph = gnMorphologyForSize ? gnMorphologyForSize(state.size) : null;
+            if (morph && morph.cardMorph) {
+              const m = morph.cardMorph(card);
+              if (m.rigidity > 1.5) sc += m.rigidity * 2;
+              if (m.flexibility > 20) sc -= 1;
+            }
+          } catch (e) { /* ignore */ }
+        }
 
         // Clustering su qualsiasi tratto (valore, forma, colore).
         // Forme e colori servono proprio a gestire situazioni dove non abbiamo match di valore.
@@ -6741,11 +7993,100 @@ const MPCARDS_CORE_SOURCE = `
         }
       }
 
-      let best = legals[0];
+      // Solitario: filtra per crescita aperta + anti-pocket + outlook
+      let moveList = legals;
+      if (soloCoordinated && legals.length > 0) {
+        const tierA = []; // open growth ok + no dead + residual ok
+        const tierB = []; // no dead + residual ok
+        const tierC = []; // no dead pocket
+        const tierD = []; // resto
+        for (const m of legals) {
+          const pr = gnSoloMovePocketRisk(
+            state.board || [],
+            state.size,
+            poolLeft,
+            m.card,
+            m.x,
+            m.y
+          );
+          if (pr.dead) {
+            tierD.push(m);
+            continue;
+          }
+          const grow = gnSoloOpenGrowthScore(
+            state.board || [],
+            state.size,
+            m.card,
+            m.x,
+            m.y,
+            poolLeft
+          );
+          let outlook = null;
+          const filledNow = (state.board && state.board.length) || 0;
+          if (
+            legals.length <= 24 &&
+            emptyLeft > 3 &&
+            emptyLeft <= 36 &&
+            filledNow >= 18
+          ) {
+            outlook = gnSoloMoveSafeOutlook(state, m);
+          }
+          if (outlook && outlook.trapped) {
+            tierD.push(m);
+            continue;
+          }
+          // Soglia morbida: non scartare quasi tutte le legali (regrediva)
+          const openOk = grow > -250;
+          if (openOk && outlook && outlook.drawSafe > 0 && outlook.residualSafe > 0) {
+            tierA.push({ m, outlook, pr, grow });
+          } else if (openOk && (!outlook || outlook.residualSafe > 0)) {
+            tierA.push({ m, outlook, pr, grow });
+          } else if (outlook && outlook.residualSafe > 0) {
+            tierB.push({ m, outlook, pr, grow });
+          } else if (!outlook || !outlook.trapped) {
+            tierC.push({ m, outlook, pr, grow });
+          } else {
+            tierD.push(m);
+          }
+        }
+        const pickTier = tierA.length
+          ? tierA
+          : tierB.length
+            ? tierB
+            : tierC.length
+              ? tierC
+              : null;
+        if (pickTier) {
+          let best = pickTier[0].m;
+          let bs = -Infinity;
+          for (let i = 0; i < pickTier.length; i++) {
+            const item = pickTier[i];
+            let s = score(item.m);
+            if (item.outlook) {
+              s += (item.outlook.drawSafe || 0) * 6;
+              s += (item.outlook.residualSafe || 0) * 3;
+              s += (item.outlook.handSafe || 0) * 2;
+            }
+            if (item.pr && item.pr.risk) s -= Math.min(80, item.pr.risk * 0.15);
+            if (item.grow != null) s += Math.max(-200, Math.min(80, item.grow * 0.25));
+            if (s > bs) {
+              bs = s;
+              best = item.m;
+            }
+          }
+          return { type: "move", move: best };
+        }
+        moveList = legals;
+      }
+
+      let best = moveList[0];
       let bs = score(best);
-      legals.forEach(m => {
+      moveList.forEach(m => {
         const s = score(m);
-        if (s > bs) { bs = s; best = m; }
+        if (s > bs) {
+          bs = s;
+          best = m;
+        }
       });
 
       return { type: "move", move: best };
@@ -7299,7 +8640,8 @@ const MPCARDS_CORE_SOURCE = `
     if (state.turnPlayed === 4) {
       const hasHand = (state.hands[playerId] || []).length > 0;
       const hasReserve = isDurissimaReserveEnabled(state) && state.durissimaReserve.length > 0;
-      if (!hasHand && !hasReserve) {
+      const hasFree = isDurissimaFreeCellsEnabled(state) && durissimaFreeCellOccupiedCount(state) > 0;
+      if (!hasHand && !hasReserve && !hasFree) {
         throw new Error("Nessuna carta disponibile per realizzare l'idea.");
       }
     }
@@ -7525,6 +8867,56 @@ const MPCARDS_CORE_SOURCE = `
     return true;
   }
 
+  /**
+   * Regola Durissima (2026-07-18): a fine turno, se hai posato almeno 1 carta,
+   * peschi finche' la mano torna a initialHandSize (tipicamente N) o tallone esaurito.
+   * Posa K => tipicamente pesca K. Niente pesca su pass (drawOnlyAfterPlacement).
+   * Opt-out: durissimaRefillToNAfterPlace: false.
+   * Vale G>=1 (solitario e multi).
+   */
+  function isDurissimaRefillToNEnabled(state) {
+    return (
+      isDurissimaMater(state) &&
+      state.durissimaRefillToNAfterPlace === true &&
+      !durissimaUsesCompetitiveDraw(state) &&
+      !isDurissimaScartiNReshuffle(state)
+    );
+  }
+
+  function defaultDurissimaRefillToNAfterPlace(options) {
+    if (!options || options.durissimaMater !== true) return false;
+    if (options.durissimaScartiNReshuffle === true) return false;
+    if (options.durissimaCompetitiveDraw === true) return false;
+    if (options.durissimaRefillToNAfterPlace === false) return false;
+    if (options.durissimaRefillToNAfterPlace === true) return true;
+    // Default ON: regola fondamentale Durissima (posa+refill; no pesca su pass)
+    return true;
+  }
+
+  /**
+   * Pesca fino a target = initialHandSize || size. Ritorna quante carte pescate.
+   * Rispetta budget after-play se limitato (ogni carta conta 1).
+   */
+  function tryDurissimaRefillHandToN(state, playerId) {
+    if (!isDurissimaRefillToNEnabled(state)) return 0;
+    if (!state.drawPile || state.drawPile.length === 0) return 0;
+    const target = Math.max(
+      1,
+      state.initialHandSize || state.size || 1
+    );
+    let drawn = 0;
+    while ((state.hands[playerId] || []).length < target && state.drawPile.length > 0) {
+      if (!durissimaAfterPlayBudgetOpen(state)) break;
+      if (!drawForPlayer(state, playerId)) break;
+      if (state.durissimaAfterPlayDrawsLeft !== null && state.durissimaAfterPlayDrawsLeft !== undefined) {
+        state.durissimaAfterPlayDrawsLeft--;
+      }
+      state.durissimaAfterPlayDrawsUsed = (state.durissimaAfterPlayDrawsUsed || 0) + 1;
+      drawn++;
+    }
+    return drawn;
+  }
+
   /** Variante di riferimento Durissima: «N reshuffle» attivo salvo opt-out esplicito. */
   function defaultDurissimaVitaExtraEnabled(options) {
     if (options.durissimaMater !== true) return false;
@@ -7549,6 +8941,95 @@ const MPCARDS_CORE_SOURCE = `
       return Math.max(0, Math.floor(Number(table[size])) || 0);
     }
     return 0;
+  }
+
+  /**
+   * Solitario free cell: numero di slot di parcheggio (0 = off, default prodotto).
+   * Override: durissimaFreeCellSlots (1..4 tipico). Coop G>=2: sempre 0.
+   */
+  function defaultDurissimaFreeCellSlots(options) {
+    if (!options || options.durissimaMater !== true) return 0;
+    const players = Number(options.players);
+    if (players !== 1) return 0;
+    if (options.durissimaFreeCellSlots === undefined || options.durissimaFreeCellSlots === null) {
+      return 0;
+    }
+    const n = Math.floor(Number(options.durissimaFreeCellSlots));
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.min(4, n);
+  }
+
+  /**
+   * Parcheggia una carta dalla mano in uno slot free cell vuoto.
+   * Non conta come posa (turnPlayed invariato). Solo solitario.
+   */
+  function applyParkToFreeCell(state, playerId, cardUid) {
+    if (!isDurissimaFreeCellsEnabled(state) || state.status !== "playing") return false;
+    if (playerId !== state.currentPlayer) return false;
+    const slot = durissimaFreeCellEmptyIndex(state);
+    if (slot < 0) return false;
+    const hand = state.hands[playerId] || [];
+    const idx = hand.findIndex(c => c.uid === cardUid);
+    if (idx < 0) return false;
+    const card = hand.splice(idx, 1)[0];
+    state.durissimaFreeCells[slot] = card;
+    state.lastMove = {
+      playerId,
+      card,
+      park: true,
+      freeCellIndex: slot
+    };
+    return true;
+  }
+
+  /**
+   * Sceglie quale carta parcheggiare: prioritizza multi-unici / rigidi
+   * (li salva dal reshuffle vita e li tiene giocabili).
+   */
+  function gnSoloChooseParkCardUid(state, playerId) {
+    if (!isDurissimaFreeCellsEnabled(state)) return null;
+    if (durissimaFreeCellEmptyIndex(state) < 0) return null;
+    const hand = state.hands[playerId] || [];
+    if (!hand.length) return null;
+    const pool = gnSoloOwnedPlayableCards(state).concat(gnSoloTalloneMultiset(state));
+    const stats = gnSoloBuildResidStats(pool);
+    let best = null;
+    let bestScore = -Infinity;
+    for (const card of hand) {
+      const prof = gnSoloCardAxisProfile(card, stats);
+      // Piu' unico/rigido -> meglio in free cell (proteggi + non inquinare mano vita)
+      const score =
+        (prof.multiUnique ? 40 : 0) +
+        prof.scarceAxes * 12 +
+        prof.rigid * 20 -
+        prof.flex * 5;
+      if (score > bestScore) {
+        bestScore = score;
+        best = card.uid;
+      }
+    }
+    return best;
+  }
+
+  function gnSoloChooseParkAction(state, playerId) {
+    const uid = gnSoloChooseParkCardUid(state, playerId);
+    if (!uid) return null;
+    return { type: "park", cardUid: uid };
+  }
+
+  /**
+   * Riempie gli slot free cell vuoti con pezzi preziosi dalla mano (pre-vita).
+   * Ritorna quanti park eseguiti.
+   */
+  function gnSoloFillFreeCellsBeforeVita(state, playerId) {
+    let n = 0;
+    while (durissimaFreeCellEmptyIndex(state) >= 0) {
+      const uid = gnSoloChooseParkCardUid(state, playerId);
+      if (!uid) break;
+      if (!applyParkToFreeCell(state, playerId, uid)) break;
+      n++;
+    }
+    return n;
   }
 
   /**
@@ -7852,6 +9333,155 @@ const MPCARDS_CORE_SOURCE = `
     return legalPlacements(state, playerId, requirement).length > 0;
   }
 
+  /**
+   * Board gia' morta (tasca chiusa con 0 filler nel residuo): reshuffle mano NON ripara.
+   * Non bruciare vite in questo caso.
+   */
+  function gnSoloBoardIsTopologicallyDead(state) {
+    if (!state || state.players !== 1) return false;
+    const pool = gnSoloOwnedPlayableCards(state).concat(gnSoloTalloneMultiset(state));
+    if (!pool.length) {
+      const empty = state.size * state.size - ((state.board && state.board.length) || 0);
+      return empty > 0;
+    }
+    return gnSoloFrontierHasHole(state.board || [], state.size, pool);
+  }
+
+  /**
+   * Solitario equo CORE: la posizione e' gia' persa (indipendente dall'ordine del tallone)?
+   * - short_pool: residue < vuoti
+   * - frontier_hole: tasca frontiera (adj>=3, 0 filler) su coordinate libere
+   * - set_unfillable: solo se l'ingombro e' gia' NxN (griglia bloccata), con board
+   *   rinormalizzata a 0..N-1 — altrimenti set-fill su 0..N-1 e' un falso positivo
+   *   (tipico: morte finta a ~22/36 quando empty scende a 14).
+   */
+  function gnSoloIsPositionDead(state, options) {
+    options = options || {};
+    if (!state || state.players !== 1) {
+      return { dead: false, reason: null };
+    }
+    const size = state.size;
+    const board = state.board || [];
+    const filled = board.length;
+    const empty = size * size - filled;
+    if (empty <= 0) {
+      return { dead: false, reason: null, empty: 0, poolN: 0 };
+    }
+    const pool = gnSoloOwnedPlayableCards(state).concat(gnSoloTalloneMultiset(state));
+    const poolN = pool.length;
+    if (poolN < empty) {
+      return { dead: true, reason: "short_pool", empty, poolN };
+    }
+    // Affidabile con coordinate libere
+    if (gnSoloFrontierHasHole(board, size, pool)) {
+      return { dead: true, reason: "frontier_hole", empty, poolN };
+    }
+    const pockets = gnSoloAnalyzePockets(board, size, pool);
+    if (pockets.dead > 0) {
+      return {
+        dead: true,
+        reason: "frontier_hole",
+        empty,
+        poolN,
+        deadHigh: pockets.deadHigh
+      };
+    }
+    // Set-fill: solo griglia bloccata NxN E pochi vuoti.
+    // gnSoloSetFillable puo' restituire false per ricerca incompleta (non solo morte certa);
+    // con empty grandi genera falsi positivi (es. picco finto a 22/36). Default: solo empty<=8.
+    const bounds = boardBounds(board, []);
+    const locked = bounds.width >= size && bounds.height >= size;
+    const maxEmptyForFill =
+      options.maxEmptyForFill != null ? options.maxEmptyForFill : 8;
+    if (locked && empty <= maxEmptyForFill) {
+      const normBoard = board.map(b => ({
+        x: b.x - bounds.minX,
+        y: b.y - bounds.minY,
+        card: b.card
+      }));
+      const budget =
+        options.fillBudget != null
+          ? options.fillBudget
+          : empty <= 4
+            ? 80000
+            : empty <= 6
+              ? 40000
+              : 20000;
+      const fill = gnSoloSetFillable(normBoard, size, pool, budget);
+      if (fill === false) {
+        return { dead: true, reason: "set_unfillable", empty, poolN };
+      }
+      if (fill === null) {
+        return { dead: false, reason: null, empty, poolN, fillUnknown: true };
+      }
+    }
+    return { dead: false, reason: null, empty, poolN };
+  }
+
+  /**
+   * Solitario: legali "safe" per trigger vita.
+   * - Sempre: no tasca morta (adj>=3, 0 filler).
+   * - In fascia critica (filled alto e empty ancora non banale): anche no outlook trapped.
+   *   (Su 7: full outlook da filled=18 bruciava tutte le vite; pocket-only non le usava mai.)
+   */
+  function gnSoloCountSafeLegalsNow(state, playerId) {
+    const requirement = placementRequirement(state);
+    if (requirement === null || (requirement > 4 && requirement !== 1)) return 0;
+    const legals = legalPlacements(state, playerId, requirement);
+    if (!legals.length) return 0;
+    const pool = gnSoloOwnedPlayableCards(state).concat(gnSoloTalloneMultiset(state));
+    const filled = (state.board && state.board.length) || 0;
+    const empty = state.size * state.size - filled;
+    // Fascia dove la trappola mid e' tipica: non troppo early, non coda estrema
+    const useOutlook =
+      filled >= Math.max(16, Math.floor(state.size * state.size * 0.4)) &&
+      empty > 4 &&
+      empty <= Math.max(18, Math.floor(state.size * state.size * 0.45));
+    let n = 0;
+    for (let i = 0; i < legals.length; i++) {
+      const m = legals[i];
+      const pr = gnSoloMovePocketRisk(state.board || [], state.size, pool, m.card, m.x, m.y);
+      if (pr.dead) continue;
+      // Tasche "strette" (risk alto ma non dead) contano come unsafe per il dig
+      if (pr.risk >= 200) continue;
+      if (useOutlook && gnSoloMoveIsTrappedOutlook(state, m)) continue;
+      n++;
+    }
+    return n;
+  }
+
+  function gnSoloHasSafeLegalNow(state, playerId) {
+    return gnSoloCountSafeLegalsNow(state, playerId) > 0;
+  }
+
+  /**
+   * Vita a catena finche' esiste almeno 1 mossa pocket-safe, o finisce il budget.
+   * - Se la board e' gia' morta: 0 vite (inutile).
+   * - Preferisce full reshuffle (keep vuoto) per uscire dalla trappola mano;
+   *   fallback selective se full fallisce.
+   */
+  function spendDurissimaVitaExtraUntilSafe(state, playerId, random, options) {
+    options = options || {};
+    if (gnSoloBoardIsTopologicallyDead(state)) return 0;
+    let used = 0;
+    const maxLoop = 32;
+    while (used < maxLoop && canUseDurissimaVitaExtra(state, playerId)) {
+      if (gnSoloHasSafeLegalNow(state, playerId)) break;
+      const strategy = options.strategy;
+      // Full dig: rilascia tutta la mano (massima chance di pezzi nuovi sulla frontiera)
+      let ok = tryDurissimaVitaExtra(state, playerId, random, { keepUids: [] });
+      if (!ok && strategy && useDurissimaSelectiveReshuffle(state, strategy)) {
+        ok = tryDurissimaVitaExtraBot(state, playerId, random, strategy);
+      }
+      if (!ok) {
+        ok = tryDurissimaVitaExtra(state, playerId, random);
+      }
+      if (!ok) break;
+      used++;
+    }
+    return used;
+  }
+
   function resolveDurissimaStuck(state, random, options) {
     options = options || {};
     if (isDurissimaScartiNReshuffle(state)) {
@@ -7862,9 +9492,18 @@ const MPCARDS_CORE_SOURCE = `
       || (options.useVitaExtra !== false && state.players === 1);
     if (wantVita) {
       const strategy = options.strategy;
-      const used = spendDurissimaVitaExtraUntilPlayable(state, playerId, random, { strategy });
+      const used =
+        state.players === 1
+          ? spendDurissimaVitaExtraUntilSafe(state, playerId, random, { strategy })
+          : spendDurissimaVitaExtraUntilPlayable(state, playerId, random, { strategy });
       if (used > 0) {
-        if (hasLegalPlacementsNow(state, playerId)) return "vita_extra";
+        if (
+          state.players === 1
+            ? gnSoloHasSafeLegalNow(state, playerId) || hasLegalPlacementsNow(state, playerId)
+            : hasLegalPlacementsNow(state, playerId)
+        ) {
+          return "vita_extra";
+        }
         if (state.players === 1) {
           const drew = tryDurissimaEmergencyDraw(state, playerId);
           if (drew) return "drew";
@@ -7888,7 +9527,19 @@ const MPCARDS_CORE_SOURCE = `
   function applyPlacement(state, playerId, move) {
     const legalMove = validatePlacement(state, playerId, move);
     let card;
-    if (legalMove.fromReserve) {
+    if (legalMove.fromFreeCell === true || (legalMove.freeCellIndex != null && legalMove.freeCellIndex >= 0)) {
+      const cells = state.durissimaFreeCells || [];
+      let idx =
+        legalMove.freeCellIndex != null && legalMove.freeCellIndex >= 0
+          ? legalMove.freeCellIndex
+          : cells.findIndex(c => c && c.uid === legalMove.cardUid);
+      if (idx < 0 || !cells[idx] || cells[idx].uid !== legalMove.cardUid) {
+        idx = cells.findIndex(c => c && c.uid === legalMove.cardUid);
+      }
+      if (idx < 0 || !cells[idx]) throw new Error("Carta non presente in free cell.");
+      card = cells[idx];
+      cells[idx] = null;
+    } else if (legalMove.fromReserve) {
       const reserve = state.durissimaReserve || [];
       const cardIndex = reserve.findIndex(entry => entry.uid === legalMove.cardUid);
       if (cardIndex < 0) throw new Error("Carta non presente nella riserva.");
@@ -7905,12 +9556,14 @@ const MPCARDS_CORE_SOURCE = `
       heightAxisFixed: state.heightAxisFixed === true
     };
     const ideaPlacement = state.turnPlayed === 4;
+    const wildPlacement = isPlayingSoloWildCard(state, card);
     state.board.push({
       x: legalMove.x,
       y: legalMove.y,
       card,
       playerId,
-      ideaBlind: ideaPlacement || undefined
+      ideaBlind: ideaPlacement || undefined,
+      wildBlind: wildPlacement || undefined
     });
     state.consecutivePasses = 0;
     state.turnPlayed++;
@@ -7920,9 +9573,10 @@ const MPCARDS_CORE_SOURCE = `
       x: legalMove.x,
       y: legalMove.y,
       matches: legalMove.matches,
-      requirement: ideaPlacement ? 0 : state.turnPlayed,
+      requirement: ideaPlacement || wildPlacement ? 0 : state.turnPlayed,
       idea: ideaPlacement,
-      ideaBlind: ideaPlacement || undefined
+      ideaBlind: ideaPlacement || undefined,
+      wildBlind: wildPlacement || undefined
     };
     handleTurnOrderAfterPlacement(state, playerId, milestoneBefore);
     if (isDurissimaMater(state)) {
@@ -8049,8 +9703,16 @@ const MPCARDS_CORE_SOURCE = `
       } else if (state.turnPlayed > 0 && (isDurissimaMater(state) || !handEmpty)) {
         // Durissima: mano vuota NON e' vittoria — se hai posato devi poter pescare anche con mano vuota.
         // (In Dura competitiva la mano vuota vince prima di endTurn, quindi !handEmpty resta corretto.)
-        if (isDurissimaMater(state) && state.players === 1 && !durissimaUsesCompetitiveDraw(state)) {
-          tryDurissimaAfterPlayDraw(state, playerId);
+        if (isDurissimaMater(state) && !durissimaUsesCompetitiveDraw(state)) {
+          // Regola Durissima: refill fino a mano iniziale (posa K => pesca K).
+          // Legacy (opt-out): una sola pesca after-play.
+          if (isDurissimaRefillToNEnabled(state)) {
+            tryDurissimaRefillHandToN(state, playerId);
+          } else if (state.players === 1) {
+            tryDurissimaAfterPlayDraw(state, playerId);
+          } else {
+            drawForPlayer(state, playerId);
+          }
         } else {
           drawForPlayer(state, playerId);
         }
@@ -8171,7 +9833,7 @@ const MPCARDS_CORE_SOURCE = `
         ? randomInitialTurnOrder(players, random)
         : defaultTurnOrder(players);
     const initialTurnOrder = turnOrder.slice();
-    return {
+    const state = {
       size,
       players,
       hands,
@@ -8203,7 +9865,13 @@ const MPCARDS_CORE_SOURCE = `
       durissimaHandDrawCap: scartiMode || options.durissimaHandDrawCap === true,
       durissimaHandDrawCapFactor: options.durissimaHandDrawCapFactor,
       durissimaHandDrawCapMax: scartiMode ? size : options.durissimaHandDrawCapMax,
-      drawOnlyAfterPlacement: options.drawOnlyAfterPlacement === true,
+      // Durissima: pesca solo se hai posato (default ON). Opt-out esplicito false.
+      drawOnlyAfterPlacement:
+        options.drawOnlyAfterPlacement === true ||
+        (options.durissimaMater === true &&
+          options.drawOnlyAfterPlacement !== false &&
+          options.durissimaCompetitiveDraw !== true &&
+          options.durissimaScartiNReshuffle !== true),
       tournamentMode,
       tournamentScores: tournamentMode ? Array.from({ length: players }, () => 0) : null,
       tournamentHandScores: tournamentMode ? Array.from({ length: players }, () => 0) : null,
@@ -8223,6 +9891,25 @@ const MPCARDS_CORE_SOURCE = `
       durissimaStrategicVitaExtra: scartiMode ? false : options.durissimaStrategicVitaExtra !== false,
       durissimaSelectiveReshuffle: scartiMode ? false : options.durissimaSelectiveReshuffle !== false,
       durissimaVitaExtraPool: defaultDurissimaVitaExtraPool(size, options),
+      // Solitario: cima del tallone sempre visibile (prossima pesca nota). Non e' oracolo sull'ordine intero.
+      durissimaPeekTopDraw:
+        players === 1 && options.durissimaPeekTopDraw === true,
+      // Solitario: a fine turno se hai posato, pesca fino a mano N (default ON).
+      durissimaRefillToNAfterPlace: defaultDurissimaRefillToNAfterPlace(dealOpts),
+      // Free cell: slot di parcheggio (null = vuoto). Solo solitario; default 0.
+      durissimaFreeCells: (() => {
+        const slots = defaultDurissimaFreeCellSlots(dealOpts);
+        return slots > 0 ? Array.from({ length: slots }, () => null) : [];
+      })(),
+      // Solitario: jolly face-down opt-in (uid scelti sotto se abilitato)
+      durissimaSoloWildCard: defaultDurissimaSoloWildCard(dealOpts),
+      durissimaSoloWildCount: defaultDurissimaSoloWildCount(dealOpts),
+      // Fork bot jolly: hold/rescue/peek (default ON se wild card ON)
+      durissimaSoloWildSmartBot:
+        defaultDurissimaSoloWildCard(dealOpts) &&
+        options.durissimaSoloWildSmartBot !== false,
+      durissimaSoloWildUid: null,
+      durissimaSoloWildUids: [],
       durissimaVitaExtraUsed: Array.from({ length: players }, () => 0),
       randomizeTurnOrder,
       turnOrder: initialTurnOrder.slice(),
@@ -8231,6 +9918,266 @@ const MPCARDS_CORE_SOURCE = `
       initialDrawCount: deal.drawCount,
       overcrowdedDeal: deal.overcrowded
     };
+    if (state.durissimaSoloWildCard) {
+      assignDurissimaSoloWildCard(state, random);
+    }
+    return state;
+  }
+
+  function defaultDurissimaSoloWildCount(options) {
+    if (!defaultDurissimaSoloWildCard(options || {})) return 0;
+    if (options.durissimaSoloWildCount !== undefined) {
+      return Math.max(1, Math.min(4, Math.floor(Number(options.durissimaSoloWildCount)) || 1));
+    }
+    return 1;
+  }
+
+  /**
+   * Solitario: sceglie K carte a caso nel tallone come jolly face-down (K = durissimaSoloWildCount).
+   * Se tallone corto, completa dalla mano. Opt-in: durissimaSoloWildCard: true.
+   */
+  function assignDurissimaSoloWildCard(state, random) {
+    if (!state || state.players !== 1 || !isDurissimaMater(state)) return [];
+    const rng = typeof random === "function" ? random : Math.random;
+    const k = Math.max(
+      1,
+      Math.min(
+        4,
+        state.durissimaSoloWildCount ||
+          defaultDurissimaSoloWildCount({
+            durissimaMater: true,
+            players: 1,
+            durissimaSoloWildCard: true,
+            durissimaSoloWildCount: state.durissimaSoloWildCount
+          })
+      )
+    );
+    const pile = state.drawPile || [];
+    const hand = (state.hands && state.hands[0]) || [];
+    const pool = pile.concat(hand);
+    if (!pool.length) return [];
+    // shuffle copy of indices
+    const idxs = pool.map((_, i) => i);
+    for (let i = idxs.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      const t = idxs[i];
+      idxs[i] = idxs[j];
+      idxs[j] = t;
+    }
+    const uids = [];
+    const seen = new Set();
+    for (let i = 0; i < idxs.length && uids.length < k; i++) {
+      const c = pool[idxs[i]];
+      if (!c || seen.has(c.uid)) continue;
+      seen.add(c.uid);
+      uids.push(c.uid);
+    }
+    state.durissimaSoloWildUids = uids;
+    state.durissimaSoloWildUid = uids[0] || null; // legacy
+    state.durissimaSoloWildCount = uids.length;
+    return uids;
+  }
+
+  function defaultDurissimaSoloWildCard(options) {
+    if (!options || options.durissimaMater !== true) return false;
+    if (Number(options.players) !== 1) return false;
+    return options.durissimaSoloWildCard === true;
+  }
+
+  /** Cima tallone: un jolly non ancora posato e' a faccia in su (visibile). */
+  function gnSoloWildIsVisibleOnTop(state) {
+    if (!isDurissimaSoloWildEnabled(state)) return false;
+    const top = state.drawPile && state.drawPile[0];
+    if (!top) return false;
+    if (!gnSoloWildUidSet(state).has(top.uid)) return false;
+    // gia' in board?
+    return !(state.board || []).some(b => b.card && b.card.uid === top.uid);
+  }
+
+  function gnSoloWildInHand(state, playerId) {
+    if (!isDurissimaSoloWildEnabled(state)) return null;
+    const hand = state.hands[playerId] || [];
+    const set = gnSoloWildUidSet(state);
+    return hand.find(c => set.has(c.uid)) || null;
+  }
+
+  function gnSoloWildsRemaining(state) {
+    const set = gnSoloWildUidSet(state);
+    if (!set.size) return 0;
+    let onBoard = 0;
+    for (const b of state.board || []) {
+      if (b.card && set.has(b.card.uid)) onBoard++;
+    }
+    return set.size - onBoard;
+  }
+
+  function gnSoloWildAlreadyOnBoard(state) {
+    // true se TUTTI i jolly sono in board (niente da gestire)
+    return gnSoloWildsRemaining(state) <= 0;
+  }
+
+  /**
+   * Fork bot jolly (non sostituisce il core senza wild).
+   * - Tiene il jolly finche' esistono legali NON-wild pocket-safe.
+   * - Lo posa solo in salvataggio: zero alternative safe, o cella ad alto grado
+   *   dove nessun pezzo normale del residuo entra.
+   * - Se jolly visibile in cima al tallone e solo mosse non-safe: stop (pesca jolly).
+   * Attivo se durissimaSoloWildSmartBot !== false (default ON con wild card).
+   */
+  function gnSoloWildSmartEnabled(state) {
+    if (!isDurissimaSoloWildEnabled(state)) return false;
+    if (state.durissimaSoloWildSmartBot === false) return false;
+    return true;
+  }
+
+  function gnSoloPickBestNonWildSafe(state, playerId, safeMoves) {
+    if (!safeMoves || !safeMoves.length) return null;
+    const pool = gnSoloOwnedPlayableCards(state).concat(gnSoloTalloneMultiset(state));
+    let best = safeMoves[0];
+    let bestSc = -Infinity;
+    for (let i = 0; i < safeMoves.length; i++) {
+      const m = safeMoves[i];
+      let sc = gnSoloOpenGrowthScore(
+        state.board || [],
+        state.size,
+        m.card,
+        m.x,
+        m.y,
+        pool
+      );
+      sc += (m.neighbors || 0) * 2;
+      const phys = countPhysicalNeighbors(state, m.x, m.y);
+      if (phys <= 1) sc += 8;
+      if (phys >= 3) sc -= 12;
+      if (sc > bestSc) {
+        bestSc = sc;
+        best = m;
+      }
+    }
+    return best;
+  }
+
+  function gnSoloPickWildRescueCell(state, playerId, wildMoves) {
+    if (!wildMoves || !wildMoves.length) return null;
+    const pool = gnSoloOwnedPlayableCards(state).concat(gnSoloTalloneMultiset(state));
+    const wildSet = gnSoloWildUidSet(state);
+    let best = wildMoves[0];
+    let bestSc = -Infinity;
+    for (let i = 0; i < wildMoves.length; i++) {
+      const m = wildMoves[i];
+      const phys = countPhysicalNeighbors(state, m.x, m.y);
+      let sc = phys * 25;
+      // Quanti pezzi "normali" del residuo potrebbero entrare qui (con tratti)?
+      let normalFit = 0;
+      const simNormal = {
+        board: state.board || [],
+        size: state.size,
+        turnPlayed: 0,
+        players: 1,
+        durissimaMater: true,
+        durissimaSoloWildUid: null,
+        durissimaSoloWildUids: []
+      };
+      for (let j = 0; j < pool.length; j++) {
+        const c = pool[j];
+        if (!c || wildSet.has(c.uid)) continue;
+        if (canPlaceCardAt(simNormal, c, m.x, m.y, 1)) normalFit++;
+      }
+      if (normalFit === 0) sc += 80;
+      else sc -= normalFit * 3;
+      if (phys >= 3) sc += 45;
+      if (phys >= 4) sc += 25;
+      // Evita angolo vuoto early con jolly
+      if (phys <= 1 && ((state.board && state.board.length) || 0) < state.size * 2) sc -= 40;
+      if (sc > bestSc) {
+        bestSc = sc;
+        best = m;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Ritorna action {type,move} se la policy smart gestisce il turno; null = fallback coordinator.
+   */
+  function gnSoloWildSmartAction(state, playerId, requirement) {
+    if (!gnSoloWildSmartEnabled(state)) return null;
+    if (gnSoloWildAlreadyOnBoard(state)) return null;
+
+    const wildInHand = gnSoloWildInHand(state, playerId);
+    const wildOnTop = gnSoloWildIsVisibleOnTop(state);
+    const legals = legalPlacements(state, playerId, requirement);
+    const pool = gnSoloOwnedPlayableCards(state).concat(gnSoloTalloneMultiset(state));
+
+    if (!legals.length) {
+      // Niente da posare: se abbiamo gia' posato e jolly in cima, chiudi turno per pescarlo
+      if (wildOnTop && state.turnPlayed > 0) {
+        return { type: "stop", reason: "wild-peek-draw" };
+      }
+      return null;
+    }
+
+    const nonWild = [];
+    const wildMoves = [];
+    for (let i = 0; i < legals.length; i++) {
+      const m = legals[i];
+      if (isPlayingSoloWildCard(state, m.card) || m.wildBlind) wildMoves.push(m);
+      else nonWild.push(m);
+    }
+
+    const safeNonWild = [];
+    for (let i = 0; i < nonWild.length; i++) {
+      const m = nonWild[i];
+      const pr = gnSoloMovePocketRisk(
+        state.board || [],
+        state.size,
+        pool,
+        m.card,
+        m.x,
+        m.y
+      );
+      if (!pr.dead) safeNonWild.push(m);
+    }
+
+    // 1) Tieni jolly: gioca solo non-wild safe
+    if (wildInHand && safeNonWild.length > 0) {
+      const pick = gnSoloPickBestNonWildSafe(state, playerId, safeNonWild);
+      if (pick) return { type: "move", move: pick, wildHold: true };
+    }
+
+    // 2) Jolly in cima (visibile): se non-safe only e abbiamo posato, stop per pescarlo
+    if (wildOnTop && !wildInHand && state.turnPlayed > 0 && safeNonWild.length === 0) {
+      return { type: "stop", reason: "wild-peek-draw" };
+    }
+
+    // 3) Jolly in cima e safe non-wild: continua safe (poi pescherai jolly a fine catena/turno)
+    if (wildOnTop && !wildInHand && safeNonWild.length > 0) {
+      // Preferisci stop dopo 1 posa mid se short-turn gia' attivo; altrimenti una safe e stop
+      const pick = gnSoloPickBestNonWildSafe(state, playerId, safeNonWild);
+      if (pick && state.turnPlayed >= 1) {
+        // completa il turno presto per portare il jolly in mano
+        return { type: "move", move: pick, wildPeekPrep: true };
+      }
+      if (pick) return { type: "move", move: pick, wildPeekPrep: true };
+    }
+
+    // 4) Salvataggio: jolly in mano, nessuna safe non-wild
+    if (wildInHand && wildMoves.length > 0 && safeNonWild.length === 0) {
+      const rescue = gnSoloPickWildRescueCell(state, playerId, wildMoves);
+      if (rescue) {
+        const phys = countPhysicalNeighbors(state, rescue.x, rescue.y);
+        // Non bruciare jolly su espansione banale se ci sono ancora non-wild (anche non-safe)
+        if (nonWild.length === 0 || phys >= 2) {
+          return { type: "move", move: rescue, wildRescue: true };
+        }
+      }
+    }
+
+    // 5) Solo non-wild (jolly non in mano): lascia al coordinator, ma se jolly on top e turnPlayed>=1 e safe
+    //    gia' gestito. Se jolly on top e turnPlayed>=1 e abbiamo fatto una mossa peekPrep, short turn
+    //    forzerà stop su N>=6... ok.
+
+    return null;
   }
 
   /** null/undefined = illimitato; intero >= 0 = tetto per partita. */
@@ -8254,9 +10201,89 @@ const MPCARDS_CORE_SOURCE = `
     const playerId = state.currentPlayer;
     const playerStrategy = Array.isArray(strategies) ? strategies[playerId] : strategies;
     const action = chooseAction(state, playerId, playerStrategy, random);
+    if (action.type === "park") {
+      const ok = applyParkToFreeCell(state, playerId, action.cardUid);
+      if (!ok) {
+        // Park fallito: tratta come stop (vita/stuck path sotto)
+        const stopAct = { type: "stop" };
+        // fall through via re-entry
+        if (state.turnPlayed === 0 && isDurissimaMater(state) && state.players === 1) {
+          if (
+            canUseDurissimaVitaExtra(state, playerId) &&
+            !gnSoloHasSafeLegalNow(state, playerId)
+          ) {
+            spendDurissimaVitaExtraUntilSafe(state, playerId, random, {
+              strategy: playerStrategy
+            });
+            const retry = chooseAction(state, playerId, playerStrategy, random);
+            if (retry.type === "move") {
+              applyPlacement(state, playerId, retry.move);
+              if (state.status !== "playing") return { played: true, move: retry.move, parkFailed: true };
+              if (state.turnPlayed >= 5) endTurn(state);
+              return { played: true, move: retry.move, parkFailed: true };
+            }
+          }
+          state.status = "stalled";
+          return { played: false, lost: true, parkFailed: true };
+        }
+        return { played: false, parkFailed: true };
+      }
+      // Dopo park: se ora c'e' una posa, il prossimo botStep la farà; se no e vita, prova ora.
+      if (!gnSoloHasSafeLegalNow(state, playerId) && state.turnPlayed === 0) {
+        if (canUseDurissimaVitaExtra(state, playerId)) {
+          spendDurissimaVitaExtraUntilSafe(state, playerId, random, {
+            strategy: playerStrategy
+          });
+        }
+        if (hasLegalPlacementsNow(state, playerId)) {
+          const retry = chooseAction(state, playerId, playerStrategy, random);
+          if (retry.type === "move") {
+            applyPlacement(state, playerId, retry.move);
+            if (state.status !== "playing") {
+              return { played: true, move: retry.move, parked: true, vitaAfterPark: true };
+            }
+            if (state.turnPlayed >= 5) endTurn(state);
+            return { played: true, move: retry.move, parked: true, vitaAfterPark: true };
+          }
+        }
+      }
+      return { played: false, parked: true, cardUid: action.cardUid };
+    }
     if (action.type === "stop") {
       if (state.turnPlayed === 0) {
         if (isDurissimaMater(state)) {
+          // Blocco a inizio turno: vita su trappola topologica (solo: safe legal), non solo zero legali.
+          if (
+            canUseDurissimaVitaExtra(state, playerId) &&
+            (state.players === 1
+              ? !gnSoloHasSafeLegalNow(state, playerId)
+              : !hasLegalPlacementsNow(state, playerId))
+          ) {
+            const used =
+              state.players === 1
+                ? spendDurissimaVitaExtraUntilSafe(state, playerId, random, {
+                    strategy: playerStrategy
+                  })
+                : spendDurissimaVitaExtraUntilPlayable(state, playerId, random, {
+                    strategy: playerStrategy
+                  });
+            if (
+              used > 0 &&
+              (state.players === 1
+                ? gnSoloHasSafeLegalNow(state, playerId) || hasLegalPlacementsNow(state, playerId)
+                : hasLegalPlacementsNow(state, playerId))
+            ) {
+              const retry = chooseAction(state, playerId, playerStrategy, random);
+              if (retry.type === "move") {
+                applyPlacement(state, playerId, retry.move);
+                if (state.status !== "playing") {
+                  return { played: true, move: retry.move, vitaExtra: true };
+                }
+                if (state.turnPlayed >= 5) endTurn(state);
+                return { played: true, move: retry.move, vitaExtra: true };
+              }
+            }
+          }
           if (!useDurissimaStrategicVita(state)) {
             const stuck = durissimaWhenStuckWithoutPlay(state, random, {
               useVitaExtra: true,
@@ -8658,11 +10685,32 @@ const MPCARDS_CORE_SOURCE = `
     gnSoloIsPlanSchedulable,
     gnSoloOwnedPlayableCards,
     gnSoloTalloneMultiset,
+    gnSoloBuildResidStats,
+    gnSoloCardAxisProfile,
+    gnSoloCellGeoDegree,
+    gnSoloIsEarlyPhase,
+    gnSoloEarlyPlacementScore,
+    gnSoloSetFillable,
+    gnSoloFrontierHasHole,
+    gnSoloIsPositionDead,
+    gnSoloFrontierCells,
+    gnSoloAnalyzePockets,
+    gnSoloMovePocketRisk,
+    gnSoloOpenGrowthScore,
+    gnSoloCountPocketSafePlacements,
+    gnSoloMoveSafeOutlook,
+    gnSoloMovePreservesSetFill,
     gnSoloFairFinishAction,
+    gnSoloFairDeepSearch,
     gnSearchMayUseDrawPile,
     gnForkSearchStateNoDrawOracle,
     gnDrawOracleBlockCount,
     gnResetDrawOracleBlockCount,
+    isDurissimaFreeCellsEnabled,
+    defaultDurissimaFreeCellSlots,
+    applyParkToFreeCell,
+    gnSoloChooseParkAction,
+    gnSoloFillFreeCellsBeforeVita,
     gnEnsureLegalSoloMove,
     gnAllTeamLegalPlacements,
     gnChooseGlobalTeamPlacement,
@@ -8687,11 +10735,25 @@ const MPCARDS_CORE_SOURCE = `
     chooseDurissimaIdeaPursuitPlacement,
     tryDurissimaEmergencyDraw,
     tryDurissimaAfterPlayDraw,
+    tryDurissimaRefillHandToN,
+    isDurissimaRefillToNEnabled,
+    defaultDurissimaRefillToNAfterPlace,
+    isDurissimaSoloWildEnabled,
+    isPlayingSoloWildCard,
+    isWildBlindBoardEntry,
+    assignDurissimaSoloWildCard,
+    defaultDurissimaSoloWildCard,
+    gnSoloWildIsVisibleOnTop,
+    gnSoloWildSmartAction,
+    gnSoloWildSmartEnabled,
     isDurissimaVitaExtraEnabled,
     durissimaVitaExtraPoolLeft,
     canUseDurissimaVitaExtra,
     tryDurissimaVitaExtra,
     spendDurissimaVitaExtraUntilPlayable,
+    spendDurissimaVitaExtraUntilSafe,
+    gnSoloCountSafeLegalsNow,
+    gnSoloHasSafeLegalNow,
     hasLegalPlacementsNow,
     resolveDurissimaStuck,
     canPassTurnVoluntarily,
@@ -8700,6 +10762,7 @@ const MPCARDS_CORE_SOURCE = `
     endTurn,
     computeInitialDeal,
     defaultDurissimaExtraCards,
+    defaultDurissimaFreeCellSlots,
     defaultDurissimaReserveEnabled,
     defaultDurissimaReserveSize,
     maxPlayersForSize,

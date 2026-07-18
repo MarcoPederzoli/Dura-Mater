@@ -268,12 +268,15 @@ Valgono **tutte le regole di Dura Mater** (codice carta, posa 1-4 + Idea, Dura M
 
 | Aspetto | Dura Mater | Durissima |
 |---------|------------|-----------|
-| **Pesca** | A fine turno sempre (anche su pass) | **Solo se nel turno hai posato** almeno una carta |
+| **Pesca** | A fine turno **sempre** 1 carta (anche su pass) | **Solo se nel turno hai posato** almeno una carta; allora **refill** fino alla mano iniziale |
 | **Vittoria** | Mano vuota (primo che svuota) | **Griglia piena** — tutte le carte della partita posate |
+
+**Regola fondamentale pesca (2026-07-18):** se nel turno hai posato K carte (K >= 1), a fine turno peschi carte dal tallone finche' la mano torna a **mano iniziale** (`initialHandSize`, tipicamente N in undercrowded / G=N, o `floor(N^2/G)` in overcrowd) o il tallone e' esaurito. In pratica posa K => tipicamente pesca K. **Pass senza posare: zero pesche.** In codice: `drawOnlyAfterPlacement` + `durissimaRefillToNAfterPlace` (default **ON** con Durissima; opt-out espliciti `false`). Non vale per varianti competitive-draw / scarti-n-reshuffle.
 
 Conseguenze del core (gia' coerenti col motore):
 
 - **Pass senza posare** resta lecito (scelta tattica in coop), ma **non fa pescare** — ne' in multi ne' in solitario.
+- **Multi-posa non impoverisce la mano:** dopo un turno con 2-4 carte (o Idea) la mano si ripristina; non si resta con 1 carta dopo una catena.
 - **Mano vuota** non chiude la partita; si continua finche' la matrice e' completa o la partita va a **monte**.
 - **Monte:** come in Dura multi — G pass consecutivi senza posate, anche con tallone pieno.
 - **Posare meno carte del massimo** nello stesso turno resta lecito: dopo la prima posa si puo' chiudere il turno anche con altre mosse legali.
