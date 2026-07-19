@@ -122,7 +122,7 @@ La chat Grok non e' persistente: il diario e' `SESSIONI.md` (su Git).
 
 ## Focus attuale
 
-**Stato 2026-07-18 — regola refill Durissima:** pesca **solo se posato** + **refill** a `initialHandSize` (default ON). Sweep G>=2: overall **67.5%** (702/1040), G>=N **100%**, G<N ~20%. **Hunt: >=1 win su tutte le 21 celle G<N + G>=N** (seed in `results/durissima-refill-hunt-ggt1-2026-07-18.txt`). **Prossimo: G=1 con refill.** Jolly/pool/vite/open-growth archiviati su 7–8 equo.
+**Stato 2026-07-19 — refill + policy turni:** regola refill ON (opzionale: K=1 lecito). Multi G>=2 ok. Solitario: regressione era soprattutto **catene mid** (refill spegneva i turni corti N>=6). **Fix:** short mid N>=6 anche con refill; Idea opt-in OFF (trappola/regalo). Soft short su 4–5 scartato. Dettaglio `results/solo-turn-policy-refill-2026-07-19.txt`.
 
 ### Non rifare / errori costosi
 - Dichiarare cause senza controprova (es. «problema #1 = frazione mano/mazzo» smentito: 4x4 25% ok, 8x8 mano16 25% no).
@@ -131,9 +131,9 @@ La chat Grok non e' persistente: il diario e' `SESSIONI.md` (su Git).
 - Re-sweep G>=2 refill stessi seed senza cambio codice.
 
 ### Prossima sessione (priorita')
-1. **G=1 con refill** (draw only after place + refill-to-N): probe core equo 3..8.
-2. Allineare `RULES.md` / regolamento alla nuova regola fondamentale.
-3. Se G=1 non basta: diagnosi early-game / packing (non re-provare jolly massicci).
+1. Solitario: packing / anti-tasca / quando fare K=2 (non jolly/vite massicci; Idea resta opt-in).
+2. Eventuale commit policy turni corti + refill (codice gia' in working tree se non committato).
+3. Multi: leave as-is (coordinatore puo' multi-posa per flusso mani).
 
 - **Dura:** competitiva + torneo — **chiusa** (bot planner adeguato).
 - **Durissima coop (G >= 2) — coordinatore "una mente vs mazzo":** **archiviata / risolta** (2026-07-11).

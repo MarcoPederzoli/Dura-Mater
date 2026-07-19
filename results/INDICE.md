@@ -1,9 +1,18 @@
-# INDICE — Artefatti probe e audit
+﻿# INDICE â€” Artefatti probe e audit
 
 File **pesanti o rigenerabili**: non in Git (vedi `.gitignore`). Le **conclusioni** vanno in `SESSIONI.md`; qui solo dove trovare i dati grezzi.
 
 ---
 
+
+## Solo G=1 refill A/B (2026-07-19)
+
+| File | Contenuto |
+|------|-----------|
+| `solo-refill-ab-2026-07-19.txt` | A/B refill ON vs OFF, N=3..8 equo early-abort |
+
+**Script:** `temp-solo-refill-probe.js`, `temp-solo-refill-worker.js`  
+**Sessione:** `SESSIONI.md` 2026-07-19.
 ## Refill Durissima G>1 (2026-07-18)
 
 | File | Contenuto |
@@ -16,7 +25,7 @@ File **pesanti o rigenerabili**: non in Git (vedi `.gitignore`). Le **conclusion
 
 ---
 
-## `results/tournament-audit/` — Audit torneo Dura (2026-06-10)
+## `results/tournament-audit/` â€” Audit torneo Dura (2026-06-10)
 
 | File | Contenuto | Dimensione indicativa |
 |------|-----------|------------------------|
@@ -35,7 +44,7 @@ File **pesanti o rigenerabili**: non in Git (vedi `.gitignore`). Le **conclusion
 
 ---
 
-## `tests/*.json` — Probe Durissima (2026-06-11 — 2026-06-19)
+## `tests/*.json` â€” Probe Durissima (2026-06-11 â€” 2026-06-19)
 
 Output locali dei probe `durissima-*`, `diag-gn-*`, solver overnight. **Non eliminare** senza aver annotato conclusioni in `SESSIONI.md`.
 
@@ -53,12 +62,12 @@ Output locali dei probe `durissima-*`, `diag-gn-*`, solver overnight. **Non elim
 | `dura-mater-durissima-gn-solver-overnight-*.json` | overnight solver | Run lunga |
 | `overnight-solver-log.txt` | log testuale overnight | |
 
-**Sessione:** `SESSIONI.md` voce 2026-06-11 — 2026-06-19.
+**Sessione:** `SESSIONI.md` voce 2026-06-11 â€” 2026-06-19.
 **Non usare per:** decisioni di bilanciamento reshuffle/pool (vedi `TODO-SOLVER-DURISSIMA.md`).
 
 ---
 
-## `results/ideal-layouts/` — Layout robusti Livello A (2026-07-09)
+## `results/ideal-layouts/` â€” Layout robusti Livello A (2026-07-09)
 
 | File | Contenuto |
 |------|-----------|
@@ -68,7 +77,7 @@ Output locali dei probe `durissima-*`, `diag-gn-*`, solver overnight. **Non elim
 | `rules-export.json` | Regole compatte per planner (sync in `mpcards-core.js`) |
 | `ab-probe-20deals.json` | Probe A/B ideal vs baseline (20 seed, 3x3/4x4) |
 
-**Script:** `node scripts/analyze-ideal-layouts.js` — lib `scripts/ideal-layout-lib.js`, sync `scripts/sync-ideal-layout-rules.js`.
+**Script:** `node scripts/analyze-ideal-layouts.js` â€” lib `scripts/ideal-layout-lib.js`, sync `scripts/sync-ideal-layout-rules.js`.
 **Planner:** `GN_IDEAL_LAYOUT_RULES_DATA` in `mpcards-core.js`; disabilita con `GN_SKIP_IDEAL_LAYOUT=1`.
 **Sessione:** `SESSIONI.md` voce 2026-07-09 layout ideali.
 
@@ -80,9 +89,9 @@ Output locali dei probe `durissima-*`, `diag-gn-*`, solver overnight. **Non elim
 |------|------|
 | `Analisi-Mazzo-Dura-Mater.docx` | Documento editore; generato da `scripts/build-analisi-mazzo-docx.py` |
 | `*.xlsx` (confronti, carte) | Esport simulatore / analisi |
-| `terminals/`, `agent-tools/` | Cache Grok — cancellabili, non backup |
+| `terminals/`, `agent-tools/` | Cache Grok â€” cancellabili, non backup |
 
-## 2026-07-11 — Report finale coordinatore One Mind (Durissima G=2..2N)
+## 2026-07-11 â€” Report finale coordinatore One Mind (Durissima G=2..2N)
 
 **File:** `results/Risultati_Durissima_Coordinatore_One_Mind.docx` (anche nella cartella fisica Dropbox)
 

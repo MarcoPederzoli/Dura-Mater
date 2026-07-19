@@ -2793,3 +2793,65 @@ Altre G<N: seed `dur-refill` bassi (0..10). Lista completa in `results/durissima
 **Artefatti:** `temp-durissima-refill-hunt.js`, `temp-hunt-worker.js` (timeout N>=8 90s), `results/durissima-refill-hunt-ggt1-2026-07-18.txt`
 
 **Prossimo:** G=1 con refill.
+
+---
+
+## 2026-07-19 - G=1 con refill (A/B equo vs no-refill)
+
+**Setup:** core equo (vita0 fc0 reserve0 wild0), drawOnly ON, early abort topologico, hash `solo-refill-ab:n:seed`, 7 worker.
+**Script:** `temp-solo-refill-probe.js` / `temp-solo-refill-worker.js`
+
+### Risultati
+
+| N | seeds | refill win% | noref win% | delta | note |
+|---|-------|-------------|------------|-------|------|
+| 3 | 40 | **50%** | **50%** | 0 | identico |
+| 4 | 40 | 32.5% | **47.5%** | **-15pp** | refill peggiora |
+| 5 | 40 | 7.5% | **17.5%** | **-10pp** | refill peggiora |
+| 6 | 40 | 2.5% | **5.0%** | **-2.5pp** | refill peggiora |
+| 7 | 30 | 0% | 0% | 0 | max 40 vs 41 |
+| 8 | 30 | 0% | 0% | 0 | avgP 32.8 vs **37.8** (refill peggio) |
+
+**Tempo:** N=3..6 wall ~20 min; N=7..8 wall ~43 min (refill rallenta il bot: mano piena => search piu' pesante).
+
+**Lettura:**
+1. La regola refill **non risolve** il solitario equo 6-8 e su 4-5 **regredisce** le % rispetto a pesca-1-dopo-posa.
+2. Ipotesi: refill rimescola il ritmo di ingresso carte (dopo multi-posa entrano K carte FIFO) e il bot equo non gestisce meglio la mano piena; l'impoverimento-mano non era il collo di bottiglia G=1.
+3. Per **prodotto multi** la regola resta valida (gia' testata G>1). Per **solitario** serve altra leva (o accettare curva bassa con regola unificata).
+
+**Artefatti:** `results/solo-refill-ab-2026-07-19.txt`
+
+**Non rifare:** A/B refill G=1 stessi seed senza cambio bot/regole.
+**Prossimo:** decidere se refill resta unificato G>=1 (esperienza tavolo) nonostante regressione bot, oppure opt-out solo G=1; non ripartire da jolly/vite massicci.
+
+---
+
+## 2026-07-19 - Policy bot solitario con refill (turni corti) + Idea
+
+**Contesto utente:** refill e' opzionale (si puo' posare 1); peggioramento bot = policy non tarata; multi-posa/Idea = trappola psicologica ma Idea (posa gratis ovunque) a volte sblocca; coordinatore multi puo' volere K=2 per flusso.
+
+**Fix codice** (`mpcards-core.js`):
+- Turni corti mid-game **N>=6 solitario** restano attivi **anche con refill** (prima il refill li spegneva: `!isDurissimaRefillToNEnabled`).
+- Opt-in catene mid: `durissimaSoloAllowMidChains` / `GN_SOLO_MID_CHAINS=1`.
+- **Non** short forzato su 4-5 (esperimenti: short aggressivo e soft+refill su 4 regredivano).
+- Idea: resta `durissimaPursueIdea` opt-in OFF (regalo 5a cieca pericoloso).
+
+**Probe** (40 seed, equo, early abort) `temp-solo-refill-probe.js`:
+
+| N | R+chain (vecchio) | R+short ibrido | noref |
+|---|-------------------|----------------|-------|
+| 4 | 32.5% t2~31% | soft short **27.5%** (peggio) | **47.5%** |
+| 5 | 7.5% | soft **12.5%** (meglio chain) | 17.5% |
+| 6 | 2.5% t2~36% | short mid 0% | **5.0%** |
+
+Con short strettissimo N>=4: R e noref si **equalizzano** ma a win% basse (4 a 27%) — non accettabile.
+
+**Lettura:**
+1. Conferma: con disciplina K=1, refill ~ pesca-1; il danno era soprattutto **catene mid** abilitate dal flag.
+2. Su 4x4 il costo del refill non si risolve solo con short (soft peggiora); packing/FIFO resta.
+3. Idea: non abilitare di default; e' il regalo massimo (no tratti) e la trappola umana principale.
+4. `turnPlacementStats` esposto nei probe (t1%/t2%/t3+%).
+
+**Artefatti:** `results/solo-turn-policy-refill-2026-07-19.txt`
+
+**Non rifare:** short aggressivo N>=4 come default; re-A/B stessi seed senza cambio policy.

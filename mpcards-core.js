@@ -1183,6 +1183,24 @@ const MPCARDS_CORE_SOURCE = `
     return isDurissimaMater(state) && state.durissimaPursueIdea === true;
   }
 
+  /**
+   * Opt-in: solitario puo' fare catene mid-game (disabilita turni corti).
+   * Default OFF: con o senza refill, mid-game preferisce 1 posa/turno.
+   * Probe: options.durissimaSoloAllowMidChains === true o GN_SOLO_MID_CHAINS=1.
+   */
+  function durissimaSoloAllowMidChains(state) {
+    if (!state || state.players !== 1) return false;
+    if (state.durissimaSoloAllowMidChains === true) return true;
+    if (
+      typeof process !== "undefined" &&
+      process.env &&
+      process.env.GN_SOLO_MID_CHAINS === "1"
+    ) {
+      return true;
+    }
+    return false;
+  }
+
   function durissimaHandCards(state, playerId) {
     return (state.hands[playerId] || []).length;
   }
@@ -6370,18 +6388,24 @@ const MPCARDS_CORE_SOURCE = `
     const soloCoordinated = coordinated && state.players === 1;
     const perfectGNLive = coordinated && isDurissimaGnIdeal(state);
 
-    // Turni corti mid-game N>=6: SOLO se refill-to-N e' OFF (legacy).
-    // Con refill-to-N (posa K => pesca K a fine turno) le catene sono desiderabili.
+    // Turni corti mid-game solitario N>=6 (dopo 1 posa, griglia ancora "aperta").
+    // Vale ANCHE con refill (prima il refill disabilitava il freno -> catene e
+    // regressione packing). Multi-posa resta libera in coda e se
+    // durissimaSoloAllowMidChains. Su 4-5 non forziamo short: short aggressivo
+    // regrediva il noref; soft+refill su 4x4 peggiorava pure vs catene libere.
+    // Idea (4+1 cieca) resta opt-in pursueIdea: regalo ovunque, trappola/umani.
     if (
       soloCoordinated &&
       state.size >= 6 &&
       state.turnPlayed >= 1 &&
-      !isDurissimaRefillToNEnabled(state)
+      !durissimaSoloAllowMidChains(state)
     ) {
       const emptyNow =
         state.size * state.size - ((state.board && state.board.length) || 0);
-      const shortTurnEmpty =
-        Math.max(16, Math.floor(state.size * state.size * 0.28));
+      const shortTurnEmpty = Math.max(
+        16,
+        Math.floor(state.size * state.size * 0.28)
+      );
       if (emptyNow > shortTurnEmpty) {
         return { type: "stop" };
       }
@@ -9857,6 +9881,8 @@ const MPCARDS_CORE_SOURCE = `
       turnDirection: 1,
       durissimaMater: options.durissimaMater === true,
       durissimaPursueIdea: options.durissimaPursueIdea === true,
+      // Solitario: permettere catene mid-game (default OFF = turni corti anche con refill)
+      durissimaSoloAllowMidChains: options.durissimaSoloAllowMidChains === true,
       durissimaScartiNReshuffle: scartiMode,
       durissimaDiscardPile: scartiMode ? [] : null,
       durissimaDiscardRecyclesLeft: scartiMode ? size : null,
