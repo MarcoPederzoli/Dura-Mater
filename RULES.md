@@ -283,19 +283,28 @@ Conseguenze del core (gia' coerenti col motore):
 
 **Cooperativo (2+ giocatori):** al tavolo mani e mazzo restano **coperti**. Con la scheda delle 64 carte e il dialogo si costruisce l'**universo noto** (quali carte esistono ancora, non l'ordine di pesca). Solo il giocatore attivo posa dalla propria mano. La simulazione coop usa `durissima-team-planner`; per **G=N senza tallone** (probe bilanciamento) usa `durissima-global-planner` (solver DFS + morfologia cubo, vedi `scripts/BILANCIAMENTO-PAUSA.md`).
 
-**Solitario (`G = 1`):** stesse eccezioni di pesca e vittoria (pesca solo se posato + **refill** a mano iniziale). Bloccati senza mosse legali all'inizio del turno → partita **persa**. Nessun pool condiviso coop. **Default prodotto (2026-07):** mano **2N** (N carte extra dal tallone) + refill; bot coordinatore in modalita' **virtual-multi** (stesso stile di piano del coop undercrowded). Equo: multiset noto, ordine tallone ignoto.
+**Solitario (`G = 1`):** stesse eccezioni di pesca e vittoria. Bloccati senza mosse legali all'inizio del turno → partita **persa**. Nessun pool condiviso coop. Equo: multiset noto, ordine tallone ignoto. **Scopo:** divertirsi — la griglia piena e' la vittoria «ufficiale»; anche una catena lunga (es. 4+Idea) e' un momento di gioco memorabile.
 
-**Probe di riferimento (bot, 100–1000 seed):** 7×7 mano 14 ~**3%** win; 8×8 mano 16 ~**0,2%** win (max griglia piena dimostrata). Epico, non infattibile.
+**Scelte del giocatore (opzioni di setup, non «modalita' bot»):**
 
-### Carte extra — regola solitario (`G = 1` only)
+| Opzione | Default | Effetto |
+|---------|---------|---------|
+| **Mano** | **N** | **Easy mode:** mano **2N** (k=N carte extra dal tallone) |
+| **Refill** | ON (solo se posato → rimpiazzo a mano iniziale) | OFF = variante piu' secca (opt-out) |
 
-Sostituisce il vecchio «pool riserva» separato. Per un solo giocatore avere carte giocabili subito e' la stessa cosa che tenerle **tutte in mano**.
+Il giocatore sceglie come vuole giocare. Easy mode (2N) e refill sono **facilitazioni opzionali** al tavolo, non obblighi di bilanciamento «solo per N grandi» — anche se su 6–8 aiutano di piu'.
 
-- **Default prodotto:** **k = N** carte extra → **mano = 2N**, tallone = N² − 2N. Esempio 7×7: mano 14, tallone 35.
-- **Opt-out core equo stretto:** k = 0 (mano = N) via `durissimaExtraCards: 0` (piu' duro; bot sotto soglia epica su 7–8).
-- **In gioco:** solo la mano (niente seconda zona). Stesse regole di posa e pesca (refill a 2N se default).
-- **Coop (`G >= 2`):** carte extra **disattivate** — si usa **N reshuffle** come aiuto di riferimento.
-- **Legacy:** pool riserva separato (`durissimaReserveEnabled: true`) solo probe storici; **non** regola prodotto.
+**Bot (solo simulazione / avversario IA — non nel regolamento giocatore):** path interno automatico (legacy su N piccoli, virtual-multi su N grandi). Il giocatore **non** sceglie «legacy vs VM».
+
+### Carte extra / easy mode — solitario (`G = 1` only)
+
+Sostituisce il vecchio «pool riserva» separato. Avere piu' carte giocabili subito = tenerle **in mano**.
+
+- **Standard:** k = 0 → mano **N**, tallone N² − N.
+- **Easy mode:** k = N → mano **2N**, tallone N² − 2N. Esempio 7×7: mano 14, tallone 35.
+- **In gioco:** solo la mano. Posa e pesca come da regole solitario (con refill se attivo: target = mano iniziale N o 2N).
+- **Coop (`G >= 2`):** carte extra **disattivate**.
+- **Legacy probe:** pool riserva separato (`durissimaReserveEnabled`) non e' regola prodotto.
 
 ### N reshuffle — regola operativa (riferimento Durissima coop)
 

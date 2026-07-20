@@ -130,10 +130,13 @@ La chat Grok non e' persistente: il diario e' `SESSIONI.md` (su Git).
 |-----------|---------|------------------------|
 | **Dura** | competitiva + torneo | Chiusa; no solitario Dura |
 | **Durissima coop G>=2** | refill solo-se-posato; N reshuffle | G=N **100%**; G legali 2..2N |
-| **Durissima solitario G=1** | mano **2N**, refill ON, bot **virtual-multi** | 7x7 ~**3%**/100; 8x8 ~**0,2%**/1000; max 64 |
+| **Durissima solitario G=1** | **scelte giocatore:** mano N o **easy 2N**; refill ON/OFF | Vittoria griglia piena; divertimento anche catene lunghe |
+| Bot (interno, non UI) | legacy N≤5, virtual-multi N≥6 | Non esporre al giocatore |
+| Probe ordine di grandezza | 3–4 mano N ~35–50%; 5 duro; 6–8 epici; 2N alza win/avg | Vedi SESSIONI 2026-07-20 |
 
 - Equo: multiset noto, **no** oracolo ordine tallone.
-- Opt-out probe: `durissimaExtraCards: 0`, `durissimaSoloVirtualMulti: false`.
+- **Easy mode = mano 2N** (e refill se lo usano): opzioni di **divertimento**, non patch del bot.
+- **Non** usare virtual-multi su 3–5 (regressione).
 - Idea / freecell / seed-row / jolly: non default prodotto.
 
 ### Non rifare / errori costosi
@@ -141,12 +144,12 @@ La chat Grok non e' persistente: il diario e' `SESSIONI.md` (su Git).
 - Mixare freecell + vite nello stesso test.
 - Search con ordine reale del tallone (DRAW-ORACLE).
 - Jolly/fc=N/seed-row come leva 7–8 equo (archiviati).
-- Path solo legacy vs multi: il gap era il **bot**, non le 14 carte (virtual-multi = path multi).
+- Imporre 2N come unica regola base o confondere path bot con opzioni di setup.
 
 ### Prossima sessione (priorita')
-1. **Documentazione regole / manualetto** del gioco (Dura + Durissima + Solo).
-2. Allineare UI/testi a mano 2N e refill se serve.
-3. Editore: tabella config finali in docx se richiesto.
+1. **Documentazione / manualetto** (Dura + Durissima + Solo): opzioni easy mode e refill.
+2. UI setup solitario: toggle mano N/2N e refill (scelte giocatore).
+3. Editore: tabella config se richiesto.
 
 - **Dura:** competitiva + torneo — **chiusa**.
 - **Durissima coop:** **chiusa** (G=N 100%, G 2..2N con tallone piccolo ok).

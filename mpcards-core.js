@@ -5133,7 +5133,8 @@ const MPCARDS_CORE_SOURCE = `
   /**
    * Solo "virtual multi": stesso regime di pianificazione del coop undercrowded
    * (partial, prefisso owned = tutta la mano, follow 1 carta/stop).
-   * Opt-in: durissimaSoloVirtualMulti: true. Non cambia le regole di tavolo.
+   * Default prodotto: ON solo se size >= 6 (su 3–5 regrediva vs path solo fullKnown).
+   * Override: durissimaSoloVirtualMulti true/false esplicito.
    */
   function isDurissimaSoloVirtualMulti(state) {
     return (
@@ -9021,8 +9022,9 @@ const MPCARDS_CORE_SOURCE = `
 
   /**
    * Solitario: «carte extra» in mano al setup (non un pool separato; non in coop G>=2).
-   * Default prodotto (2026-07): k = N => mano 2N (probe 7x7 ~3%, 8x8 ~0.2% con virtual-multi).
-   * Opt-out: durissimaExtraCards: 0 (core equo mano N). Tabella: durissimaExtraCardsByN.
+   * Default prodotto: 0 => mano = N (regola base).
+   * Facilitazione opzionale: k = N => mano 2N (utile da 6–8; su 3–5 non necessaria).
+   * Override: durissimaExtraCards o tabella durissimaExtraCardsByN.
    */
   function defaultDurissimaExtraCards(size, options) {
     if (!options || options.durissimaMater !== true) return 0;
@@ -9035,17 +9037,21 @@ const MPCARDS_CORE_SOURCE = `
     if (table && table[size] != null) {
       return Math.max(0, Math.floor(Number(table[size])) || 0);
     }
-    const n = Math.floor(Number(size)) || 0;
-    return n > 0 ? n : 0;
+    return 0;
   }
 
-  /** Solo: path bot virtual-multi default ON (partial come coop). Opt-out: false. */
+  /**
+   * Solo virtual-multi: default ON solo N>=6 (dove partial multi aiuta).
+   * N<=5: default OFF → path solo fullKnown legacy (non rompere 3–5).
+   * Override esplicito true/false sempre rispettato.
+   */
   function defaultDurissimaSoloVirtualMulti(options) {
     if (!options || options.durissimaMater !== true) return false;
     if (Number(options.players) !== 1) return false;
     if (options.durissimaSoloVirtualMulti === false) return false;
     if (options.durissimaSoloVirtualMulti === true) return true;
-    return true;
+    const size = Math.floor(Number(options.size)) || 0;
+    return size >= 6;
   }
 
   /**

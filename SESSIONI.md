@@ -3050,3 +3050,87 @@ Con mano **14** vm era a ~46 e 1 win; con mano **7** il path multi non basta: ma
 - refill gia' default ON
 
 **Prossimo:** documentazione / manualetto (non nuove meccaniche equo).
+
+---
+
+## 2026-07-20 - Mano 2N = facilitazione opzionale; A/B N vs 2N
+
+**Decisione utente:** mano 2N non e' regola base (fino a 5x5 non serve). Default codice: `extraCards=0` (mano N).
+
+**Probe** 40 seed, virtual-multi + refill, N=3..8:
+
+| N | win mano N | win mano 2N | dWin |
+|---|------------|-------------|------|
+| 3 | 5% | 10% | +5pp |
+| 4 | 0% | **25%** | +25pp |
+| 5 | 0% | **22.5%** | +22.5pp |
+| 6 | 0% | 7.5% | +7.5pp |
+| 7 | 0% | 0%* | 0 (avgP +7.7) |
+| 8 | 0% | 2.5% | +2.5pp |
+
+*7x7 2N noto ~3% su 100 seed. 3x3 mano N 5% = path vm debole su small-N (prima con path legacy+mano 3 si vinceva di piu').
+
+**Artefatto:** results/solo-hand-N-vs-2N-2026-07-20.txt
+
+---
+
+## 2026-07-20 - Fix regressione: virtual-multi solo N>=6
+
+**Problema:** vm su tutti gli N portava 3x3 a ~5% e 4–5 a 0% (prima 3x3 ~50%+).
+
+**Fix:** `defaultDurissimaSoloVirtualMulti` = true solo se `size >= 6` (override esplicito ok).
+
+**Probe tier** 40 seed mano N refill ON (default path):
+
+| N | path | win% | avgP | max |
+|---|------|------|------|-----|
+| 3 | legacy | **52.5%** | 8.2/9 | 9 |
+| 4 | legacy | **47.5%** | 14.1/16 | 16 |
+| 5 | legacy | 5.0% | 17.2/25 | 25 |
+| 6 | vm | 0% | 30.4/36 | 34 |
+| 7 | vm | 0% | 39.0/49 | 47 |
+| 8 | vm | 0% | 53.8/64 | 62 |
+
+**Lettura:** 3–4 recuperati. 5 ancora basso. 6–8 mano N epici (2N resta facilitazione). Curve di difficolta' di nuovo distinte (4 != 8).
+
+---
+
+## 2026-07-20 - Curva solitario prodotto (N3-5 legacy+N; N6-8 vm+2N)
+
+**Protocollo:** 100 seed, refill ON.
+- N<=5: path legacy, mano N
+- N>=6: virtual-multi, mano 2N (scontata in prodotto)
+
+| N | win% | avgP | max |
+|---|------|------|-----|
+| 3 | **53%** | 8.4/9 | 9 |
+| 4 | **36%** | 14.4/16 | 16 |
+| 5 | **5%** | 16.9/25 | 25 |
+| 6 | **12%** | 33.7/36 | 36 |
+| 7 | **2%** | 45.9/49 | 49 |
+| 8 | **0%**/100 (0.2%/1000) | 58.5/64 | 63 |
+
+**Artefatto:** results/solo-product-curve-100-2026-07-20.txt
+
+---
+
+## 2026-07-20 - Filosofia solitario: easy mode = scelta giocatore
+
+**Chiarimento utente:**
+- Legacy vs virtual-multi = **solo bot**, non regolamento.
+- **Easy mode** = mano **2N** (opzionale), come refill ON/OFF: il giocatore sceglie per divertirsi.
+- Non obbligare 2N per N>=6 come unica verita'; e' facilitazione opzionale al tavolo.
+- La vittoria ufficiale resta griglia piena; una catena da 5 (Idea) puo' dare piu' soddisfazione di «completare» a volte.
+
+**Default codice invariato di fatto:** mano N base; extraCards opzionale; bot path interno tier N.
+**Doc:** RULES + promemoria allineati a questa filosofia.
+
+---
+
+## 2026-07-20 - Stop crediti: commit chiusura sessione
+
+Pausa ~2 giorni (crediti settimanali esauriti). Stato salvato:
+- Mano N base; easy 2N e refill = opzioni giocatore
+- Bot: legacy N<=5, virtual-multi N>=6
+- Curva prodotto 100 seed documentata; 5x5 legacy2n vs vm2n documentato
+- Prossimo: manualetto / documentazione regole
