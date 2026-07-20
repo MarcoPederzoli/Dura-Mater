@@ -2855,3 +2855,198 @@ Con short strettissimo N>=4: R e noref si **equalizzano** ma a win% basse (4 a 2
 **Artefatti:** `results/solo-turn-policy-refill-2026-07-19.txt`
 
 **Non rifare:** short aggressivo N>=4 come default; re-A/B stessi seed senza cambio policy.
+
+---
+
+## 2026-07-19 - Analisi: perche' solo 3-5 si e' risolvibile e 6-8 no
+
+**Domanda:** solitario G=1 equo: cliff tra N<=5 e N>=6.
+
+**Non e':** frazione mano/mazzo come causa #1 (gia' smentita); assenza di layout Livello A (3x3 160 sol., 5x5 ~10^10, 6+ enormi); G=N multi prova che packing esiste al 100% senza tallone.
+
+**E':** scheduling equo con tallone grande + impegni irreversibili che creano **tasche di frontiera** mid-game.
+
+**Profilo morte** (refill+short N>=6, early abort, ~15-20 seed):
+- 3: win~55%, morti quasi solo set_unfillable @~73% pieno
+- 4: win~35%, set_unfillable dominante, frontier raro
+- 5: win~5%, set_unfillable+frontier, @~66%
+- 6: win 0, frontier+set, max~28/36, morti @~76%
+- 7: win 0, frontier dominante (11/14 early), @~80% max41
+- 8: (probe precedenti) win 0, avg alto ma max sotto 64, frontier
+
+**Geometria:** % celle interiori (grado 4) 11%->25%->36%->44%->51%->56% da N=3 a 8.
+
+**Conclusione operativa:** 6-8 non sono 'impossibili matematicamente'; sono **fuori portata del bot equo** per tasche mid + ordine tallone ignoto. Prossimo: anti-tasca / K=2 selettivo, non jolly.
+
+---
+
+## 2026-07-19 - Probe 6x6 freecell con 6 slot
+
+**Setup:** equo vita0, refill default, 40 seed, A/B fc0 / fc1 / **fc6**. Tetto slot core: 4 -> **16**.
+
+| mode | win% | avgP | max | parks/deal |
+|------|------|------|-----|------------|
+| fc0 | 5% (2/40) | 31.9 | 36 | 0 |
+| fc1 | 0% | 31.4 | 35 | 0.2 |
+| **fc6** | **0%** | 31.9 | 35 | **0.2** |
+
+**Lettura:** 6 free cell **non** danno vittorie. Il bot fa ~0.2 park/partita: non usa il buffer mid-game (policy park legata a blocco/vita). Senza park aggressivo, fc=N e' inerte. Prossimo eventuale: park mid se mossa creerebbe tasca, non solo a zero legali.
+
+**Artefatto:** results/solo-freecell-6x6-fc6-2026-07-19.txt
+
+---
+
+## 2026-07-19 - Ultima spiaggia: freecell 6 + park proattivo 6x6
+
+**Codice:** `gnSoloProactiveParkAction` (inizio turno: park pezzi no-safe/hard se restano >=2 in mano);
+filtro anti-tasca-morta sulle legali; tetto fc 16.
+
+**Probe** 40 seed equo vita0:
+
+| mode | win% | avgP | max | parks/deal |
+|------|------|------|-----|------------|
+| fc0 | **5%** (2/40) | 31.9 | 36 | 0 |
+| fc6 proattivo | 2.5% (1/40) | 31.5 | 36 | **9.9** |
+
+**Lettura:** il bot **usa** i 6 slot (~10 park/partita; prima 0.2). Non aumenta le vittorie (sample: un filo peggio). Buffer+refill non basta a evitare tasche mid. Archiviare freecell=N come leva risolutiva equo 6+.
+
+**Artefatto:** results/solo-freecell-6x6-proactive-2026-07-19.txt
+
+---
+
+## 2026-07-19 - Idea riga seed N carte (test 6x6)
+
+**Idea utente:** all'inizio disporre N carte scoperte in riga (senza vincoli tra loro), poi core. Meno carte da posare a gioco, ma vincoli "sporchi" verso la riga.
+
+**Codice:** `durissimaSoloSeedTopRow` + `applyDurissimaSoloSeedTopRow` (tallone -> board y=0, x=0..N-1).
+
+**Probe** `temp-solo-seedrow-probe.js 40 7 --n 6` A/B stesso seed:
+
+| mode | win% | avgP | max | early | frontier | set_unf |
+|------|------|------|-----|-------|----------|---------|
+| core | 0/40 | 24.8 | 30 | 93% | 25 | 12 |
+| seed | 0/40 | **26.7** | 28 | 98% | **29** | 10 |
+
+**Lettura:** non e' una soluzione (0 win). avgP +~2, max un filo peggio, **piu'** morti frontier (riga pre-fissata chiude gia' un asse e crea frontiera lunga). Coerente col dubbio utente. Non adottare in prodotto.
+
+**Artefatti:** temp-solo-seedrow-*.js, results/solo-seedrow-6x6-2026-07-19.txt
+
+---
+
+## 2026-07-19 - Test 7x7: G=2 vs solo mano 2N (stesso deal)
+
+**Ipotesi teorica:** stesse 14 carte + tallone 35, solo dovrebbe essere >= G=2 (no ownership).
+
+**Test:** `temp-solo2n-vs-g2-probe.js 40 7 --n 7`, refill OFF, same14 verificato.
+
+| mode | win% | avgP | max |
+|------|------|------|-----|
+| G=2 | 0/40 | **46.3**/49 | **48** |
+| solo 2N | 0/40 | **24.3**/49 | 35 |
+
+G=2 batte solo in profondita' su **40/40** seed. Nessuna win nel sample.
+
+**Lettura:** col bot attuale il gap G=2 vs solo NON e' spiegato dal solo conteggio carte in mano; il path multi (partial/fullKnown) sfrutta 7+7 molto meglio del path solitario con mano 14. Solo-2N non e' scorciatoia per 7x7 giocabile.
+
+**Artefatti:** temp-solo2n-vs-g2-*.js, results/solo2n-vs-g2-7x7-2026-07-19.txt
+
+---
+
+## 2026-07-19 - Solo virtual-multi (path come G=2) su 7x7 mano 2N
+
+**Ipotesi:** il bot solo legacy e' il collo di bottiglia; allineare G=1 al path multi partial.
+
+**Codice:** `durissimaSoloVirtualMulti` — partial se tallone grande, owned=mano, follow 1+stop, no short-turn/deep solo.
+
+**Probe** 40 seed, refill OFF, same 14 carte:
+
+| mode | win% | avgP | max |
+|------|------|------|-----|
+| G=2 | 0% | 46.3 | 48 |
+| solo2n legacy | 0% | 21.5 | 34 |
+| **solo2n_vm** | **2.5% (seed 9)** | **45.7** | **49** |
+
+vm>legacy profondita' **40/40**. Prima win 7x7 solo (mano 14 + path multi). Tempo ~2s come G=2 (legacy ~125s).
+
+**Lettura:** conferma che il problema era il path bot single; virtual-multi porta il solo a profondita' multi. Prossimo: solo mano N con virtual-multi; piu' seed; raffinare finish per win%.
+
+**Artefatti:** results/solo-virtual-multi-7x7-2026-07-19.txt
+
+---
+
+## 2026-07-19 - Virtual-multi con mano N (non 2N) su 7x7
+
+**Probe** 40 seed mano=7 tall=42 refill OFF:
+
+| mode | win% | avgP | max |
+|------|------|------|-----|
+| legacy | 0 | 38.3 | 46 |
+| **vm** | 0 | 37.8 | 46 |
+
+vm>>legacy in velocita' (~0.5s vs ~111s); profondita' ~parita' (vm meglio su 29/40 seed).
+Con mano **14** vm era a ~46 e 1 win; con mano **7** il path multi non basta: manca inventario owned.
+
+**Lettura:** virtual-multi risolve il path bot; la giocabilita' 7x7 solo equo chiede ancora buffer owned (2N o riserva) oltre al path.
+
+---
+
+## 2026-07-19 - Solo 7x7 mano 14 + virtual-multi + refill x100
+
+**Setup:** extraCards=N (mano 14), `durissimaSoloVirtualMulti`, refill ON, vita0 fc0.
+**Comando:** `node temp-solo-vm-2n-probe.js 100 7 --n 7`
+
+| metrica | valore |
+|---------|--------|
+| win% | **3.0%** (3/100) seeds 43,66,89 |
+| avgP | 45.6/49 |
+| maxP | **49** |
+| near-miss (>=46 no win) | **58**/100 |
+| wall | 28s |
+
+**Lettura:** soglia epica accettabile dall'utente (~>1%). Config candidata prodotto solo 7x7: mano 2N + virtual-multi + refill. Prossimo: stesso su 8x8 se richiesto.
+
+---
+
+## 2026-07-19 - Solo 8x8 mano 16 + virtual-multi + refill x100
+
+**Setup:** come 7x7 (2N + vm + refill). `node temp-solo-vm-2n-probe.js 100 7 --n 8`
+
+| metrica | 7x7 | 8x8 |
+|---------|-----|-----|
+| win% | **3%** (3/100) | **0%** (0/100) |
+| avgP | 45.6/49 | **59.7**/64 |
+| maxP | 49 | **63** |
+| near-miss | 58 (>=46) | 33 (>=61) |
+
+**Lettura:** 8x8 con questa config e' **quasi** (max 63, media ~60) ma non chiude su 100 seed. 7x7 nella soglia epica; 8x8 serve ancora finish/coda o sample/hunt seed, oppure accettare 8 come estremo sotto 1%.
+
+---
+
+## 2026-07-19 - Solo 8x8 mano 16 + vm + refill x1000
+
+**Comando:** `node temp-solo-vm-2n-probe.js 1000 7 --n 8`
+
+| metrica | valore |
+|---------|--------|
+| win% | **0.2%** (2/1000) seeds **608, 784** |
+| avgP | 59.2/64 |
+| maxP | **64** |
+| near-miss >=61 | 276/1000 (27.6%) |
+| wall | 541s |
+
+**Lettura:** 8x8 non e' a 0 assoluto; ~1 vittoria / 500 deal. Epico estremo (sotto 1%). 7x7 resta ~3%/100. Max 64 = chiusura possibile col bot.
+
+---
+
+## 2026-07-20 - Freeze regole + commit prodotto v0.1.8
+
+**Decisione:** Dura, Durissima coop e Durissima Solitario **fissate**. Prova di successo:
+- Solo mano 2N + virtual-multi + refill: 7x7 **3%/100**, 8x8 **0.2%/1000** (seed 608,784), max 64.
+- Coop G=N invariato 100%.
+
+**Default codice:**
+- `defaultDurissimaExtraCards` = N (mano 2N) per G=1
+- `defaultDurissimaSoloVirtualMulti` = true per G=1
+- refill gia' default ON
+
+**Prossimo:** documentazione / manualetto (non nuove meccaniche equo).

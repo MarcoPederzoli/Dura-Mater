@@ -122,32 +122,36 @@ La chat Grok non e' persistente: il diario e' `SESSIONI.md` (su Git).
 
 ## Focus attuale
 
-**Stato 2026-07-19 — refill + policy turni:** regola refill ON (opzionale: K=1 lecito). Multi G>=2 ok. Solitario: regressione era soprattutto **catene mid** (refill spegneva i turni corti N>=6). **Fix:** short mid N>=6 anche con refill; Idea opt-in OFF (trappola/regalo). Soft short su 4–5 scartato. Dettaglio `results/solo-turn-policy-refill-2026-07-19.txt`.
+**Stato 2026-07-20 — REGOLE FISSE (Dura / Durissima / Durissima Solitario).** Bilanciamento meccaniche **chiuso** con prova di successo bot. Prossimo: **documentazione / manualetto** (non nuove varianti equo).
+
+### Configurazione prodotto
+
+| Modalita' | Default | Note bot / difficolta' |
+|-----------|---------|------------------------|
+| **Dura** | competitiva + torneo | Chiusa; no solitario Dura |
+| **Durissima coop G>=2** | refill solo-se-posato; N reshuffle | G=N **100%**; G legali 2..2N |
+| **Durissima solitario G=1** | mano **2N**, refill ON, bot **virtual-multi** | 7x7 ~**3%**/100; 8x8 ~**0,2%**/1000; max 64 |
+
+- Equo: multiset noto, **no** oracolo ordine tallone.
+- Opt-out probe: `durissimaExtraCards: 0`, `durissimaSoloVirtualMulti: false`.
+- Idea / freecell / seed-row / jolly: non default prodotto.
 
 ### Non rifare / errori costosi
-- Dichiarare cause senza controprova (es. «problema #1 = frazione mano/mazzo» smentito: 4x4 25% ok, 8x8 mano16 25% no).
+- Dichiarare cause senza controprova (es. frazione mano/mazzo come #1).
 - Mixare freecell + vite nello stesso test.
-- Search che usa l'ordine reale del tallone (DRAW-ORACLE).
-- Re-sweep G>=2 refill stessi seed senza cambio codice.
+- Search con ordine reale del tallone (DRAW-ORACLE).
+- Jolly/fc=N/seed-row come leva 7–8 equo (archiviati).
+- Path solo legacy vs multi: il gap era il **bot**, non le 14 carte (virtual-multi = path multi).
 
 ### Prossima sessione (priorita')
-1. Solitario: packing / anti-tasca / quando fare K=2 (non jolly/vite massicci; Idea resta opt-in).
-2. Eventuale commit policy turni corti + refill (codice gia' in working tree se non committato).
-3. Multi: leave as-is (coordinatore puo' multi-posa per flusso mani).
+1. **Documentazione regole / manualetto** del gioco (Dura + Durissima + Solo).
+2. Allineare UI/testi a mano 2N e refill se serve.
+3. Editore: tabella config finali in docx se richiesto.
 
-- **Dura:** competitiva + torneo — **chiusa** (bot planner adeguato).
-- **Durissima coop (G >= 2) — coordinatore "una mente vs mazzo":** **archiviata / risolta** (2026-07-11).
-  - Metodo: piano dal pool noto (mani + tallone) con carte specifiche + strict follower con passi; per G > N anche safe prefix + relax endgame.
-  - **G = N** (3x3 .. 8x8): **100%** (0 nodi, precomp/oracle + strict follow).
-  - **G = 2 .. 2N** legali (mano iniziale >= 3): **98.3%** overall con tallone <= 20 (417/424 deal). G=N sempre 100%.
-  - Casi epici accettati: **8x2** 4% (2/50); G molto basso + tallone enorme difficile per design.
-  - Soglia pratica: tallone <= 12-15 quasi sempre ok; calo sotto 80% da tallone ~15-20 (peggio con mano piccola).
-  - Codice: `mpcards-core.js`. Opt-out legacy: `GN_LEGACY_PER_PLAYER=1`. Layout ideali in pausa: `GN_SKIP_IDEAL_LAYOUT=1`.
-- **Durissima Mater solitario** (G = 1): **risolto** (v0.1.7). Pool riserva N **integrato in prodotto** (automatico G=1); coordinatore una mente; 7x7 ~5%, 8x8 ~1%. Vita extra opzionale in UI (non default). **Non** usare il nome "Nefanda Mater" (scartato).
-- **Artefatti:** `results/Risultati_Durissima_Coordinatore_One_Mind.docx` + copia in Dropbox `17 - DURA MATER\`. Report precedente: `Report_Solvibilita_Dura_Durissima.docx`.
-- **In pausa:** layout ideali come linea principale. Handoff 2026-07-09 (`scripts/HANDOFF-COORDINATORE-DURISSIMA.md`) superato dalla chiusura G>=2.
-- **Da definire (torneo):** punteggio bersaglio per G molto alto (es. 16).
-- **Editore:** integrare tabella configurazioni finali in `Analisi-Mazzo-Dura-Mater.docx`.
+- **Dura:** competitiva + torneo — **chiusa**.
+- **Durissima coop:** **chiusa** (G=N 100%, G 2..2N con tallone piccolo ok).
+- **Durissima solitario:** **chiusa** come regole (mano 2N + refill + virtual-multi); curva epica 7–8 accettata.
+- **Artefatti probe:** `results/solo-vm-2n-refill-7x7-100-*.txt`, `results/solo-vm-2n-refill-8x8-1000-*.txt`.
 
 ## Da sistemare (regole)
 

@@ -283,18 +283,19 @@ Conseguenze del core (gia' coerenti col motore):
 
 **Cooperativo (2+ giocatori):** al tavolo mani e mazzo restano **coperti**. Con la scheda delle 64 carte e il dialogo si costruisce l'**universo noto** (quali carte esistono ancora, non l'ordine di pesca). Solo il giocatore attivo posa dalla propria mano. La simulazione coop usa `durissima-team-planner`; per **G=N senza tallone** (probe bilanciamento) usa `durissima-global-planner` (solver DFS + morfologia cubo, vedi `scripts/BILANCIAMENTO-PAUSA.md`).
 
-**Solitario (`G = 1`):** stesse eccezioni di pesca e vittoria. Bloccati senza mosse legali all'inizio del turno → partita **persa** (nessun passo nel core). Nessun pool condiviso (quello non ha senso a un giocatore). Opzionale: **carte extra** in mano (sotto). Il solitario e' pensato come **modalita' piu' dura** del gioco: default = **core puro** (mano = N).
+**Solitario (`G = 1`):** stesse eccezioni di pesca e vittoria (pesca solo se posato + **refill** a mano iniziale). Bloccati senza mosse legali all'inizio del turno → partita **persa**. Nessun pool condiviso coop. **Default prodotto (2026-07):** mano **2N** (N carte extra dal tallone) + refill; bot coordinatore in modalita' **virtual-multi** (stesso stile di piano del coop undercrowded). Equo: multiset noto, ordine tallone ignoto.
+
+**Probe di riferimento (bot, 100–1000 seed):** 7×7 mano 14 ~**3%** win; 8×8 mano 16 ~**0,2%** win (max griglia piena dimostrata). Epico, non infattibile.
 
 ### Carte extra — regola solitario (`G = 1` only)
 
 Sostituisce il vecchio «pool riserva» separato. Per un solo giocatore avere carte giocabili subito e' la stessa cosa che tenerle **tutte in mano**.
 
-- **Default prodotto:** **0 carte extra** (mano = N, tallone = N² − N). Core puro.
-- **Con k carte extra:** al setup ricevi **mano = N + k** (le k carte vengono dal tallone). Totale partita resta N². Esempio 6×6 con k=1: mano 7, tallone 29.
-- **In gioco:** solo la mano (niente seconda zona). Stesse regole di posa e pesca del core.
-- **Taratura k per N:** da definire (candidati: k=0 su 3–5; k piccolo su 6–8 se serve). In codice: `durissimaExtraCards` o tabella `durissimaExtraCardsByN`.
+- **Default prodotto:** **k = N** carte extra → **mano = 2N**, tallone = N² − 2N. Esempio 7×7: mano 14, tallone 35.
+- **Opt-out core equo stretto:** k = 0 (mano = N) via `durissimaExtraCards: 0` (piu' duro; bot sotto soglia epica su 7–8).
+- **In gioco:** solo la mano (niente seconda zona). Stesse regole di posa e pesca (refill a 2N se default).
 - **Coop (`G >= 2`):** carte extra **disattivate** — si usa **N reshuffle** come aiuto di riferimento.
-- **Legacy:** il motore puo' ancora simulare un pool riserva separato (`durissimaReserveEnabled: true`) per probe storici; **non** e' la regola prodotto.
+- **Legacy:** pool riserva separato (`durissimaReserveEnabled: true`) solo probe storici; **non** regola prodotto.
 
 ### N reshuffle — regola operativa (riferimento Durissima coop)
 

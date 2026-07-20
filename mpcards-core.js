@@ -5130,6 +5130,19 @@ const MPCARDS_CORE_SOURCE = `
     return gnUseCoordinatedTeamPlanner(state) || gnUseCoordinatedSoloPlanner(state);
   }
 
+  /**
+   * Solo "virtual multi": stesso regime di pianificazione del coop undercrowded
+   * (partial, prefisso owned = tutta la mano, follow 1 carta/stop).
+   * Opt-in: durissimaSoloVirtualMulti: true. Non cambia le regole di tavolo.
+   */
+  function isDurissimaSoloVirtualMulti(state) {
+    return (
+      isDurissimaMater(state) &&
+      (state.players || 1) === 1 &&
+      state.durissimaSoloVirtualMulti === true
+    );
+  }
+
   /** Carta giocabile ora (mano, riserva o free cell) per uid. */
   function gnFindPlayableForUid(state, playerId, uid) {
     if (!uid) return null;
@@ -6386,9 +6399,11 @@ const MPCARDS_CORE_SOURCE = `
   function chooseDurissimaCoordinatedActionBody(state, playerId, random, requirement) {
     const coordinated = gnUseCoordinatedDurissimaPlanner(state);
     const soloCoordinated = coordinated && state.players === 1;
+    const virtualMulti = soloCoordinated && isDurissimaSoloVirtualMulti(state);
     const perfectGNLive = coordinated && isDurissimaGnIdeal(state);
 
     // Turni corti mid-game solitario N>=6 (dopo 1 posa, griglia ancora "aperta").
+    // Virtual-multi: NO short forzato (come G=2: stop dopo 1 via _gnJustPlayedSeqStep).
     // Vale ANCHE con refill (prima il refill disabilitava il freno -> catene e
     // regressione packing). Multi-posa resta libera in coda e se
     // durissimaSoloAllowMidChains. Su 4-5 non forziamo short: short aggressivo
@@ -6396,6 +6411,7 @@ const MPCARDS_CORE_SOURCE = `
     // Idea (4+1 cieca) resta opt-in pursueIdea: regalo ovunque, trappola/umani.
     if (
       soloCoordinated &&
+      !virtualMulti &&
       state.size >= 6 &&
       state.turnPlayed >= 1 &&
       !durissimaSoloAllowMidChains(state)
@@ -6423,6 +6439,9 @@ const MPCARDS_CORE_SOURCE = `
             if (parkAct) return parkAct;
           }
         }
+        // Ultima spiaggia: park proattivo mid-game (riempie fc prima di posare)
+        const proPark = gnSoloProactiveParkAction(state, playerId);
+        if (proPark) return proPark;
       }
       if (
         isDurissimaVitaExtraEnabled(state) &&
@@ -6449,17 +6468,21 @@ const MPCARDS_CORE_SOURCE = `
       const size = state.size;
       const targetLen = size * size;
       const players = state.players || 1;
-      const isSolo = players === 1;
+      // Virtual-multi: NON usare il ramo scoreSolo fullKnown; agisci come coop G=2
+      // (partial se tallone grande). Owned = tutta la mano unica.
+      const isSolo = players === 1 && !virtualMulti;
       const drawPileLen = (state.drawPile || []).length;
       const isIdeal = isDurissimaGnIdeal(state);
-      const isSmallTallone = drawPileLen < players;
+      // Soglia tallone "piccolo": G reale, o G virtuale 2 in solo virtual-multi
+      const gEff = virtualMulti ? 2 : players;
+      const isSmallTallone = drawPileLen < gEff;
       const gAtLeastN = players >= size;
-      // Solitario: set intero noto. Coop: tallone < G o G>=N.
-      const fullKnown =
-        isSolo ||
-        isIdeal ||
-        isSmallTallone ||
-        (gAtLeastN && drawPileLen < players);
+      // Solitario legacy: fullKnown sempre. Virtual-multi / coop: fullKnown se tallone < G_eff.
+      const fullKnown = isSolo
+        ? true
+        : isIdeal ||
+          isSmallTallone ||
+          (gAtLeastN && drawPileLen < players);
       const emptyCount = targetLen - ((state.board && state.board.length) || 0);
       const pendingFullSeq = state._gnFullSequence
         ? state._gnFullSequence.filter(
@@ -6483,13 +6506,14 @@ const MPCARDS_CORE_SOURCE = `
         const lastPlaced = state._gnPlanAtPlaced || 0;
         const lastDraw = state._gnPlanDrawLen != null ? state._gnPlanDrawLen : drawNow;
         const periodic =
-          drawNow < lastDraw || placedNow - lastPlaced >= Math.max(1, players);
+          drawNow < lastDraw ||
+          placedNow - lastPlaced >= Math.max(1, virtualMulti ? 2 : players);
         if (fullKnown && !hasCompleteFullSeq) {
           if (!state._gnHadFullKnownPlan || periodic) needPlan = true;
         } else if (state._gnPartialMode && !fullKnown && periodic) {
           needPlan = true;
         }
-        // Solitario: replan ad ogni pesca; N grandi replan piu' spesso (anti-buco mid)
+        // Solitario legacy: replan ad ogni pesca; N grandi replan piu' spesso (anti-buco mid)
         if (isSolo && drawNow < lastDraw) needPlan = true;
         if (
           isSolo &&
@@ -6498,8 +6522,10 @@ const MPCARDS_CORE_SOURCE = `
         ) {
           needPlan = true;
         }
+        // Virtual-multi: replan a pesca come coop (periodic gia' copre draw)
+        if (virtualMulti && drawNow < lastDraw) needPlan = true;
         // Coda: forza replan a empty 8 e 4 (una volta per soglia) se non G=N ideal perfetto
-        const gLessN = players < size;
+        const gLessN = players < size || virtualMulti;
         if ((gLessN || state._gnPartialMode || !hasCompleteFullSeq || isSolo) && !perfectGNLive) {
           if (emptyCount <= 8 && state._gnEmptyReplan8 !== true) {
             needPlan = true;
@@ -6573,9 +6599,9 @@ const MPCARDS_CORE_SOURCE = `
           }
           if (missing.length > 0 && !isSolo) {
             remaining.push(...missing);
-            const denom = Math.max(1, players);
+            const denom = Math.max(1, virtualMulti ? 2 : players);
             const minRounds = Math.ceil(missing.length / denom) + 1;
-            minLateForTallone = minRounds * players;
+            minLateForTallone = minRounds * denom;
           } else if (missing.length > 0 && isSolo) {
             // Solo: missing restano note per densita'/lookahead, ma non in fullSeq bootstrap
             remaining.push(...missing);
@@ -7319,10 +7345,15 @@ const MPCARDS_CORE_SOURCE = `
         state._gnFullSequence[0].card &&
         !state._gnPartialMode;
       const gLessN = (state.players || 1) < state.size;
-      // Solitario equo: deep search in coda (soglia piu' alta su N>=7: near-miss 48/49, 58/64)
+      // Solitario equo legacy: deep search in coda. Virtual-multi: no (path come G=2).
       const deepEmpty =
-        soloCoordinated && state.size >= 7 ? 12 : 10;
-      if (soloCoordinated && remainingCells > 0 && remainingCells <= deepEmpty) {
+        soloCoordinated && !virtualMulti && state.size >= 7 ? 12 : 10;
+      if (
+        soloCoordinated &&
+        !virtualMulti &&
+        remainingCells > 0 &&
+        remainingCells <= deepEmpty
+      ) {
         const deep = gnSoloFairDeepSearch(state, playerId, {
           maxEmpty: deepEmpty,
           maxNodes:
@@ -7338,6 +7369,7 @@ const MPCARDS_CORE_SOURCE = `
       }
       if (
         soloCoordinated &&
+        !virtualMulti &&
         remainingCells > 0 &&
         (state.durissimaPeekTopDraw === true || remainingCells <= 12)
       ) {
@@ -7368,7 +7400,8 @@ const MPCARDS_CORE_SOURCE = `
         }
       }
     }
-    if (useOraclePlanPath || soloCoordinated) {
+    // Virtual-multi: stesso ingresso del multi (solo useOraclePlanPath), non del solo legacy.
+    if (useOraclePlanPath || (soloCoordinated && !virtualMulti)) {
       // Strict follow se piano sano; se step illegale/stale → abilita flex (no stuck).
       // Solitario: carta da mano o riserva N.
       if (state._gnFullSequence && state._gnFullSequence.length > 0) {
@@ -7477,7 +7510,11 @@ const MPCARDS_CORE_SOURCE = `
             fromFreeCell: playable.fromFreeCell === true,
             freeCellIndex: playable.freeCellIndex
           };
-          if (soloCoordinated && gnSoloMoveIsTrappedOutlook(state, seqMove)) {
+          if (
+            soloCoordinated &&
+            !virtualMulti &&
+            gnSoloMoveIsTrappedOutlook(state, seqMove)
+          ) {
             state._gnPartialMode = true;
             state._gnFullSequence = null;
             pending = false;
@@ -7487,7 +7524,8 @@ const MPCARDS_CORE_SOURCE = `
           state._gnJustPlayedSeqStep = true;
           return { type: "move", move: seqMove };
         }
-        if (soloCoordinated) {
+        // Solo legacy: salta avanti nel piano. Virtual-multi / multi: stop (pass di fatto).
+        if (soloCoordinated && !virtualMulti) {
           for (let j = i + 1; j < seq.length; j++) {
             const st2 = seq[j];
             if (state.board.some(b => b.x === st2.x && b.y === st2.y)) continue;
@@ -7668,7 +7706,7 @@ const MPCARDS_CORE_SOURCE = `
     // Approximate lookahead (1 passo con note attuali).
     // Non usa mai l'ordine esatto del tallone.
     if (coordinated) {
-      const legals = legalPlacements(state, playerId, requirement);
+      let legals = legalPlacements(state, playerId, requirement);
       if (legals.length === 0) {
         if (soloCoordinated) {
           const parkAct = gnSoloChooseParkAction(state, playerId);
@@ -7692,6 +7730,38 @@ const MPCARDS_CORE_SOURCE = `
 
       const emptyLeft = (state.size * state.size) - ((state.board && state.board.length) || 0);
       const poolLeft = [...known, ...unk].filter(c => c && c.uid !== undefined);
+
+      // Solitario + freecell: non posare mosse che creano tasca morta se esiste alternativa.
+      // Se tutte creano tasca e c'e' slot free: park (proattivo) invece di suicidarsi.
+      if (soloCoordinated && isDurissimaFreeCellsEnabled(state) && emptyLeft > 4) {
+        const safeLegals = [];
+        let leastRisk = null;
+        let leastRiskVal = Infinity;
+        for (let i = 0; i < legals.length; i++) {
+          const m = legals[i];
+          const pr = gnSoloMovePocketRisk(
+            state.board || [],
+            state.size,
+            poolLeft,
+            m.card,
+            m.x,
+            m.y
+          );
+          if (!pr.dead) safeLegals.push(m);
+          if ((pr.risk || 0) < leastRiskVal) {
+            leastRiskVal = pr.risk || 0;
+            leastRisk = m;
+          }
+        }
+        if (safeLegals.length > 0) {
+          legals = safeLegals;
+        } else {
+          const parkAct = gnSoloProactiveParkAction(state, playerId) ||
+            gnSoloChooseParkAction(state, playerId);
+          if (parkAct) return parkAct;
+          if (leastRisk) legals = [leastRisk];
+        }
+      }
       // Lookahead anti-buco + "greedy residual complete?"
       const residualGreedyComplete = (board0, pool0) => {
         const board = board0.map(b => ({ x: b.x, y: b.y, card: b.card }));
@@ -8951,7 +9021,8 @@ const MPCARDS_CORE_SOURCE = `
 
   /**
    * Solitario: «carte extra» in mano al setup (non un pool separato; non in coop G>=2).
-   * Default prodotto: 0 (core puro). Override: durissimaExtraCards o tabella durissimaExtraCardsByN.
+   * Default prodotto (2026-07): k = N => mano 2N (probe 7x7 ~3%, 8x8 ~0.2% con virtual-multi).
+   * Opt-out: durissimaExtraCards: 0 (core equo mano N). Tabella: durissimaExtraCardsByN.
    */
   function defaultDurissimaExtraCards(size, options) {
     if (!options || options.durissimaMater !== true) return 0;
@@ -8964,12 +9035,22 @@ const MPCARDS_CORE_SOURCE = `
     if (table && table[size] != null) {
       return Math.max(0, Math.floor(Number(table[size])) || 0);
     }
-    return 0;
+    const n = Math.floor(Number(size)) || 0;
+    return n > 0 ? n : 0;
+  }
+
+  /** Solo: path bot virtual-multi default ON (partial come coop). Opt-out: false. */
+  function defaultDurissimaSoloVirtualMulti(options) {
+    if (!options || options.durissimaMater !== true) return false;
+    if (Number(options.players) !== 1) return false;
+    if (options.durissimaSoloVirtualMulti === false) return false;
+    if (options.durissimaSoloVirtualMulti === true) return true;
+    return true;
   }
 
   /**
    * Solitario free cell: numero di slot di parcheggio (0 = off, default prodotto).
-   * Override: durissimaFreeCellSlots (1..4 tipico). Coop G>=2: sempre 0.
+   * Override: durissimaFreeCellSlots (1..N tipico; max 16 per probe). Coop G>=2: sempre 0.
    */
   function defaultDurissimaFreeCellSlots(options) {
     if (!options || options.durissimaMater !== true) return 0;
@@ -8980,7 +9061,8 @@ const MPCARDS_CORE_SOURCE = `
     }
     const n = Math.floor(Number(options.durissimaFreeCellSlots));
     if (!Number.isFinite(n) || n <= 0) return 0;
-    return Math.min(4, n);
+    // Prima tetto 4; per probe "fc=N" serve fino a size (es. 6x6 con 6 slot)
+    return Math.min(16, n);
   }
 
   /**
@@ -9039,6 +9121,88 @@ const MPCARDS_CORE_SOURCE = `
     const uid = gnSoloChooseParkCardUid(state, playerId);
     if (!uid) return null;
     return { type: "park", cardUid: uid };
+  }
+
+  /**
+   * Ultima spiaggia: park proattivo mid-game (non solo a zero legali / pre-vita).
+   *
+   * Con refill-to-N: park K poi posa 1 => pesca K+1: i pezzi scomodi restano in free cell
+   * (sempre giocabili) e la mano si rinnova. Senza park aggressivo fc=N e' inerte (~0.2 park/deal).
+   *
+   * Priorita' park: carte senza posa pocket-safe > multi-unici/rigidi, se resta >=2 carte in mano.
+   * Solo turnPlayed===0 (inizio turno). Coda (empty<=6): non parcheggiare.
+   */
+  function gnSoloProactiveParkAction(state, playerId) {
+    if (!state || state.players !== 1) return null;
+    if (!isDurissimaFreeCellsEnabled(state)) return null;
+    if (durissimaFreeCellEmptyIndex(state) < 0) return null;
+    if ((state.turnPlayed || 0) !== 0) return null;
+    const size = state.size || 0;
+    const n2 = size * size;
+    const emptyBoard = n2 - ((state.board && state.board.length) || 0);
+    if (emptyBoard <= 6) return null;
+    const hand = state.hands[playerId] || [];
+    // Tieni almeno 2 carte in mano per avere scelta di posa dopo i park
+    if (hand.length <= 2) return null;
+
+    const pool = [];
+    for (let p = 0; p < (state.hands || []).length; p++) {
+      if (state.hands[p]) pool.push(...state.hands[p]);
+    }
+    if (state.durissimaReserve) pool.push(...state.durissimaReserve);
+    if (isDurissimaFreeCellsEnabled(state)) {
+      for (const c of state.durissimaFreeCells || []) if (c) pool.push(c);
+    }
+    for (const c of gnSoloTalloneMultiset(state) || []) if (c) pool.push(c);
+
+    const legals = legalPlacements(state, playerId, 1) || [];
+    const safeByUid = Object.create(null);
+    for (let i = 0; i < legals.length; i++) {
+      const m = legals[i];
+      if (!m || !m.card) continue;
+      const pr = gnSoloMovePocketRisk(
+        state.board || [],
+        size,
+        pool,
+        m.card,
+        m.x,
+        m.y
+      );
+      if (!pr.dead && (pr.risk || 0) < 200) {
+        safeByUid[m.card.uid] = true;
+      }
+    }
+    const safeUidCount = Object.keys(safeByUid).length;
+
+    const stats = gnSoloBuildResidStats(pool);
+    let best = null;
+    let bestScore = -Infinity;
+    for (let i = 0; i < hand.length; i++) {
+      const card = hand[i];
+      if (!card) continue;
+      const hasSafe = !!safeByUid[card.uid];
+      // Non parcheggiare l'unica carta con posa safe
+      if (hasSafe && safeUidCount <= 1) continue;
+      const prof = gnSoloCardAxisProfile(card, stats);
+      let score = 0;
+      if (!hasSafe) score += 100;
+      if (prof.multiUnique) score += 40;
+      score += (prof.scarceAxes || 0) * 12;
+      score += (prof.rigid || 0) * 20;
+      score -= (prof.flex || 0) * 5;
+      // Mid-game: spingi a riempire free cell anche con pezzi mediamente rigidi
+      if (emptyBoard > 12 && !hasSafe) score += 15;
+      if (emptyBoard > 12 && hasSafe && (prof.multiUnique || (prof.rigid || 0) >= 2)) {
+        score += 25;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = card.uid;
+      }
+    }
+    // Soglia: parcheggia se c'e' un candidato "no-safe" o un hard con alternative safe
+    if (!best || bestScore < 20) return null;
+    return { type: "park", cardUid: best };
   }
 
   /**
@@ -9883,6 +10047,8 @@ const MPCARDS_CORE_SOURCE = `
       durissimaPursueIdea: options.durissimaPursueIdea === true,
       // Solitario: permettere catene mid-game (default OFF = turni corti anche con refill)
       durissimaSoloAllowMidChains: options.durissimaSoloAllowMidChains === true,
+      // Solo virtual-multi: path pianificazione/follow come coop undercrowded (partial owned)
+      durissimaSoloVirtualMulti: defaultDurissimaSoloVirtualMulti(dealOpts),
       durissimaScartiNReshuffle: scartiMode,
       durissimaDiscardPile: scartiMode ? [] : null,
       durissimaDiscardRecyclesLeft: scartiMode ? size : null,
@@ -9947,7 +10113,49 @@ const MPCARDS_CORE_SOURCE = `
     if (state.durissimaSoloWildCard) {
       assignDurissimaSoloWildCard(state, random);
     }
+    // Solitario opt-in: riga iniziale di N carte scoperte (senza vincoli di tratto tra loro)
+    if (
+      options.durissimaSoloSeedTopRow === true &&
+      players === 1 &&
+      options.durissimaMater === true
+    ) {
+      applyDurissimaSoloSeedTopRow(state);
+    }
     return state;
+  }
+
+  /**
+   * Pre-seed solitario: preleva N carte dal tallone e le dispone in riga y=0, x=0..N-1
+   * senza controllare i vincoli di tratto tra di esse. Poi il gioco e' core (posate
+   * successive devono rispettare i vincoli verso queste carte).
+   * Opt-in: durissimaSoloSeedTopRow: true.
+   * Ritorna quante carte posate.
+   */
+  function applyDurissimaSoloSeedTopRow(state) {
+    if (!state || state.players !== 1 || !isDurissimaMater(state)) return 0;
+    if ((state.board || []).length > 0) return 0;
+    const n = state.size || 0;
+    if (n < 2) return 0;
+    const pile = state.drawPile || [];
+    const k = Math.min(n, pile.length);
+    if (k <= 0) return 0;
+    for (let i = 0; i < k; i++) {
+      const card = pile.shift();
+      if (!card) break;
+      state.board.push({
+        x: i,
+        y: 0,
+        card,
+        playerId: null,
+        seedRow: true
+      });
+    }
+    state.durissimaSoloSeedTopRow = true;
+    state.durissimaSoloSeedCount = state.board.length;
+    syncAxisLocksFromBoard(state);
+    // Riga di N: asse larghezza tipicamente gia' fissato
+    maybeCompleteDurissima(state);
+    return state.durissimaSoloSeedCount;
   }
 
   function defaultDurissimaSoloWildCount(options) {
