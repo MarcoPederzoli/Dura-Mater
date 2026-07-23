@@ -88,7 +88,7 @@ function runScenario(scenario, count, strategy) {
       loserScores.push(stats.loser);
       for (let p = 0; p < players; p++) seatTotals[p] += scores[p] || 0;
       if (result.winner !== null && result.winner !== undefined) seatWins[result.winner]++;
-      monteHandsTotal += result.tournamentMonteHands || 0;
+      monteHandsTotal += result.tournamentMonteGames || 0;
       for (const ev of result.tournamentMonteLog || []) allMonteLogs.push(ev);
     } else {
       stalled++;

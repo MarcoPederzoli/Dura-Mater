@@ -127,9 +127,9 @@ async function main() {
       const t = cell.tournaments;
       console.log(
         `  ${cell.key} [${cell.kind}] · completamento ${(100 * t.completionRate).toFixed(1)}% · ` +
-          `mani/torneo ${t.avgHandsPerTournament.toFixed(2)} · monte ${(100 * t.monteHandRate).toFixed(1)}% · ` +
-          `starter vince mano ${(100 * cell.hands.starterWonHandRate).toFixed(1)}% · ` +
-          `1ª vittoria starter (media mano) ${cell.hands.avgFirstStarterWinHandIndex?.toFixed(2) ?? "—"}`
+          `partite/torneo ${t.avgGamesPerTournament.toFixed(2)} · monte ${(100 * t.monteGameRate).toFixed(1)}% · ` +
+          `starter vince partita ${(100 * (cell.games || cell.hands).starterWonGameRate).toFixed(1)}% · ` +
+          `1a vittoria starter (media partita) ${(cell.games || cell.hands).avgFirstStarterWinGameIndex?.toFixed(2) ?? "—"}`
       );
     }
     console.log("");

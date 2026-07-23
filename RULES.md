@@ -86,7 +86,7 @@ Tre fasce per il numero di giocatori `G` su una griglia `NxN`:
 
 | Fascia | Condizione | Ruolo |
 |--------|------------|--------|
-| **Ideale** | `G = N` | Formato di riferimento: nessun tallone, torneo simmetrico (`N` mani), Durissima coop sulle griglie previste |
+| **Ideale** | `G = N` | Formato di riferimento: nessun tallone, torneo simmetrico (`N` partite), Durissima coop sulle griglie previste |
 | **Sotto-G** | `G_min <= G < N` | Variante «under»; legale e a volte utile, ma meno equa (soprattutto in torneo) |
 | **Overcrowd** | `N < G <= 2N` | Variante con tallone; legale, spesso lunga e quasi tutta a monte in torneo |
 | **Extra / sconsigliato** | `G < G_min` | Ancora **legale** in competitiva se restano >= 3 carte a testa (es. duello 7x2) — da evitare in torneo |
@@ -256,11 +256,10 @@ Implementazione motore: flag `ideaBlind` sulla cella del tabellone (`mpcards-cor
 
 Modalita' separata dalla Dura competitiva: al tavolo e' **collaborativa** (un solo obiettivo comune); in solitario (`G = 1`) equivale a tenere tutte le carte insieme.
 
-### Variante di riferimento: **N reshuffle**
+### Core prodotto Durissima
 
-Per le partite Durissima (tavolo, simulazione, bilanciamento) il riferimento ufficiale e' **N reshuffle**: regole **core** Durissima (sotto) + pool di **N reshuffle a partita** (N = dimensione griglia). In codice: `durissimaVitaExtraEnabled` (default **on** con `durissimaMater`; opt-out con `durissimaVitaExtraEnabled: false` per confronti «solo core»).
-
-La variante **senza** reshuffle resta documentata come **core puro** (storico probe giugno 2026); non e' il default prodotto Durissima.
+Regole **core** (sotto): pesca solo se posato + **refill sempre**, vittoria a griglia piena.  
+**N reshuffle / vita extra:** **rimossi** dal prodotto (2026-07) — interrompevano il flusso e non servivano per i formati di riferimento (G = N e solitario con easy mode).
 
 ### Regole core Durissima
 
@@ -268,10 +267,10 @@ Valgono **tutte le regole di Dura Mater** (codice carta, posa 1-4 + Idea, Dura M
 
 | Aspetto | Dura Mater | Durissima |
 |---------|------------|-----------|
-| **Pesca** | A fine turno **sempre** 1 carta (anche su pass) | **Solo se nel turno hai posato** almeno una carta; allora **refill** fino alla mano iniziale |
+| **Pesca** | A fine turno **sempre** 1 carta (anche su pass) | **Solo se nel turno hai posato** almeno una carta; allora **refill** fino alla mano iniziale (**sempre**, non opt-out) |
 | **Vittoria** | Mano vuota (primo che svuota) | **Griglia piena** — tutte le carte della partita posate |
 
-**Regola fondamentale pesca (2026-07-18):** se nel turno hai posato K carte (K >= 1), a fine turno peschi carte dal tallone finche' la mano torna a **mano iniziale** (`initialHandSize`, tipicamente N in undercrowded / G=N, o `floor(N^2/G)` in overcrowd) o il tallone e' esaurito. In pratica posa K => tipicamente pesca K. **Pass senza posare: zero pesche.** In codice: `drawOnlyAfterPlacement` + `durissimaRefillToNAfterPlace` (default **ON** con Durissima; opt-out espliciti `false`). Non vale per varianti competitive-draw / scarti-n-reshuffle.
+**Regola fondamentale pesca:** se nel turno hai posato K carte (K >= 1), a fine turno peschi carte dal tallone finche' la mano torna a **mano iniziale** (`initialHandSize`, tipicamente N in undercrowded / G=N, o `floor(N^2/G)` in overcrowd) o il tallone e' esaurito. In pratica posa K => tipicamente pesca K. **Pass senza posare: zero pesche.** In codice: `drawOnlyAfterPlacement` + `durissimaRefillToNAfterPlace` (**sempre ON** in Durissima prodotto). Non vale per varianti competitive-draw / scarti-n-reshuffle.
 
 Conseguenze del core (gia' coerenti col motore):
 
@@ -281,18 +280,27 @@ Conseguenze del core (gia' coerenti col motore):
 - **Monte:** come in Dura multi — G pass consecutivi senza posate, anche con tallone pieno.
 - **Posare meno carte del massimo** nello stesso turno resta lecito: dopo la prima posa si puo' chiudere il turno anche con altre mosse legali.
 
-**Cooperativo (2+ giocatori):** al tavolo mani e mazzo restano **coperti**. Con la scheda delle 64 carte e il dialogo si costruisce l'**universo noto** (quali carte esistono ancora, non l'ordine di pesca). Solo il giocatore attivo posa dalla propria mano. La simulazione coop usa `durissima-team-planner`; per **G=N senza tallone** (probe bilanciamento) usa `durissima-global-planner` (solver DFS + morfologia cubo, vedi `scripts/BILANCIAMENTO-PAUSA.md`).
+**Cooperativo (2+ giocatori):** di default mani e mazzo restano **coperti**. Con la scheda delle 64 carte e il dialogo si costruisce l'**universo noto** (quali carte esistono ancora, non l'ordine di pesca). Solo il giocatore attivo posa dalla propria mano.
 
-**Solitario (`G = 1`):** stesse eccezioni di pesca e vittoria. Bloccati senza mosse legali all'inizio del turno → partita **persa**. Nessun pool condiviso coop. Equo: multiset noto, ordine tallone ignoto. **Scopo:** divertirsi — la griglia piena e' la vittoria «ufficiale»; anche una catena lunga (es. 4+Idea) e' un momento di gioco memorabile.
+**Opzioni di collaborazione (tavolo, non cambiano posa/pesca/vittoria):**
 
-**Scelte del giocatore (opzioni di setup, non «modalita' bot»):**
+| Opzione | Effetto |
+|---------|---------|
+| **Carte scoperte** | Tutti tengono la mano a faccia in su. Migliora la coordinazione; rende la sfida «piu' esigente» sul piano del non sbagliare. |
+| **Coordinatore** | Un giocatore ha l'ultima parola su quale carta posare se il gruppo e' indeciso. |
+
+La simulazione coop usa `durissima-team-planner`; per **G=N senza tallone** (probe bilanciamento) usa `durissima-global-planner`.
+
+**Solitario (`G = 1`):** stesse eccezioni di pesca e vittoria. Bloccati senza mosse legali all'inizio del turno → partita **persa**. Nessun pool reshuffle di gruppo. Equo: multiset noto, ordine tallone ignoto. **Scopo:** divertirsi — la griglia piena e' la vittoria «ufficiale»; anche una catena lunga (es. 4+Idea) e' un momento di gioco memorabile.
+
+**Scelte del giocatore (setup solitario / tavolo):**
 
 | Opzione | Default | Effetto |
 |---------|---------|---------|
-| **Mano** | **N** | **Easy mode:** mano **2N** (k=N carte extra dal tallone) |
-| **Refill** | ON (solo se posato → rimpiazzo a mano iniziale) | OFF = variante piu' secca (opt-out) |
+| **Mano (solitario)** | **N** | **Easy mode:** mano **2N** (k=N carte extra dal tallone) |
+| **Refill** | **sempre ON** | non e' un'opzione di setup |
 
-Il giocatore sceglie come vuole giocare. Easy mode (2N) e refill sono **facilitazioni opzionali** al tavolo, non obblighi di bilanciamento «solo per N grandi» — anche se su 6–8 aiutano di piu'.
+Easy mode (2N) e' facilitazione opzionale al tavolo (utile soprattutto su 6–8). Il refill **non** si disattiva.
 
 **Bot (solo simulazione / avversario IA — non nel regolamento giocatore):** path interno automatico (legacy su N piccoli, virtual-multi su N grandi). Il giocatore **non** sceglie «legacy vs VM».
 
@@ -302,29 +310,15 @@ Sostituisce il vecchio «pool riserva» separato. Avere piu' carte giocabili sub
 
 - **Standard:** k = 0 → mano **N**, tallone N² − N.
 - **Easy mode:** k = N → mano **2N**, tallone N² − 2N. Esempio 7×7: mano 14, tallone 35.
-- **In gioco:** solo la mano. Posa e pesca come da regole solitario (con refill se attivo: target = mano iniziale N o 2N).
+- **In gioco:** solo la mano. Posa e pesca come da regole solitario (**refill sempre**: target = mano iniziale N o 2N).
 - **Coop (`G >= 2`):** carte extra **disattivate**.
 - **Legacy probe:** pool riserva separato (`durissimaReserveEnabled`) non e' regola prodotto.
 
-### N reshuffle — regola operativa (riferimento Durissima coop)
+### Funzionalita' rimosse (non nel prodotto)
 
-- **Quando:** solo **a inizio del proprio turno**, **prima** di posare la prima carta del turno (`turnPlayed = 0`). Dopo la prima posa del turno non si puo' piu' reshufflare fino al turno successivo.
-- **Condizione:** **non** dipende dall'avere o meno mosse legali. Si puo' reshufflare anche con mosse legali disponibili (scelta strategica in coop).
-- **Budget:** pool condiviso di **N reshuffle a partita** (N = dimensione griglia).
-- **Meccanica (tavolo):** le carte scelte per il cambio vanno nel tallone; si mescola; si ripescano carte fino alla **mano iniziale** (come al deal).
-- **Reshuffle selettivo (sim / bot):** si possono **tenere** una o piu' carte in mano, ma **almeno una** deve essere rimessa nel tallone (reshuffle «totale» = non tenere nulla). Poi mescola e ripesca fino a ripristinare la mano iniziale. Obiettivo: **non** rimettere nel tallone carte rigide o senza uscita che peggiorerebbero le pesche future; in mano si trattengono, nel tallone vanno soprattutto carte flessibili o da scambiare.
-- **Costo:** ogni reshuffle consuma **1** dal pool.
-- **Alternativa al reshuffle:** posare (se si sceglie una mossa accettabile), **passare** (coop multi), o — solitario a pool esaurito — **sconfitta** se non resta alcuna mossa accettabile.
-- **Cooperativo:** al tavolo e' una decisione di gruppo: evitare una posa legale ma dannosa puo' essere motivo per reshufflare o passare invece di giocare.
-- **Simulazione:** bot `durissima-planner` / `durissima-team-planner` con reshuffle strategico a inizio turno (vedi `scripts/BILANCIAMENTO-PAUSA.md`).
-
-### Altre varianti (sperimentali, non riferimento)
-
-In valutazione o in pausa: **core puro** (senza reshuffle), **buffer emergenza**, hand-cap, free-draw, ecc. Probe storici: `confronto-varianti-durissima.xlsx`, JSON in `tests/`. La **riserva N** e' regola prodotto **solo solitario** (vedi sopra), non variante coop.
-
-**Hand-cap (giu 2026, in pausa):** senza N reshuffle; pesca competitiva + tetto mano (N o `2N`). Probe: `--hand-cap` / `--hand-cap-2n`.
-
-**Free-draw + N reshuffle (giu 2026, in prova):** pesca come **competitiva** (niente «solo se posi») + pool **N reshuffle** con reshuffle selettivo bot. Coop: bot passa a inizio turno per pescare finche' `consecutivePasses < G - 1`, poi posa per evitare il monte. In codice: `durissimaCompetitiveDraw: true` (vita extra default on). Probe: `node scripts/durissima-grid-probe.js 3 400 --free-draw`.
+- **N reshuffle / vita extra** (pool di scambi mano–tallone a inizio turno): rimossi 2026-07.
+- **Riserva N** separata (solitario legacy): sostituita da easy mode (carte extra in mano).
+- Probe storici su hand-cap, free-draw, ecc.: solo archivio in `tests/` / `scripts/`.
 
 ## Giocabilita' (etichettatura provvisoria — giugno 2026)
 
@@ -338,12 +332,14 @@ Classificazione per il prodotto e per l'UI. I test di bilanciamento Durissima so
 
 ### Durissima Mater — formato consigliato `G = N` (cooperativo)
 
-| Livello | Griglia `NxN` | Etichetta | Note (simulazione **N reshuffle**, giu 2026) |
-|---------|---------------|-----------|---------------------------------------------|
-| **Core** | 3x3, 4x4 | Giocabile | Es. 3x3 G=N ~12%; 4x4 G=N ~10% (bot strategico) |
-| **Difficile** | 5x5 | Molto difficile | Es. G=N ~1-2%; vita med ~4,9/5 |
-| **Estremo** | 6x6 | Quasi impossibile | Non previsto come modalita' standard |
-| **Epico** | 7x7, 8x8 | Non standard / impossibile | Solo come sfida dichiarata, non come core |
+| Livello | Griglia `NxN` | Etichetta | Note |
+|---------|---------------|-----------|------|
+| **Core** | 3x3, 4x4 | Giocabile | Formati introduttivi / standard |
+| **Difficile** | 5x5 | Impegnativo | Buona collaborazione richiesta |
+| **Estremo** | 6x6 | Alto | Partite lunghe; tallone se G != N |
+| **Epico** | 7x7, 8x8 | Sfida | Solo come sfida dichiarata |
+
+*(Percentuali bot storiche non sono piu' usate come etichette prodotto; il bilanciamento coop G=N col coordinatore e' alto, il solitario 6–8 resta epico anche con easy mode.)*
 
 ### Durissima — altre configurazioni
 
@@ -352,62 +348,79 @@ Classificazione per il prodotto e per l'UI. I test di bilanciamento Durissima so
 - **Solitario** (`G = 1`): unica modalita' solitario del gioco (obiettivo **griglia piena**); bilanciamento in pausa (`scripts/BILANCIAMENTO-PAUSA.md`), non ancora in UI Dura.
 - **Sotto-G** (`1 < G < N`) e **overcrowd** (`N < G <= 2N`) in Durissima: varianti **extra**; il formato coop consigliato resta **`G = N`**.
 
+## Terminologia (uso standard)
+
+Allineamento al lessico usuale di giochi di carte e da tavolo (Magic, Poker in italiano, manuali commerciali). **Un termine = un significato.**
+
+| Termine | Significato |
+|--------|-------------|
+| **Sessione** | Periodo di gioco (serata/pomeriggio): una o più partite, o un torneo |
+| **Torneo** | Competizione a più **partite**, punteggio cumulativo e classifica |
+| **Partita** | Unità di gioco completa (distribuzione → vittoria / monte / fine punteggio di quell’unità). In torneo: serie di partite |
+| **Mano** | Solo le carte tenute dal giocatore («carte in mano», «mano iniziale»). **Mai** un’unità di torneo |
+| **Turno** | Periodo di un singolo giocatore |
+| **Giro** | Passaggio di tavolo: **G** turni consecutivi (uno per giocatore) |
+| **Giocata / posa** | Collocare una carta sulla griglia (il testo preferisce **posa**) |
+| **Sede** | Posto fisico al tavolo; in torneo non si scambiano le sedi tra partite |
+
+*Nota:* non si usa «mano» nel senso pokeristico di «una distribuzione»; quella unità si chiama **partita**.
+
 ## Torneo a punteggio (solo partita competitiva)
 
-Il **torneo** usa le stesse regole di gioco della partita competitiva (mosse, pesca, Idea, Dura Mater chiusa, ecc.), ma **obiettivo, fine mano e punteggio** sono diversi. **Non** si applica alla Durissima Mater.
+Il **torneo** usa le stesse regole di gioco della partita competitiva (mosse, pesca, Idea, Dura Mater chiusa, ecc.), ma **obiettivo, come termina ciascuna partita del torneo e punteggio** sono diversi. **Non** si applica alla Durissima Mater.
 
 ### Scopo del torneo
 
-- **Equità tra posti al tavolo:** ogni giocatore resta nella **stessa posizione fisica** (G1, G2, …) per tutto il torneo; non si scambiano sedi.
-- Il vincitore del torneo non è chi vince una singola mano, ma chi totalizza **più punti** sommando tutte le mani giocate.
-- Dopo ogni mano, il **primo giocatore** della mano successiva **avanza di una posizione in senso orario** (es. mano 1 inizia G1, mano 2 G2, …, mano G inizia di nuovo G1 con G giocatori). Così il vantaggio del posto e dell’ordine di turno si distribuisce nel tempo.
+- **Equità tra posti al tavolo:** ogni giocatore resta nella **stessa sede** (G1, G2, …) per tutto il torneo; non si scambiano sedi.
+- Il vincitore del torneo non è chi vince una singola partita, ma chi totalizza **più punti** sommando tutte le partite giocate.
+- Dopo ogni partita, chi **inizia** la partita successiva **avanza di una sede in senso orario** (es. partita 1 inizia G1, partita 2 G2, …, partita G inizia di nuovo G1). Così il vantaggio del posto e dell’ordine di turno si distribuisce nel tempo.
 
 ### Sede e punteggio
 
-- I giocatori sono **G** al tavolo; il punteggio è tenuto **per sede** (G1…G**G**), non per «vincitore della mano».
-- Le mani si susseguono fino a fine torneo; i punti **si sommano** (positivi e negativi) da una mano all’altra.
+- I giocatori sono **G** al tavolo; il punteggio è tenuto **per sede** (G1…G**G**), non per «vincitore della singola partita».
+- Le partite si susseguono fino a fine torneo; i punti **si sommano** (positivi e negativi) da una partita all’altra.
 
-### Fine di una mano (due modi)
+### Fine di una partita del torneo (due modi)
 
-A differenza della partita libera (dove la prima mano vuota **termina** la partita), in torneo **la mano continua** dopo che un giocatore finisce le carte, finché non si verifica uno dei due casi sotto.
+A differenza della partita libera (dove il primo che **svuota le carte in mano** **termina** la partita), in torneo **la partita continua** dopo che un giocatore finisce le carte, finché non si verifica uno dei due casi sotto.
 
 #### 1) Tutti i giocatori finiscono le carte
 
-- Ogni volta che un giocatore **svuota la mano**, riceve subito punti pari al **numero di giocatori ancora in gioco in quel momento** (incluso sé stesso al momento dello svuotamento).
+- Ogni volta che un giocatore **svuota le carte in mano**, riceve subito punti pari al **numero di giocatori ancora in gioco in quel momento** (incluso sé stesso al momento dello svuotamento).
 - Esempio con **G = 4:** primo che finisce → **4** punti; secondo → **3**; terzo → **2**; ultimo → **1**.
-- Quando anche l’ultimo ha finito, la mano è conclusa (tutte le carte sono state posate; la griglia può risultare completata se tutte le carte del sottomazzo erano in gioco).
+- Quando anche l’ultimo ha finito, la partita del torneo è conclusa (tutte le carte sono state posate; la griglia può risultare completata se tutte le carte del sottomazzo erano in gioco).
 
 #### 2) Monte (stallo)
 
-- La mano va a **monte** quando, per un **giro completo** di **G** turni consecutivi, **nessun giocatore posa** una carta — **anche se il tallone non è vuoto** (stessa condizione della partita competitiva; vedi «Turno di gioco»).
-- **Penalità a fine mano per monte:** ogni giocatore **ancora in gioco** con carte rimaste in mano riceve **−1 punto per ogni carta** (i giocatori già **usciti** hanno mano vuota e non subiscono penalità). Le carte nel tallone **non** contano: la penalità riguarda solo la mano.
+- La partita del torneo va a **monte** quando, per un **giro di tavolo** di **G** turni consecutivi, **nessun giocatore posa** una carta — **anche se il tallone non è vuoto** (stessa condizione della partita competitiva; vedi «Turno di gioco»).
+- **Penalità a fine partita per monte:** ogni giocatore **ancora in gioco** con carte rimaste in mano riceve **−1 punto per ogni carta** (i giocatori già **usciti** hanno mano vuota e non subiscono penalità). Le carte nel tallone **non** contano: la penalità riguarda solo le carte in mano.
 - È un esito da evitare, soprattutto con poche carte posate; con **4 o più giocatori** chi non posa può costringere gli altri al monte, ma la penalità resta limitata alle carte in mano di ciascuno.
 
-### Punti durante la mano
+### Punti durante la partita del torneo
 
 | Evento | Punti |
 |--------|--------|
-| Giocatore **N‑esimo** che svuota la mano (con **k** giocatori ancora in gioco, incluso lui) | **k** |
+| Giocatore che svuota le carte in mano (con **k** giocatori ancora in gioco, incluso lui) | **k** |
 | **Idea:** posa della **quarta carta** legale nello stesso turno | **+1** subito al momento della quarta posa; indipendentemente dal fatto che si giochi o meno la quinta carta |
 | **Monte:** ogni carta ancora **in mano** | **−1** per carta (chi è uscito: 0) |
 
 - Il punto Idea si assegna al momento della quarta posa legale del turno, non alla quinta.
-- Se la quarta carta svuota la mano, valgono le regole normali di arrivo (punti per ordine di finish); l’Idea come quinta carta non si applica (come in partita libera).
+- Se la quarta carta svuota le carte in mano, valgono le regole normali di arrivo (punti per ordine di finish); l’Idea come quinta carta non si applica (come in partita libera).
 
 ### Fine del torneo e classifica
 
 - **Classifica:** si ordina per punteggio totale; primo, secondo, terzo posto, ecc.
 - **Durata:** da definire in base a **G**:
-  - **G mani** (una per ogni rotazione del primo giocatore) è il formato simmetrico naturale.
+  - **G partite** (una per ogni rotazione di chi inizia) è il formato simmetrico naturale.
   - Con **G molto alto** (es. 16), si può preferire un **punteggio bersaglio** annunciato prima del torneo: vince (o si chiude il torneo) chi per primo raggiunge quella soglia — da stabilire in regolamento casa.
 
 ### Riepilogo differenze partita libera vs torneo
 
-| | Partita libera | Mano in torneo |
-|---|----------------|----------------|
-| Prima mano vuota | Fine partita, un vincitore | **+G** punti, mano continua |
+| | Partita libera | Partita in torneo |
+|---|----------------|-------------------|
+| Primo che svuota le carte in mano | Fine partita, un vincitore | **+k** punti, la partita continua |
 | Idea (4ª carta) | Solo opzione 5ª carta | **+1** punto torneo |
-| Monte | G pass senza posate (anche con tallone pieno); nessun punteggio | G pass senza posate; **−1**/carta in mano (solo carte in mano, non il tallone) |
+| Monte | Giro di tavolo (G turni) senza posate; nessun punteggio | Stesso monte; **−1**/carta in mano (non il tallone) |
 | Durissima | Variante separata | **Non usata** |
 
 *Implementazione motore / UI torneo: presente in `mpcards-core.js` (`tournamentMode`), `game.js` / `gioco.html` / `simulazione-singolo.html` e `simulator.js` / `simulatore-massivo.html`.*

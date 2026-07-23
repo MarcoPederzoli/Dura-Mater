@@ -53,6 +53,75 @@
       pointer-events: none;
     }
 
+    .play-mode-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      grid-column: 1 / -1;
+    }
+
+    .play-mode-tabs button {
+      flex: 1 1 140px;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f3f0ea;
+      color: var(--ink);
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+    }
+
+    .play-mode-tabs button.is-active,
+    .play-mode-tabs button[aria-selected="true"] {
+      background: var(--accent);
+      border-color: var(--accent-dark);
+      color: #fff;
+    }
+
+    .play-mode-tabs button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    #mode-hint {
+      grid-column: 1 / -1;
+      margin: 0;
+    }
+
+    .endgame-banner {
+      width: 100%;
+      margin: 0 0 6px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      text-align: center;
+      line-height: 1.15;
+      pointer-events: none;
+    }
+
+    .endgame-banner--win {
+      background: #dcfce7;
+      color: #14532d;
+      border: 2px solid #16a34a;
+    }
+
+    .endgame-banner--end {
+      background: #fef3c7;
+      color: #78350f;
+      border: 2px solid #d97706;
+    }
+
+    /* display:flex su .option-check vince sull'attributo HTML hidden */
+    label.option-check[hidden],
+    #tournament-mode-label[hidden],
+    [hidden] {
+      display: none !important;
+    }
+
     .page-head {
       display: grid;
       grid-template-columns: 1fr auto;
@@ -998,7 +1067,8 @@
       flex: 0 0 auto;
     }
 
-    .player-hand-backs {
+    .player-hand-backs,
+    .player-hand-faces {
       display: flex;
       flex-wrap: wrap;
       gap: 4px;
@@ -1025,6 +1095,41 @@
       display: block;
       pointer-events: none;
       user-select: none;
+    }
+
+    /* Collaborativo: miniature a faccia in su (carte scoperte) */
+    .player-hand-faces .player-hand-mini {
+      width: 40px;
+      height: 40px;
+      border-radius: 5px;
+      overflow: hidden;
+      flex: 0 0 auto;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    }
+
+    .player-hand-faces .player-hand-mini .card-tile {
+      width: 40px;
+      height: 40px;
+      border-radius: 5px;
+      font-size: 11px;
+    }
+
+    .player-hand-faces .player-hand-mini .card-tile img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .player-hand-faces .player-hand-mini .card-tile small {
+      font-size: 8px;
+    }
+
+    .player-hand-row.open-hands.current {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+      border-radius: 8px;
     }
 
     .player-hand-empty {
@@ -1276,44 +1381,55 @@
     }
   </style>
 </head>
-<body data-game-mode="real" data-prefs-key="dura-mater-gioco-v1">
+<body data-game-mode="real" data-prefs-key="dura-mater-gioco-v1" data-default-play-mode="competitive" data-default-variant="dura">
   <main>
     <header class="page-head">
       <div>
         <h1>Dura Mater</h1>
+        <p>Gioco al tavolo: competitivo, collaborativo o solitario.</p>
       </div>
       <nav>
         <a href="gioco.html" aria-current="page">Gioco</a>
-        <a href="simulazione-singolo.html">Simulazione singolo</a>
-        <a href="simulatore-massivo.html">Simulatore massivo</a>
+        <a href="simulazioni.html">Simulazioni</a>
       </nav>
     </header>
 
     <section id="setup-section" class="setup">
       <div class="panel-head">
         <h2>Impostazioni</h2>
-        <div id="status" class="status">Configura e avvia una partita.</div>
+        <div id="status" class="status">Scegli la sezione e avvia una partita.</div>
       </div>
       <div class="controls">
-        <label>
-          Modalita'
-          <select id="game-variant">
-            <option value="dura">Dura Mater (competitiva)</option>
-            <option value="durissima">Durissima Mater (coop / solitario)</option>
-          </select>
-        </label>
+        <div id="play-mode-tabs" class="play-mode-tabs" role="tablist" aria-label="Sezione di gioco">
+          <button type="button" role="tab" data-play-mode="competitive" aria-selected="true" class="is-active">Competitivo</button>
+          <button type="button" role="tab" data-play-mode="coop" aria-selected="false">Collaborativo</button>
+          <button type="button" role="tab" data-play-mode="solo" aria-selected="false">Solitario</button>
+        </div>
+        <input type="hidden" id="play-mode" value="competitive">
+        <select id="game-variant" hidden aria-hidden="true" tabindex="-1">
+          <option value="dura" selected>Competitivo</option>
+          <option value="durissima">Collaborativo / Solitario</option>
+        </select>
+        <p id="mode-hint" class="prefs-hint">Competitivo (Dura Mater): vince chi svuota per primo la mano.</p>
         <label>
           Giocatori
-          <input id="players" type="number" min="2" max="21" value="3">
+          <input id="players" type="number" min="2" max="16" value="3">
           <span id="players-range-hint" class="prefs-hint" aria-live="polite"></span>
         </label>
         <label>
-          Nome giocatore 1
-          <input id="player-one-name" type="text" maxlength="32" placeholder="Giocatore 1" autocomplete="nickname">
+          Nome (tu)
+          <input id="player-one-name" type="text" maxlength="32" placeholder="Biancaneve" value="Biancaneve" autocomplete="nickname">
         </label>
         <label>
-          Lato matrice
-          <input id="size" type="number" min="3" max="8" value="5">
+          Griglia
+          <select id="size" aria-label="Griglia">
+            <option value="3">3x3</option>
+            <option value="4">4x4</option>
+            <option value="5" selected>5x5</option>
+            <option value="6">6x6</option>
+            <option value="7">7x7</option>
+            <option value="8">8x8</option>
+          </select>
         </label>
         <label>
           Velocita' computer
@@ -1328,39 +1444,35 @@
           Seed
           <input id="seed" type="text" placeholder="casuale">
         </label>
-        <label class="option-check">
+        <label class="option-check" id="tournament-mode-label">
           <input id="tournament-mode" type="checkbox" aria-label="Torneo a punteggio">
           Torneo a punteggio
         </label>
-        <div id="durissima-options" class="durissima-options" hidden>
-          <label class="option-check">
-            <input id="durissima-coordinator" type="checkbox" checked aria-label="Coordinatore una mente">
-            Coordinatore una mente (TG) — coop G=2..2N (N reshuffle); solitario G=1 (core + carte extra opzionali)
-          </label>
-          <p id="durissima-solo-reserve" class="prefs-hint durissima-solo-rule" hidden>
-            Solitario (G=1): <strong>core</strong> = mano N. Opzionale: <strong>carte extra</strong> in mano dal 1° turno
-            (non un pool separato; non in coop). Quantita' per griglia da tarare.
+        <div id="solo-options" class="durissima-options" hidden>
+          <p id="durissima-solo-reserve" class="prefs-hint durissima-solo-rule">
+            Solitario: mano standard N. Easy mode = mano 2N (sempre +N carte). Refill se posate: sempre.
           </p>
-          <label id="durissima-extra-cards-label" class="option-check" hidden>
-            Carte extra in mano (solitario)
-            <input id="durissima-extra-cards" type="number" min="0" max="16" value="0" aria-label="Carte extra solitario">
-          </label>
-          <label class="option-check">
-            <input id="durissima-vita-extra" type="checkbox" aria-label="Vita extra reshuffle">
-            Vita extra (reshuffle limitati, opzionale solitario)
+          <label class="option-check" id="durissima-extra-cards-label">
+            <input id="durissima-easy-mode" type="checkbox" aria-label="Easy mode mano 2N">
+            Easy mode (mano 2N)
           </label>
         </div>
-        <button id="new-game">Avvia partita</button>
-        <button id="load-game-setup" class="secondary" type="button">Carica partita</button>
+        <!-- Hidden stubs: preferenze/legacy non esposti al giocatore -->
+        <div id="durissima-options" hidden aria-hidden="true">
+          <input id="durissima-coordinator" type="checkbox" checked tabindex="-1">
+          <input id="durissima-vita-extra" type="checkbox" disabled tabindex="-1">
+        </div>
+        <button id="new-game" type="button">Avvia partita</button>
         <button id="reset-prefs" class="secondary" type="button">Ripristina opzioni default</button>
       </div>
       <p id="format-tier-hint" class="format-tier-hint prefs-hint" data-tier="core" aria-live="polite"></p>
-      <p class="prefs-hint">Durissima coop (G>=2): N reshuffle + coordinatore TG. Solitario (G=1): core (mano N) + carte extra opzionali; vita extra opzionale. G2…G8: Dotto, Brontolo, …</p>
+      <p id="player-config-hint" class="prefs-hint">Nomi sedi: Giocatore 1 (modificabile), poi Dotto…Cucciolo; oltre l'ottavo: Dotto2, Eolo2, …</p>
       <div id="player-config" class="players"></div>
     </section>
 
     <div id="game-shell" class="game-shell" hidden>
       <div class="gamebar">
+        <p id="endgame-banner" class="endgame-banner" hidden aria-live="assertive"></p>
         <p id="play-feedback" class="play-feedback" aria-live="polite"></p>
         <div id="tournament-scores-bar" class="tournament-scores-bar" hidden aria-live="polite"></div>
         <div class="pill"><span id="active-player">-</span><strong id="draw-count">Pesca: 0</strong></div>
@@ -1376,8 +1488,6 @@
         <button id="bot-step" class="secondary">Step computer</button>
         <button id="undo" class="secondary" type="button">Undo</button>
         <button id="redo" class="secondary" type="button">Redo</button>
-        <button id="save-game" class="secondary" type="button">Salva</button>
-        <button id="load-game" class="secondary" type="button">Carica</button>
         <button id="open-players" class="secondary" type="button">Giocatori</button>
         <button id="open-info" class="secondary" type="button">Info</button>
         <button id="new-game-play" class="secondary" type="button">Nuova partita</button>
@@ -1455,7 +1565,6 @@
     <div id="app-version" class="app-version">v0.1.5</div>
   </main>
 
-  <input id="load-game-file" type="file" accept="application/json,.json" hidden>
 
   <script src="version.js"></script>
   <script src="mpcards-core.js"></script>

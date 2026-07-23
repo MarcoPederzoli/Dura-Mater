@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dura Mater — Simulazioni</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f4ef;
+      --panel: #ffffff;
+      --ink: #202124;
+      --muted: #61656d;
+      --line: #d9d3c8;
+      --accent: #0f766e;
+      --accent-dark: #0b5f59;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    main {
+      width: min(900px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 24px 0 48px;
+    }
+    header.page-head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 22px;
+    }
+    header.page-head nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      justify-content: flex-end;
+      font-size: 14px;
+    }
+    header.page-head nav a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    header.page-head nav a[aria-current="page"] {
+      color: var(--ink);
+      pointer-events: none;
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      line-height: 1.1;
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .cards {
+      display: grid;
+      gap: 14px;
+    }
+    a.card {
+      display: block;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 18px 18px 16px;
+      text-decoration: none;
+      color: inherit;
+      box-shadow: 0 1px 2px rgba(25, 28, 33, 0.05);
+    }
+    a.card:hover {
+      border-color: var(--accent);
+    }
+    a.card h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      color: var(--accent-dark);
+    }
+    a.card p {
+      font-size: 14px;
+    }
+    .note {
+      margin-top: 18px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="page-head">
+      <div>
+        <h1>Simulazioni</h1>
+        <p>Strumenti per test e batch — non sono il tavolo di gioco.</p>
+      </div>
+      <nav>
+        <a href="gioco.html">Gioco</a>
+        <a href="simulazioni.html" aria-current="page">Simulazioni</a>
+      </nav>
+    </header>
+
+    <div class="cards">
+      <a class="card" href="simulazione-singolo.html">
+        <h2>Simulazione singolo</h2>
+        <p>
+          Una partita alla volta con bot, seed, confronto strategie e sezioni
+          Competitivo / Collaborativo / Solitario. Utile per debug e prove mirate.
+        </p>
+      </a>
+      <a class="card" href="simulatore-massivo.html">
+        <h2>Simulatore massivo</h2>
+        <p>
+          Batch di molte partite, sweep di formati e statistiche aggregate.
+          Per bilanciamento e test automatici.
+        </p>
+      </a>
+    </div>
+
+    <p class="note">
+      Per giocare al tavolo (umano + bot) usa <a href="gioco.html">Gioco</a>.
+    </p>
+  </main>
+</body>
+</html>

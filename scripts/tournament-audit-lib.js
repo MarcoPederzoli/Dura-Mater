@@ -44,8 +44,8 @@ function emptySeatAgg(players) {
     tournamentWins: 0,
     scoreSum: 0,
     firstFinishes: 0,
-    starterHands: 0,
-    handPointsSum: 0
+    starterGames: 0,
+    gamePointsSum: 0
   }));
 }
 
@@ -61,17 +61,17 @@ function runCellAudit(cell, count, strategy, seedTag) {
       requested: count,
       completed: 0,
       stalled: 0,
-      handsPlayedSum: 0,
-      monteHandsSum: 0,
-      finishedHandsSum: 0,
+      gamesPlayedSum: 0,
+      monteGamesSum: 0,
+      finishedGamesSum: 0,
       turnsSum: 0
     },
     seats: emptySeatAgg(players),
-    hands: {
-      starterWonHandCount: 0,
-      firstStarterWinHandIndexSum: 0,
-      firstStarterWinHandIndexCount: 0,
-      neverStarterWonHand: 0
+    games: {
+      starterWonGameCount: 0,
+      firstStarterWinGameIndexSum: 0,
+      firstStarterWinGameIndexCount: 0,
+      neverStarterWonGame: 0
     },
     monte: {
       events: 0,
@@ -99,8 +99,8 @@ function runCellAudit(cell, count, strategy, seedTag) {
     }
 
     agg.tournaments.completed++;
-    agg.tournaments.handsPlayedSum += result.tournamentHandsPlayed || 0;
-    agg.tournaments.monteHandsSum += result.tournamentMonteHands || 0;
+    agg.tournaments.gamesPlayedSum += result.tournamentGamesPlayed || 0;
+    agg.tournaments.monteGamesSum += result.tournamentMonteGames || 0;
     agg.tournaments.turnsSum += result.turns || 0;
 
     const scores = result.tournamentScores || [];
@@ -111,37 +111,37 @@ function runCellAudit(cell, count, strategy, seedTag) {
       agg.seats[result.winner].tournamentWins++;
     }
 
-    const handLog = result.tournamentHandLog || [];
+    const gameLog = result.tournamentGameLog || [];
     let firstStarterWin = null;
-    for (const hand of handLog) {
-      if (hand.reason === "finished") {
-        agg.tournaments.finishedHandsSum++;
+    for (const game of gameLog) {
+      if (game.reason === "finished") {
+        agg.tournaments.finishedGamesSum++;
       }
 
-      const starter = hand.starter;
+      const starter = game.starter;
       if (starter >= 0 && starter < players) {
-        agg.seats[starter].starterHands++;
+        agg.seats[starter].starterGames++;
       }
-      if (hand.firstFinisher !== null && hand.firstFinisher !== undefined) {
-        agg.seats[hand.firstFinisher].firstFinishes++;
+      if (game.firstFinisher !== null && game.firstFinisher !== undefined) {
+        agg.seats[game.firstFinisher].firstFinishes++;
       }
-      if (hand.starterWonHand) {
-        agg.hands.starterWonHandCount++;
+      if (game.starterWonGame) {
+        agg.games.starterWonGameCount++;
         if (firstStarterWin === null) {
-          firstStarterWin = hand.handIndex + 1;
+          firstStarterWin = game.gameIndex + 1;
         }
       }
-      if (hand.handScores) {
+      if (game.gameScores) {
         for (let seat = 0; seat < players; seat++) {
-          agg.seats[seat].handPointsSum += hand.handScores[seat] || 0;
+          agg.seats[seat].gamePointsSum += game.gameScores[seat] || 0;
         }
       }
-      if (hand.monte) {
+      if (game.monte) {
         agg.monte.events++;
-        agg.monte.drawCardsSum += hand.monte.drawCards || 0;
-        agg.monte.drawCardsMax = Math.max(agg.monte.drawCardsMax, hand.monte.drawCards || 0);
-        agg.monte.stillInPlayersSum += hand.monte.playersStillIn || 0;
-        for (const row of hand.monte.stillIn || []) {
+        agg.monte.drawCardsSum += game.monte.drawCards || 0;
+        agg.monte.drawCardsMax = Math.max(agg.monte.drawCardsMax, game.monte.drawCards || 0);
+        agg.monte.stillInPlayersSum += game.monte.playersStillIn || 0;
+        for (const row of game.monte.stillIn || []) {
           agg.monte.handCardsSum += row.handCards || 0;
           agg.monte.handCardsCount++;
           agg.monte.handCardsMax = Math.max(agg.monte.handCardsMax, row.handCards || 0);
@@ -150,10 +150,10 @@ function runCellAudit(cell, count, strategy, seedTag) {
     }
 
     if (firstStarterWin !== null) {
-      agg.hands.firstStarterWinHandIndexSum += firstStarterWin;
-      agg.hands.firstStarterWinHandIndexCount++;
-    } else if (handLog.length) {
-      agg.hands.neverStarterWonHand++;
+      agg.games.firstStarterWinGameIndexSum += firstStarterWin;
+      agg.games.firstStarterWinGameIndexCount++;
+    } else if (gameLog.length) {
+      agg.games.neverStarterWonGame++;
     }
 
     if (agg.samples.length < 3) {
@@ -161,18 +161,18 @@ function runCellAudit(cell, count, strategy, seedTag) {
         tournamentIndex: i,
         winner: result.winner,
         scores: scores.slice(),
-        handLog: handLog.map(h => ({
-          handIndex: h.handIndex,
-          starter: h.starter,
-          reason: h.reason,
-          firstFinisher: h.firstFinisher,
-          starterWonHand: h.starterWonHand,
-          turns: h.turns,
-          handScores: h.handScores,
-          monte: h.monte
+        gameLog: gameLog.map(g => ({
+          gameIndex: g.gameIndex,
+          starter: g.starter,
+          reason: g.reason,
+          firstFinisher: g.firstFinisher,
+          starterWonGame: g.starterWonGame,
+          turns: g.turns,
+          gameScores: g.gameScores,
+          monte: g.monte
             ? {
-                drawCards: h.monte.drawCards,
-                stillIn: h.monte.stillIn
+                drawCards: g.monte.drawCards,
+                stillIn: g.monte.stillIn
               }
             : null
         }))
@@ -184,18 +184,27 @@ function runCellAudit(cell, count, strategy, seedTag) {
 }
 
 function finalizeCellAgg(agg) {
-  const { tournaments, seats, hands, monte } = agg;
+  const { tournaments, seats, games, monte } = agg;
   const completed = tournaments.completed || 0;
-  const handsTotal = tournaments.handsPlayedSum || 0;
+  const gamesTotal = tournaments.gamesPlayedSum || 0;
 
   const seatRows = seats.map(s => ({
     ...s,
     winRate: completed ? s.tournamentWins / completed : 0,
     avgScore: completed ? s.scoreSum / completed : 0,
-    avgHandPoints: handsTotal ? s.handPointsSum / handsTotal : 0,
-    firstFinishRate: handsTotal ? s.firstFinishes / handsTotal : 0,
-    starterHandsPerTournament: completed ? s.starterHands / completed : 0
+    avgGamePoints: gamesTotal ? s.gamePointsSum / gamesTotal : 0,
+    firstFinishRate: gamesTotal ? s.firstFinishes / gamesTotal : 0,
+    starterGamesPerTournament: completed ? s.starterGames / completed : 0
   }));
+
+  const gamesStats = {
+    ...games,
+    starterWonGameRate: gamesTotal ? games.starterWonGameCount / gamesTotal : 0,
+    avgFirstStarterWinGameIndex: games.firstStarterWinGameIndexCount
+      ? games.firstStarterWinGameIndexSum / games.firstStarterWinGameIndexCount
+      : null,
+    neverStarterWonGameRate: completed ? games.neverStarterWonGame / completed : 0
+  };
 
   return {
     key: agg.key,
@@ -206,22 +215,20 @@ function finalizeCellAgg(agg) {
     tournaments: {
       ...tournaments,
       completionRate: tournaments.requested ? completed / tournaments.requested : 0,
-      avgHandsPerTournament: completed ? tournaments.handsPlayedSum / completed : 0,
-      avgMonteHandsPerTournament: completed ? tournaments.monteHandsSum / completed : 0,
-      monteHandRate: handsTotal ? tournaments.monteHandsSum / handsTotal : 0,
-      finishedHandRate: handsTotal ? tournaments.finishedHandsSum / handsTotal : 0,
+      avgGamesPerTournament: completed ? tournaments.gamesPlayedSum / completed : 0,
+      avgMonteGamesPerTournament: completed ? tournaments.monteGamesSum / completed : 0,
+      monteGameRate: gamesTotal ? tournaments.monteGamesSum / gamesTotal : 0,
+      finishedGameRate: gamesTotal ? tournaments.finishedGamesSum / gamesTotal : 0,
+      // alias legacy
+      finishedHandRate: gamesTotal ? tournaments.finishedGamesSum / gamesTotal : 0,
       avgTurnsPerTournament: completed ? tournaments.turnsSum / completed : 0,
-      avgTurnsPerHand: handsTotal ? tournaments.turnsSum / handsTotal : 0
+      avgTurnsPerGame: gamesTotal ? tournaments.turnsSum / gamesTotal : 0,
+      avgTurnsPerHand: gamesTotal ? tournaments.turnsSum / gamesTotal : 0
     },
     seats: seatRows,
-    hands: {
-      ...hands,
-      starterWonHandRate: handsTotal ? hands.starterWonHandCount / handsTotal : 0,
-      avgFirstStarterWinHandIndex: hands.firstStarterWinHandIndexCount
-        ? hands.firstStarterWinHandIndexSum / hands.firstStarterWinHandIndexCount
-        : null,
-      neverStarterWonHandRate: completed ? hands.neverStarterWonHand / completed : 0
-    },
+    games: gamesStats,
+    // alias: vecchi consumer usavano .hands per le stat delle partite del torneo
+    hands: gamesStats,
     monte: {
       ...monte,
       avgHandCardsPerStillIn: monte.handCardsCount ? monte.handCardsSum / monte.handCardsCount : 0,

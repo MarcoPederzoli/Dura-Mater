@@ -2,9 +2,21 @@
 
 Versione: giugno 2026.
 
-**Dura Mater** e' il gioco di carte in cui i giocatori costruiscono una griglia **NxN** posando carte compatibili. L'obiettivo della partita competitiva e' **svuotare per primo la propria mano**. Esiste anche il **torneo a punteggio**, con le stesse regole di posa ma punteggio e fine mano diversi.
+**Dura Mater** e' il gioco di carte in cui i giocatori costruiscono una griglia **NxN** posando carte compatibili. L'obiettivo della partita competitiva e' **svuotare per primo la propria mano**. Esiste anche il **torneo a punteggio**, con le stesse regole di posa ma punteggio e fine di ciascuna **partita** del torneo diversi.
 
 Questo documento riguarda **solo Dura Mater** (competitiva e torneo). La variante cooperativa/solitario **Durissima Mater** ha regolamento separato ed e' ancora in preparazione.
+
+### Terminologia
+
+| Termine | Significato |
+|--------|-------------|
+| **Sessione** | Periodo di gioco (serata); una o piu' partite, o un torneo |
+| **Torneo** | Competizione a piu' **partite**, punteggio cumulativo |
+| **Partita** | Unita' di gioco completa (distribuzione → vittoria / monte / fine punteggio) |
+| **Mano** | Solo le carte tenute («carte in mano»); **mai** un'unita' di torneo |
+| **Turno** | Periodo di un singolo giocatore |
+| **Giro** | Passaggio di tavolo: G turni consecutivi |
+| **Posa / giocata** | Collocare una carta sulla griglia |
 
 ---
 
@@ -196,52 +208,52 @@ Se in un turno avete posato **quattro carte legali** e avete ancora **almeno una
 
 ## 10. Torneo a punteggio
 
-Il torneo usa le **stesse regole di gioco** della partita competitiva (posa, pesca, Idea, Dura Mater, monte), ma **obiettivo, durata della mano e punteggio** sono diversi. **Non** si applica alla Durissima Mater.
+Il torneo usa le **stesse regole di gioco** della partita competitiva (posa, pesca, Idea, Dura Mater, monte), ma **obiettivo, come termina ciascuna partita del torneo e punteggio** sono diversi. **Non** si applica alla Durissima Mater.
 
 ### Principi
 
 - Ogni giocatore resta nella **stessa sede** (G1, G2, ...) per tutto il torneo.
-- Vince chi totalizza **piu' punti** sommando tutte le mani.
-- Dopo ogni mano, il **primo giocatore** della mano successiva **avanza di una posizione** in senso orario (con G giocatori, dopo G mani si completa un ciclo).
+- Vince il torneo chi totalizza **piu' punti** sommando tutte le **partite**.
+- Dopo ogni partita, chi **inizia** la partita successiva **avanza di una sede** in senso orario (con G giocatori, dopo G partite si completa un ciclo).
 
-### Fine di una mano
+### Fine di una partita del torneo
 
-A differenza della partita libera, **la mano non finisce** al primo che svuota la mano. La mano termina quando:
+A differenza della partita libera, **la partita non finisce** al primo che svuota le carte in mano. La partita del torneo termina quando:
 
 1. **Tutti** i giocatori hanno finito le carte in mano, oppure
-2. Si verifica il **monte** (G turni consecutivi senza posate da nessuno).
+2. Si verifica il **monte** (un **giro** di tavolo: G turni consecutivi senza posate da nessuno).
 
 #### Arrivi (tutti finiscono)
 
-Ogni giocatore che svuota la mano riceve punti pari al **numero di giocatori ancora in gioco** in quel momento (incluso se stesso).
+Ogni giocatore che svuota le carte in mano riceve punti pari al **numero di giocatori ancora in gioco** in quel momento (incluso se stesso).
 
 **Esempio con G = 4:** primo che finisce **4** punti; secondo **3**; terzo **2**; ultimo **1**.
 
 #### Monte
 
-- Stessa condizione della partita libera: G pass consecutivi senza posate.
+- Stessa condizione della partita libera: G pass consecutivi senza posate (un giro senza posate).
 - **Penalita':** ogni giocatore **ancora in gioco** con carte in mano riceve **-1 punto per ogni carta** in mano. Chi e' gia' uscito (mano vuota) non ha penalita'. Le carte nel **tallone non contano**.
 
-### Punti durante la mano
+### Punti durante la partita del torneo
 
 | Evento | Punti |
 |--------|--------|
-| Svuotamento mano (con k giocatori ancora in gioco, incluso chi finisce) | **+k** |
+| Svuotamento carte in mano (con k giocatori ancora in gioco, incluso chi finisce) | **+k** |
 | **Idea:** posa della **4a carta legale** nel turno | **+1** (subito alla 4a posa; indipendente dalla 5a) |
 | Monte: ogni carta ancora **in mano** | **-1** per carta |
 
-Se la 4a carta svuota la mano, valgono i punti di arrivo; l'Idea come quinta carta non si applica.
+Se la 4a carta svuota le carte in mano, valgono i punti di arrivo; l'Idea come quinta carta non si applica.
 
 ### Durata del torneo
 
-- Formato simmetrico naturale: **G mani** (una per ogni rotazione del primo giocatore).
+- Formato simmetrico naturale: **G partite** (una per ogni rotazione di chi inizia).
 - Con **G molto alto** (es. 16) si puo' concordare un **punteggio bersaglio** prima del torneo.
 
 ### Riepilogo partita libera vs torneo
 
-| | Partita libera | Mano in torneo |
-|---|----------------|----------------|
-| Prima mano vuota | Fine partita, un vincitore | Punti arrivo, **mano continua** |
+| | Partita libera | Partita in torneo |
+|---|----------------|-------------------|
+| Primo che svuota le carte in mano | Fine partita, un vincitore | Punti arrivo, **partita continua** |
 | Idea (4a carta) | Opzione 5a carta | **+1** punto torneo |
 | Monte | Stallo, nessun punteggio | **-1** / carta in mano |
 

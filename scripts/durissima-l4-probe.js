@@ -3,7 +3,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const {
-  defaultCliWorkers,
+  defaultHeavyCliWorkers,
+  acquireHeavyProbeLock,
   logicalCpuCount,
   parseWorkersFlag,
   filterArgv,
@@ -16,8 +17,10 @@ const { runCellChunk } = require("./durissima-pool-sweep-lib");
 require(path.join(__dirname, "..", "mpcards-core.js"));
 
 const core = globalThis.MPCardsCore;
-const argv = filterArgv(process.argv.slice(2));
-const WORKERS = parseWorkersFlag(process.argv.slice(2), defaultCliWorkers());
+const argvRaw = process.argv.slice(2);
+acquireHeavyProbeLock("durissima-l4-probe", argvRaw);
+const argv = filterArgv(argvRaw);
+const WORKERS = parseWorkersFlag(argvRaw, defaultHeavyCliWorkers());
 const COUNT = Number(argv[0]) || 500;
 const L = 4;
 

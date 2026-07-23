@@ -3,7 +3,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const {
-  defaultCliWorkers,
+  defaultHeavyCliWorkers,
+  acquireHeavyProbeLock,
   logicalCpuCount,
   parseWorkersFlag,
   filterArgv,
@@ -16,8 +17,10 @@ const { runCellChunk } = require("./durissima-pool-sweep-lib");
 require(path.join(__dirname, "..", "mpcards-core.js"));
 
 const core = globalThis.MPCardsCore;
-const argv = filterArgv(process.argv.slice(2));
-const WORKERS = parseWorkersFlag(process.argv.slice(2), defaultCliWorkers());
+const argvRaw = process.argv.slice(2);
+acquireHeavyProbeLock("durissima-grid-probe", argvRaw);
+const argv = filterArgv(argvRaw);
+const WORKERS = parseWorkersFlag(argvRaw, defaultHeavyCliWorkers());
 const L = Number(argv[0]) || 5;
 const COUNT = Number(argv[1]) || 500;
 
@@ -32,6 +35,10 @@ function parseGMaxCapFlag(list) {
 }
 
 const G_MAX_CAP = parseGMaxCapFlag(process.argv.slice(2));
+const FREE_DRAW_VARIANT = process.argv.slice(2).includes("--free-draw");
+const SCARTI_VARIANT = process.argv.slice(2).includes("--scarti-n-reshuffle");
+const HAND_CAP_2N = process.argv.slice(2).includes("--hand-cap-2n");
+const HAND_CAP_VARIANT = HAND_CAP_2N || process.argv.slice(2).includes("--hand-cap");
 
 function stamp() {
   const d = new Date();
@@ -64,16 +71,33 @@ async function main() {
   }
 
   const seedTag = `grid-probe-L${L}-${stamp()}`;
+  const variant = SCARTI_VARIANT
+    ? "scarti-n-reshuffle"
+    : FREE_DRAW_VARIANT
+      ? "free-draw-n-reshuffle"
+      : HAND_CAP_2N
+        ? "hand-cap-2n"
+        : (HAND_CAP_VARIANT ? "hand-cap" : undefined);
   const tasks = gList.map((G, index) => ({
     L,
     G,
     count: COUNT,
     seedTag,
-    chunkIndex: index
+    chunkIndex: index,
+    variant
   }));
 
+  const variantLabel = SCARTI_VARIANT
+    ? "scarti-n-reshuffle (tetto N, scarti riciclabili max N volte, no vita extra)"
+    : FREE_DRAW_VARIANT
+      ? "free-draw-n-reshuffle (pesca competitiva + N reshuffle selettivo)"
+      : HAND_CAP_2N
+        ? "hand-cap-2n (pesca competitiva, tetto 2N carte, no reshuffle)"
+        : HAND_CAP_VARIANT
+          ? "hand-cap (pesca competitiva, tetto N carte, no reshuffle)"
+          : "n-reshuffle";
   process.stderr.write(
-    `\nDurissima L=${L} probe · G=1..${G_MAX_CAP} (legali: ${gList.join(", ")}) · ${COUNT} partite/cella\n` +
+    `\nDurissima L=${L} probe [${variantLabel}] · G=1..${G_MAX_CAP} (legali: ${gList.join(", ")}) · ${COUNT} partite/cella\n` +
       `Senza G_min competitivo · worker=${WORKERS}/${logicalCpuCount()} logici\n\n`
   );
 
@@ -99,6 +123,7 @@ async function main() {
     const key = chunk.key;
     const winPct = (100 * chunk.wins / chunk.done).toFixed(1);
     const vitaMed = (chunk.vitaUsedSum / chunk.done).toFixed(2);
+    const recycleMed = ((chunk.discardRecyclesUsedSum || 0) / chunk.done).toFixed(2);
     const turnsMed = (chunk.turnSum / chunk.done).toFixed(1);
     cells[key] = {
       cell: key,
@@ -115,13 +140,16 @@ async function main() {
       winPct: Number(winPct),
       vitaUsedSum: chunk.vitaUsedSum,
       vitaMed: Number(vitaMed),
+      discardRecyclesUsedSum: chunk.discardRecyclesUsedSum || 0,
+      discardRecyclesMed: Number(recycleMed),
       turnSum: chunk.turnSum,
       turnsMed: Number(turnsMed)
     };
     rows.push(cells[key]);
+    const recycleSuffix = SCARTI_VARIANT ? ` · ricicli med ${recycleMed}` : "";
     console.log(
       `${cellLabel(chunk.G)}: ok ${chunk.wins}/${chunk.done} (${winPct}%)` +
-        ` · turni med ${turnsMed} · vita med ${vitaMed}`
+        ` · turni med ${turnsMed} · vita med ${vitaMed}${recycleSuffix}`
     );
   }
 
@@ -136,7 +164,7 @@ async function main() {
   const out = path.join(__dirname, "..", "tests", `dura-mater-durissima-l${L}-probe-${stamp()}.json`);
   fs.writeFileSync(out, JSON.stringify({
     format: "dura-mater-durissima-grid-probe",
-    variant: "n-reshuffle",
+    variant: variantLabel,
     size: L,
     durissimaMinPlayers: core.durissimaMinPlayers(),
     classicGMin: core.recommendedMinPlayers(L),

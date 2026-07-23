@@ -254,9 +254,9 @@ const MPCARDS_CORE_SOURCE = `
     return !!(state && state.tournamentMode === true && !isDurissimaMater(state));
   }
 
-  function tournamentTurnOrder(players, handIndex) {
+  function tournamentTurnOrder(players, gameIndex) {
     const base = defaultTurnOrder(players);
-    const offset = ((handIndex % players) + players) % players;
+    const offset = ((gameIndex % players) + players) % players;
     return base.slice(offset).concat(base.slice(0, offset));
   }
 
@@ -272,7 +272,7 @@ const MPCARDS_CORE_SOURCE = `
   function tournamentAddPoints(state, playerId, delta) {
     if (!delta || playerId < 0 || playerId >= state.players) return;
     state.tournamentScores[playerId] += delta;
-    state.tournamentHandScores[playerId] += delta;
+    state.tournamentGameScores[playerId] += delta;
   }
 
   function tournamentLeaderId(state) {
@@ -291,17 +291,17 @@ const MPCARDS_CORE_SOURCE = `
     }
   }
 
-  function tournamentCompleteHand(state, reason) {
-    if (!state.tournamentHandLog) state.tournamentHandLog = [];
+  function tournamentCompleteGame(state, reason) {
+    if (!state.tournamentGameLog) state.tournamentGameLog = [];
     const finishOrder = (state.tournamentFinishOrder || []).slice();
-    const handEntry = {
-      handIndex: state.tournamentHandIndex,
+    const gameEntry = {
+      gameIndex: state.tournamentGameIndex,
       starter: state.startingPlayer,
       reason,
       finishOrder,
       firstFinisher: finishOrder.length ? finishOrder[0] : null,
-      starterWonHand: finishOrder.length > 0 && finishOrder[0] === state.startingPlayer,
-      handScores: (state.tournamentHandScores || []).slice(),
+      starterWonGame: finishOrder.length > 0 && finishOrder[0] === state.startingPlayer,
+      gameScores: (state.tournamentGameScores || []).slice(),
       turns: state.turns
     };
     if (reason === "monte") {
@@ -324,17 +324,17 @@ const MPCARDS_CORE_SOURCE = `
         playersStillIn: stillIn.length
       };
       state.tournamentMonteLog.push(monteEntry);
-      handEntry.monte = monteEntry;
+      gameEntry.monte = monteEntry;
       tournamentApplyMontePenalties(state);
     }
-    state.tournamentHandLog.push(handEntry);
-    state.tournamentLastHandReason = reason;
-    state.tournamentHandIndex++;
-    if (state.tournamentHandIndex >= state.players) {
+    state.tournamentGameLog.push(gameEntry);
+    state.tournamentLastGameReason = reason;
+    state.tournamentGameIndex++;
+    if (state.tournamentGameIndex >= state.players) {
       state.status = "tournament_complete";
       state.winner = tournamentLeaderId(state);
     } else {
-      state.status = "hand_over";
+      state.status = "game_over";
     }
   }
 
@@ -346,13 +346,13 @@ const MPCARDS_CORE_SOURCE = `
     tournamentAddPoints(state, playerId, k);
     state.tournamentExited[playerId] = true;
     if (tournamentPlayersStillIn(state) === 0) {
-      tournamentCompleteHand(state, "finished");
+      tournamentCompleteGame(state, "finished");
     } else {
       endTurn(state);
     }
   }
 
-  function resetTournamentHandPlayState(state) {
+  function resetTournamentGamePlayState(state) {
     state.board = [];
     state.currentPlayer = state.turnOrder[0];
     state.consecutivePasses = 0;
@@ -368,16 +368,22 @@ const MPCARDS_CORE_SOURCE = `
     state.turnDirection = 1;
     state.turnPlacementStats = emptyTurnPlacementStats();
     state.tournamentExited = Array.from({ length: state.players }, () => false);
-    state.tournamentHandScores = Array.from({ length: state.players }, () => 0);
+    state.tournamentGameScores = Array.from({ length: state.players }, () => 0);
     state.tournamentFinishOrder = [];
-    state.tournamentLastHandReason = null;
+    state.tournamentLastGameReason = null;
     state.status = "playing";
   }
 
-  function beginNextTournamentHand(state, deck, random) {
-    if (!isTournamentMode(state) || state.status !== "hand_over") {
-      throw new Error("Nuova mano torneo non disponibile.");
+  /** True se la partita del torneo e' finita e si attende la successiva (include status legacy hand_over). */
+  function isTournamentGameOverStatus(status) {
+    return status === "game_over" || status === "hand_over";
+  }
+
+  function beginNextTournamentGame(state, deck, random) {
+    if (!isTournamentMode(state) || !isTournamentGameOverStatus(state.status)) {
+      throw new Error("Nuova partita del torneo non disponibile.");
     }
+    if (state.status === "hand_over") state.status = "game_over";
     const size = state.size;
     const players = state.players;
     const deal = computeInitialDeal(size, players);
@@ -390,14 +396,14 @@ const MPCARDS_CORE_SOURCE = `
     const shuffled = shuffle(gameDeck, random);
     state.hands = Array.from({ length: players }, () => shuffled.splice(0, deal.cardsPerPlayer));
     state.drawPile = shuffled;
-    const turnOrder = tournamentTurnOrder(players, state.tournamentHandIndex);
+    const turnOrder = tournamentTurnOrder(players, state.tournamentGameIndex);
     state.turnOrder = turnOrder.slice();
     state.initialTurnOrder = turnOrder.slice();
     state.startingPlayer = turnOrder[0];
     state.initialHandSize = deal.cardsPerPlayer;
     state.initialDrawCount = deal.drawCount;
     state.overcrowdedDeal = deal.overcrowded;
-    resetTournamentHandPlayState(state);
+    resetTournamentGamePlayState(state);
     return state;
   }
 
@@ -8963,11 +8969,11 @@ const MPCARDS_CORE_SOURCE = `
   }
 
   /**
-   * Regola Durissima (2026-07-18): a fine turno, se hai posato almeno 1 carta,
+   * Regola Durissima: a fine turno, se hai posato almeno 1 carta,
    * peschi finche' la mano torna a initialHandSize (tipicamente N) o tallone esaurito.
    * Posa K => tipicamente pesca K. Niente pesca su pass (drawOnlyAfterPlacement).
-   * Opt-out: durissimaRefillToNAfterPlace: false.
-   * Vale G>=1 (solitario e multi).
+   * Refill e' regola fissa di prodotto (non opt-out). Vale G>=1 (solitario e multi).
+   * Eccezioni tecniche solo per varianti sperimentali competitive-draw / scarti-n-reshuffle.
    */
   function isDurissimaRefillToNEnabled(state) {
     return (
@@ -8980,11 +8986,10 @@ const MPCARDS_CORE_SOURCE = `
 
   function defaultDurissimaRefillToNAfterPlace(options) {
     if (!options || options.durissimaMater !== true) return false;
+    // Varianti sperimentali con altra pesca: no refill-to-N
     if (options.durissimaScartiNReshuffle === true) return false;
     if (options.durissimaCompetitiveDraw === true) return false;
-    if (options.durissimaRefillToNAfterPlace === false) return false;
-    if (options.durissimaRefillToNAfterPlace === true) return true;
-    // Default ON: regola fondamentale Durissima (posa+refill; no pesca su pass)
+    // Prodotto: refill sempre ON (ignora opt-out false — non e' piu' opzione di tavolo)
     return true;
   }
 
@@ -9012,12 +9017,13 @@ const MPCARDS_CORE_SOURCE = `
     return drawn;
   }
 
-  /** Variante di riferimento Durissima: «N reshuffle» attivo salvo opt-out esplicito. */
-  function defaultDurissimaVitaExtraEnabled(options) {
-    if (options.durissimaMater !== true) return false;
-    if (options.durissimaScartiNReshuffle === true) return false;
-    if (options.durissimaVitaExtraEnabled === false) return false;
-    return true;
+  /**
+   * N reshuffle / vita extra: **rimossi dal prodotto** (2026-07).
+   * Sempre false: non interrompono il flusso di gioco; non sono opzioni di tavolo.
+   * Il codice di implementazione resta per eventuale archeologia/probe storici, ma e' morto.
+   */
+  function defaultDurissimaVitaExtraEnabled(_options) {
+    return false;
   }
 
   /**
@@ -9295,16 +9301,13 @@ const MPCARDS_CORE_SOURCE = `
     return 0;
   }
 
-  function isDurissimaVitaExtraEnabled(state) {
-    return isDurissimaMater(state) && state.durissimaVitaExtraEnabled === true;
+  function isDurissimaVitaExtraEnabled(_state) {
+    // Feature rimossa dal prodotto: mai attiva.
+    return false;
   }
 
-  function canUseDurissimaVitaExtra(state, playerId) {
-    if (!isDurissimaVitaExtraEnabled(state) || state.status !== "playing") return false;
-    if (state.turnPlayed !== 0) return false;
-    if (durissimaVitaExtraPoolLeft(state) <= 0) return false;
-    const hand = state.hands[playerId] || [];
-    return hand.length > 0 || state.drawPile.length > 0;
+  function canUseDurissimaVitaExtra(_state, _playerId) {
+    return false;
   }
 
   function durissimaVitaKeepUidMasks(hand) {
@@ -9816,7 +9819,7 @@ const MPCARDS_CORE_SOURCE = `
   function passTurn(state) {
     if (isDurissimaMater(state) && state.turnPlayed === 0 && state.players === 1) {
       throw new Error(
-        "Durissima Mater solitario: senza mosse legali e senza vita extra la partita e' persa."
+        "Durissima Mater solitario: senza mosse legali la partita e' persa."
       );
     }
     if (shouldDrawOnPass(state)) {
@@ -9835,7 +9838,7 @@ const MPCARDS_CORE_SOURCE = `
     const canStall = !isDurissimaMater(state) || !isBoardComplete(state);
     if (canStall && state.consecutivePasses >= state.players) {
       if (isTournamentMode(state)) {
-        tournamentCompleteHand(state, "monte");
+        tournamentCompleteGame(state, "monte");
         return;
       }
       state.status = "stalled";
@@ -10072,12 +10075,12 @@ const MPCARDS_CORE_SOURCE = `
           options.durissimaScartiNReshuffle !== true),
       tournamentMode,
       tournamentScores: tournamentMode ? Array.from({ length: players }, () => 0) : null,
-      tournamentHandScores: tournamentMode ? Array.from({ length: players }, () => 0) : null,
+      tournamentGameScores: tournamentMode ? Array.from({ length: players }, () => 0) : null,
       tournamentExited: tournamentMode ? Array.from({ length: players }, () => false) : null,
-      tournamentHandIndex: tournamentMode ? 0 : null,
-      tournamentLastHandReason: tournamentMode ? null : null,
+      tournamentGameIndex: tournamentMode ? 0 : null,
+      tournamentLastGameReason: tournamentMode ? null : null,
       tournamentMonteLog: tournamentMode ? [] : null,
-      tournamentHandLog: tournamentMode ? [] : null,
+      tournamentGameLog: tournamentMode ? [] : null,
       tournamentFinishOrder: tournamentMode ? [] : null,
       durissimaEmergencyDrawsLeft: defaultDurissimaEmergencyBudget(size, players, options),
       durissimaAfterPlayDrawsLeft: options.durissimaMater === true
@@ -10676,24 +10679,26 @@ const MPCARDS_CORE_SOURCE = `
       randomizeTurnOrder: false
     });
     const stepFactor = 16;
-    const maxStepsPerHand = options.size * options.size * players * stepFactor;
-    const maxTotalSteps = maxStepsPerHand * players * 2;
+    const maxStepsPerGame = options.size * options.size * players * stepFactor;
+    const maxTotalSteps = maxStepsPerGame * players * 2;
     let steps = 0;
-    let monteHands = 0;
+    let monteGames = 0;
     let totalTurns = 0;
-    while (state.tournamentHandIndex < players && steps < maxTotalSteps) {
-      let handSteps = 0;
-      while (state.status === "playing" && handSteps < maxStepsPerHand && steps < maxTotalSteps) {
+    while (state.tournamentGameIndex < players && steps < maxTotalSteps) {
+      let gameSteps = 0;
+      while (state.status === "playing" && gameSteps < maxStepsPerGame && steps < maxTotalSteps) {
         botStep(state, strategies, random);
-        handSteps++;
+        gameSteps++;
         steps++;
       }
       totalTurns += state.turns;
-      if (state.status === "hand_over") {
-        if (state.tournamentLastHandReason === "monte") monteHands++;
-        beginNextTournamentHand(state, deck, random);
+      if (state.status === "game_over" || state.status === "hand_over") {
+        // hand_over: status legacy (pre rename partita)
+        if (state.status === "hand_over") state.status = "game_over";
+        if (state.tournamentLastGameReason === "monte") monteGames++;
+        beginNextTournamentGame(state, deck, random);
       } else if (state.status === "tournament_complete") {
-        if (state.tournamentLastHandReason === "monte") monteHands++;
+        if (state.tournamentLastGameReason === "monte") monteGames++;
         break;
       } else {
         state.status = "stalled";
@@ -10713,10 +10718,10 @@ const MPCARDS_CORE_SOURCE = `
       tournamentMode: true,
       winner: state.winner,
       tournamentScores: (state.tournamentScores || []).slice(),
-      tournamentHandsPlayed: state.tournamentHandIndex || 0,
-      tournamentMonteHands: monteHands,
+      tournamentGamesPlayed: state.tournamentGameIndex || 0,
+      tournamentMonteGames: monteGames,
       tournamentMonteLog: (state.tournamentMonteLog || []).slice(),
-      tournamentHandLog: (state.tournamentHandLog || []).slice(),
+      tournamentGameLog: (state.tournamentGameLog || []).slice(),
       tournamentComplete: state.status === "tournament_complete",
       turns: totalTurns,
       strategies,
@@ -11018,12 +11023,13 @@ const MPCARDS_CORE_SOURCE = `
     botStep,
     summarizeParticipation,
     isTournamentMode,
+    isTournamentGameOverStatus,
     tournamentTurnOrder,
     tournamentAddPoints,
     tournamentApplyMontePenalties,
     tournamentMarkFinished,
-    tournamentCompleteHand,
-    beginNextTournamentHand,
+    tournamentCompleteGame,
+    beginNextTournamentGame,
     simulateTournament,
     simulateGame,
     initialTurnSlotFor,

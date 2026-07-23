@@ -785,7 +785,7 @@ function emptyStats(players, dealMeta = null) {
     gamesWithFiveCardTurn: 0,
     fiveCardTurns: 0,
     ideaOffers: 0,
-    tournamentMonteHands: 0,
+    tournamentMonteGames: 0,
     gamesAllPlayersPlaced: 0,
     playersPlacedSum: 0,
     gamesLastPlayerPlaced: 0,
@@ -809,7 +809,7 @@ function mergeStats(target, patch) {
   target.gamesWithFiveCardTurn += patch.gamesWithFiveCardTurn || 0;
   target.fiveCardTurns += patch.fiveCardTurns || 0;
   target.ideaOffers += patch.ideaOffers || 0;
-  target.tournamentMonteHands = (target.tournamentMonteHands || 0) + (patch.tournamentMonteHands || 0);
+  target.tournamentMonteGames = (target.tournamentMonteGames || 0) + (patch.tournamentMonteGames || 0);
   target.gamesAllPlayersPlaced += patch.gamesAllPlayersPlaced || 0;
   target.playersPlacedSum += patch.playersPlacedSum || 0;
   target.gamesLastPlayerPlaced += patch.gamesLastPlayerPlaced || 0;
@@ -1770,9 +1770,9 @@ function buildAnalysisReport(grandTotal, config, cells) {
         : context.tournament
           ? "Tornei completati"
           : "Partite con vincitore",
-      tournamentMonteHands: grandTotal.tournamentMonteHands || 0,
-      avgTournamentMonteHands: grandTotal.done
-        ? (grandTotal.tournamentMonteHands || 0) / grandTotal.done
+      tournamentMonteGames: grandTotal.tournamentMonteGames || 0,
+      avgTournamentMonteGames: grandTotal.done
+        ? (grandTotal.tournamentMonteGames || 0) / grandTotal.done
         : 0,
       scenarioOutcome: scenarioOutcomeLabels(context),
       options: {
@@ -1803,7 +1803,7 @@ function formatAnalysisPlainText(snapshot) {
         : "Modalità: competitiva (vince chi finisce le carte).",
     `${analysis.summary.goalLabel}: ${analysis.summary.successPct.toFixed(1)}% · Stallo: ${analysis.summary.stallPct.toFixed(1)}%`,
     ...(analysis.summary.options.tournamentMode
-      ? [`Mani a monte (totale): ${analysis.summary.tournamentMonteHands} (media ${analysis.summary.avgTournamentMonteHands.toFixed(2)} per torneo)`]
+      ? [`Partite a monte (totale): ${analysis.summary.tournamentMonteGames} (media ${analysis.summary.avgTournamentMonteGames.toFixed(2)} per torneo)`]
       : []),
     ...(analysis.tournamentStandings && !analysis.tournamentStandings.skipped
       ? [
@@ -2428,7 +2428,7 @@ function workerSource() {
         gamesWithFiveCardTurn: 0,
         fiveCardTurns: 0,
         ideaOffers: 0,
-        tournamentMonteHands: 0,
+        tournamentMonteGames: 0,
         gamesAllPlayersPlaced: 0,
         playersPlacedSum: 0,
         gamesLastPlayerPlaced: 0,
@@ -2499,7 +2499,7 @@ function workerSource() {
         if (result.lastThreeAllPlaced) patch.gamesLastThreeAllPlaced++;
         accumulateParticipation(patch, result);
         if (result.tournamentMode) {
-          patch.tournamentMonteHands += result.tournamentMonteHands || 0;
+          patch.tournamentMonteGames += result.tournamentMonteGames || 0;
           if (result.tournamentComplete && result.winner !== null && result.winner !== undefined) {
             const strat = result.strategies[result.winner];
             patch.winsByPlayer[result.winner]++;

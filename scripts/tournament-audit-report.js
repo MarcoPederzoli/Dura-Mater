@@ -99,14 +99,14 @@ function analyze(cells) {
     gn: gnEnriched.map(c => ({
       key: c.key,
       players: c.players,
-      handsPerTournament: c.tournaments.avgHandsPerTournament,
-      monteRate: c.tournaments.monteHandRate,
-      finishedRate: c.tournaments.finishedHandRate,
-      avgTurnsPerHand: c.tournaments.avgTurnsPerHand,
+      gamesPerTournament: c.tournaments.avgGamesPerTournament,
+      monteRate: c.tournaments.monteGameRate,
+      finishedRate: c.tournaments.finishedGameRate ?? c.tournaments.finishedHandRate,
+      avgTurnsPerGame: c.tournaments.avgTurnsPerGame ?? c.tournaments.avgTurnsPerHand,
       monteAvgCards: c.monte.avgHandCardsPerStillIn,
       monteMaxCards: c.monte.handCardsMax,
-      starterWonHandRate: c.hands.starterWonHandRate,
-      avgFirstStarterWinHand: c.hands.avgFirstStarterWinHandIndex,
+      starterWonGameRate: (c.games || c.hands).starterWonGameRate,
+      avgFirstStarterWinGame: (c.games || c.hands).avgFirstStarterWinGameIndex,
       equity: c.equity,
       seats: c.seats.map(s => ({
         label: s.label,
@@ -120,12 +120,12 @@ function analyze(cells) {
         .slice()
         .sort((a, b) => b.equity.chi2 - a.equity.chi2)
         .slice(0, 3),
-      gnLeastMonte: gnEnriched.slice().sort((a, b) => a.tournaments.monteHandRate - b.tournaments.monteHandRate),
+      gnLeastMonte: gnEnriched.slice().sort((a, b) => a.tournaments.monteGameRate - b.tournaments.monteGameRate),
       worstEquityAll: enrich.slice().sort((a, b) => b.equity.spreadRatePct - a.equity.spreadRatePct).slice(0, 8),
       bestFinishedUnder: enrich
         .filter(c => c.kind === "under")
         .slice()
-        .sort((a, b) => b.tournaments.finishedHandRate - a.tournaments.finishedHandRate)
+        .sort((a, b) => (b.tournaments.finishedGameRate ?? b.tournaments.finishedHandRate) - (a.tournaments.finishedGameRate ?? a.tournaments.finishedHandRate))
         .slice(0, 5),
       highestMonteCards: enrich
         .slice()
@@ -140,15 +140,15 @@ function analyze(cells) {
     report.kindSummary[kind] = {
       count: list.length,
       completionRate: 1,
-      avgHandsPerTournament: avgOf(list, c => c.tournaments.avgHandsPerTournament),
-      avgMonteHandRate: avgOf(list, c => c.tournaments.monteHandRate),
-      avgFinishedHandRate: avgOf(list, c => c.tournaments.finishedHandRate),
-      avgTurnsPerHand: avgOf(list, c => c.tournaments.avgTurnsPerHand),
+      avgGamesPerTournament: avgOf(list, c => c.tournaments.avgGamesPerTournament),
+      avgMonteGameRate: avgOf(list, c => c.tournaments.monteGameRate),
+      avgFinishedGameRate: avgOf(list, c => c.tournaments.finishedGameRate ?? c.tournaments.finishedHandRate),
+      avgTurnsPerGame: avgOf(list, c => c.tournaments.avgTurnsPerGame ?? c.tournaments.avgTurnsPerHand),
       avgMonteCardsInHand: avgOf(list, c => c.monte.avgHandCardsPerStillIn),
       avgSeatWinSpreadPct: avgOf(enriched, c => c.equity.spreadRatePct),
       avgScoreSpread: avgOf(enriched, c => c.equity.scoreSpread),
       biasedSeatCount: enriched.filter(c => c.equity.biased).length,
-      avgStarterWonHandRate: avgOf(list, c => c.hands.starterWonHandRate)
+      avgStarterWonGameRate: avgOf(list, c => (c.games || c.hands).starterWonGameRate)
     };
   }
 
@@ -166,18 +166,18 @@ function printReport(report) {
   L("--- Per tipologia ---");
   for (const [kind, s] of Object.entries(report.kindSummary)) {
     L(`${kind}: ${s.count} formati`);
-    L(`  Mani/torneo (media): ${fmtNum(s.avgHandsPerTournament)} · Monte: ${fmtPct(s.avgMonteHandRate)} · Finite: ${fmtPct(s.avgFinishedHandRate)}`);
-    L(`  Turni/mano: ${fmtNum(s.avgTurnsPerHand)} · Carte in mano al monte (media): ${fmtNum(s.avgMonteCardsInHand)}`);
+    L(`  Partite/torneo (media): ${fmtNum(s.avgGamesPerTournament)} · Monte: ${fmtPct(s.avgMonteGameRate)} · Finite: ${fmtPct(s.avgFinishedGameRate)}`);
+    L(`  Turni/partita: ${fmtNum(s.avgTurnsPerGame)} · Carte in mano al monte (media): ${fmtNum(s.avgMonteCardsInHand)}`);
     L(`  Equità sedi: spread vittorie medio ${fmtNum(s.avgSeatWinSpreadPct, 1)} pp · spread punteggio ${fmtNum(s.avgScoreSpread, 1)} pt`);
     L(`  Formati con chi2 significativo (bias sede p<0.05): ${s.biasedSeatCount}/${s.count}`);
-    L(`  Starter vince mano: ${fmtPct(s.avgStarterWonHandRate)}`);
+    L(`  Starter vince partita: ${fmtPct(s.avgStarterWonGameRate)}`);
     L("");
   }
 
   L("--- G=N (formati raccomandati) — dettaglio ---");
   for (const c of report.gn) {
     const e = c.equity;
-    L(`${c.key}: mani ${fmtNum(c.handsPerTournament)} · monte ${fmtPct(c.monteRate)} · carte al monte ${fmtNum(c.monteAvgCards)} (max ${c.monteMaxCards})`);
+    L(`${c.key}: partite ${fmtNum(c.gamesPerTournament)} · monte ${fmtPct(c.monteRate)} · carte al monte ${fmtNum(c.monteAvgCards)} (max ${c.monteMaxCards})`);
     L(`  Equità: spread vittorie ${fmtNum(e.spreadRatePct, 1)} pp · chi2=${fmtNum(e.chi2, 2)} (soglia ${fmtNum(e.critical05, 2)}) ${e.biased ? "[!] BIAS" : "ok"}`);
     L(`  Sedi: ${c.seats.map(s => `${s.label} ${fmtPct(s.winRate, 0)} vittorie, score ${fmtNum(s.avgScore, 1)}`).join(" · ")}`);
   }
@@ -185,13 +185,13 @@ function printReport(report) {
 
   L("--- Formati meno «equilibrati» (spread vittorie sedi) ---");
   for (const c of report.outliers.worstEquityAll) {
-    L(`${c.key} [${c.kind}]: spread ${fmtNum(c.equity.spreadRatePct, 1)} pp · chi2=${fmtNum(c.equity.chi2, 1)} ${c.equity.biased ? "BIAS" : ""} · monte ${fmtPct(c.tournaments.monteHandRate)}`);
+    L(`${c.key} [${c.kind}]: spread ${fmtNum(c.equity.spreadRatePct, 1)} pp · chi2=${fmtNum(c.equity.chi2, 1)} ${c.equity.biased ? "BIAS" : ""} · monte ${fmtPct(c.tournaments.monteGameRate)}`);
   }
   L("");
 
-  L("--- Under con più mani finite (non monte) ---");
+  L("--- Under con più partite finite (non monte) ---");
   for (const c of report.outliers.bestFinishedUnder) {
-    L(`${c.key}: finite ${fmtPct(c.tournaments.finishedHandRate)} · monte ${fmtPct(c.tournaments.monteHandRate)} · equità spread ${fmtNum(c.equity.spreadRatePct, 1)} pp`);
+    L(`${c.key}: finite ${fmtPct(c.tournaments.finishedGameRate ?? c.tournaments.finishedHandRate)} · monte ${fmtPct(c.tournaments.monteGameRate)} · equità spread ${fmtNum(c.equity.spreadRatePct, 1)} pp`);
   }
 
   return lines.join("\n");
@@ -213,8 +213,8 @@ function verdict(report) {
   } else {
     points.push(`Equità sedi G=N: ${gnBiased}/6 formati con chi2 significativo — da verificare.`);
   }
-  if (gn.avgMonteHandRate > 0.9) {
-    points.push(`Gameplay G=N: ${(100 * gn.avgMonteHandRate).toFixed(0)}% mani a monte in media — le mani finiscono raramente «pulite», ma il punteggio/arrivo regolano l'esito.`);
+  if (gn.avgMonteGameRate > 0.9) {
+    points.push(`Gameplay G=N: ${(100 * gn.avgMonteGameRate).toFixed(0)}% partite a monte in media — le partite finiscono raramente «pulite», ma il punteggio/arrivo regolano l'esito.`);
   }
   if (gn.avgMonteCardsInHand < 6) {
     points.push(`Penalità monte G=N: media ${gn.avgMonteCardsInHand.toFixed(1)} carte in mano — penalità contenuta.`);

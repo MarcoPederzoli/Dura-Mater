@@ -17,6 +17,7 @@ const base = {
   players: G,
   strategies: Array.from({ length: G }, () => strategy),
   durissimaMater: true,
+  durissimaPursueIdea: true,
   randomizeTurnOrder: true
 };
 

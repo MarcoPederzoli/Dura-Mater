@@ -2,8 +2,8 @@
 
 /** Etichetta build UI — se non la vedi in fondo alla pagina, non stai aprendo questo file. */
 const DM_UI_BUILD = document.body.dataset.gameMode === "real"
-  ? "Gioco reale 2026-07-11"
-  : "Simulazione + Durissima 2026-07-11";
+  ? "Gioco reale 2026-07-23h"
+  : "Simulazione 2026-07-23h";
 
 const GAME_MODE = document.body.dataset.gameMode === "real" ? "real" : "simulation";
 
@@ -32,6 +32,8 @@ const CANONICAL_DECK_CODES = core.deckCodesText();
 const GAME_PREFS_STORAGE_KEY = document.body.dataset.prefsKey
   || (GAME_MODE === "real" ? "dura-mater-gioco-v1" : "dura-mater-game-v1");
 const SPEED_VALUES = new Set(["step", "5000", "1000", "500"]);
+
+/** Nomi base sedi 2–8 (dopo il giocatore 1 personalizzabile). Oltre l'ottavo: Nome2, Nome3, … */
 const OPPONENT_NAMES = Object.freeze([
   "Dotto",
   "Brontolo",
@@ -42,48 +44,91 @@ const OPPONENT_NAMES = Object.freeze([
   "Cucciolo"
 ]);
 
-const DEFAULT_VARIANT = document.body.dataset.defaultVariant === "durissima" ? "durissima" : "dura";
-const DEFAULT_DURISSIMA_SIZE = DEFAULT_VARIANT === "durissima" ? 4 : 5;
-const DEFAULT_DURISSIMA_PLAYERS = DEFAULT_VARIANT === "durissima" ? 4 : 3;
+/** competitive = Dura; coop / solo = Durissima (G>=2 / G=1). */
+const PLAY_MODES = Object.freeze({
+  COMPETITIVE: "competitive",
+  COOP: "coop",
+  SOLO: "solo"
+});
+
+function parsePlayMode(raw) {
+  if (raw === PLAY_MODES.COOP || raw === PLAY_MODES.SOLO || raw === PLAY_MODES.COMPETITIVE) return raw;
+  if (raw === "durissima" || raw === "collaborativo") return PLAY_MODES.COOP;
+  if (raw === "solitario" || raw === "solo") return PLAY_MODES.SOLO;
+  return PLAY_MODES.COMPETITIVE;
+}
+
+const DEFAULT_PLAY_MODE = parsePlayMode(
+  document.body.dataset.defaultPlayMode || document.body.dataset.defaultVariant
+);
+const DEFAULT_VARIANT = DEFAULT_PLAY_MODE === PLAY_MODES.COMPETITIVE ? "dura" : "durissima";
+const DEFAULT_SIZE = DEFAULT_PLAY_MODE === PLAY_MODES.COMPETITIVE ? 5 : 4;
+const DEFAULT_PLAYERS = DEFAULT_PLAY_MODE === PLAY_MODES.SOLO
+  ? 1
+  : DEFAULT_PLAY_MODE === PLAY_MODES.COOP
+    ? 4
+    : 3;
 
 const DEFAULT_GAME_PREFS = {
-  version: 2,
+  version: 3,
+  playMode: DEFAULT_PLAY_MODE,
   variant: DEFAULT_VARIANT,
-  players: DEFAULT_DURISSIMA_PLAYERS,
-  size: DEFAULT_DURISSIMA_SIZE,
+  players: DEFAULT_PLAYERS,
+  size: DEFAULT_SIZE,
   speed: "1000",
   seed: "",
-  playerOneName: "Giocatore 1",
+  playerOneName: "Biancaneve",
   tournamentMode: false,
   durissimaVitaExtra: false,
   durissimaCoordinator: true,
-  modes: DEFAULT_VARIANT === "durissima"
-    ? Array.from({ length: MPCardsCore.MAX_PLAYERS }, () => "bot")
-    : ["manual", ...Array.from({ length: MPCardsCore.MAX_PLAYERS - 1 }, () => "bot")],
-  strategies: Array.from({ length: MPCardsCore.MAX_PLAYERS }, (_, index) => (
-    index === 0 && DEFAULT_VARIANT !== "durissima" ? "auto" : defaultBotStrategySetting(DEFAULT_VARIANT)
-  ))
+  modes: Array.from({ length: MPCardsCore.MAX_PLAYERS }, (_, index) =>
+    index === 0 &&
+    (DEFAULT_PLAY_MODE === PLAY_MODES.COMPETITIVE || DEFAULT_PLAY_MODE === PLAY_MODES.SOLO)
+      ? "manual"
+      : "bot"
+  ),
+  strategies: Array.from({ length: MPCardsCore.MAX_PLAYERS }, (_, index) =>
+    index === 0 &&
+    (DEFAULT_PLAY_MODE === PLAY_MODES.COMPETITIVE || DEFAULT_PLAY_MODE === PLAY_MODES.SOLO)
+      ? "auto"
+      : defaultBotStrategySetting(DEFAULT_VARIANT)
+  )
 };
 
-function isDurissimaVariantSelected() {
-  return els.gameVariant?.value === "durissima";
+function getPlayMode() {
+  const activeTab = document.querySelector("#play-mode-tabs [data-play-mode][aria-selected='true']");
+  if (activeTab?.dataset?.playMode) return parsePlayMode(activeTab.dataset.playMode);
+  if (els.playMode?.value) return parsePlayMode(els.playMode.value);
+  if (els.gameVariant?.value === "durissima") {
+    const players = Number(els.players?.value) || 2;
+    return players === 1 ? PLAY_MODES.SOLO : PLAY_MODES.COOP;
+  }
+  return PLAY_MODES.COMPETITIVE;
 }
 
-/** Solitario Durissima (G=1): opzione carte extra / vita (non usate in coop). */
+function isDurissimaVariantSelected() {
+  const mode = getPlayMode();
+  return mode === PLAY_MODES.COOP || mode === PLAY_MODES.SOLO;
+}
+
+/** Solitario Durissima (G=1). */
 function isDurissimaSoloRule(players, variant) {
-  return variant === "durissima" && players === 1;
+  return (variant === "durissima" || getPlayMode() === PLAY_MODES.SOLO) && players === 1;
 }
 
 function defaultBotStrategySetting(variant = DEFAULT_VARIANT) {
-  return variant === "durissima" ? "durissima-global-planner" : "auto";
+  return variant === "durissima" || isDurissimaVariantSelected()
+    ? "durissima-global-planner"
+    : "auto";
 }
 
 function resolveStrategySettings(settings, players, variant) {
-  const forceCoordinator = variant === "durissima" && isCoordinatorBotEnabled();
+  const forceCoordinator = (variant === "durissima" || isDurissimaVariantSelected())
+    && isCoordinatorBotEnabled();
   return Array.from({ length: players }, (_, index) => {
     if (forceCoordinator) return "durissima-global-planner";
     const value = settings[index] || defaultBotStrategySetting(variant);
-    if (value === "auto" && variant === "durissima") {
+    if (value === "auto" && (variant === "durissima" || isDurissimaVariantSelected())) {
       return "durissima-global-planner";
     }
     return value;
@@ -100,10 +145,17 @@ function playerOneNameValue() {
   return readPlayerOneName();
 }
 
+/**
+ * Sede 0 = nome personalizzabile.
+ * Sedi 1–7 = Dotto…Cucciolo (fino all'ottavo giocatore incluso).
+ * Oltre l'ottavo: stessa serie con suffisso 2, 3, … (es. Eolo2).
+ */
 function playerLabel(playerIndex) {
   if (playerIndex === 0) return playerOneNameValue();
-  if (playerIndex >= 8) return `G${playerIndex + 1}`;
-  return OPPONENT_NAMES[playerIndex - 1] || `G${playerIndex + 1}`;
+  const k = playerIndex - 1;
+  const wave = Math.floor(k / OPPONENT_NAMES.length);
+  const name = OPPONENT_NAMES[k % OPPONENT_NAMES.length];
+  return wave === 0 ? name : `${name}${wave + 1}`;
 }
 
 function playerShortLabel(playerIndex) {
@@ -114,32 +166,73 @@ function isRealGame() {
   return GAME_MODE === "real";
 }
 
+function isSeatManual(playerIndex) {
+  return Boolean(game && game.modes[playerIndex] === "manual");
+}
+
+function isCompetitiveGameState(state = game?.state) {
+  if (!state) return getPlayMode() === PLAY_MODES.COMPETITIVE;
+  return !core.isDurissimaMater(state);
+}
+
+/** Collaborativo (Durissima G>=2): carte scoperte — tutte le mani visibili. */
+function isCollaborativeOpenHands(state = game?.state) {
+  return Boolean(state && core.isDurissimaMater(state) && state.players > 1);
+}
+
+/**
+ * In competitivo: si vedono solo le carte della sede manuale di turno (hot-seat).
+ * Bot e avversari competitivi: mai a faccia in su.
+ * Solitario Durissima: si puo' vedere la mano.
+ * Collaborativo: tutte le mani scoperte (miniature a destra).
+ */
+function shouldRevealOpenHand(playerIndex) {
+  if (!game) return false;
+  const state = game.state;
+  if (playerIndex == null || playerIndex < 0) return false;
+  if (isCollaborativeOpenHands(state)) return true;
+  if (!isSeatManual(playerIndex)) return false;
+  if (state.players === 1) return true;
+  // Competitivo multi: solo la sede di turno manuale
+  return state.currentPlayer === playerIndex;
+}
+
+function shouldShowOpenHandPanel() {
+  if (!game) return false;
+  const state = game.state;
+  if (state.status !== "playing" && state.status !== "success" && state.status !== "stalled") {
+    return false;
+  }
+  // Solitario: sempre
+  if (state.players === 1) return true;
+  // Collaborativo: le mani sono nelle miniature a destra; pannello grande solo se turno manuale
+  if (isCollaborativeOpenHands(state)) {
+    return state.status === "playing" && isSeatManual(state.currentPlayer);
+  }
+  if (state.status !== "playing") return false;
+  // Competitivo: solo turno manuale
+  return isSeatManual(state.currentPlayer);
+}
+
 function handViewPlayer() {
   if (!game) return 0;
   const state = game.state;
-  if (!isRealGame()) return state.currentPlayer;
-  if (game.modes[state.currentPlayer] === "manual") return state.currentPlayer;
-  const firstManual = game.modes.indexOf("manual");
+  // Competitivo / multi: sede di turno se manuale, altrimenti prima sede manuale
+  if (isSeatManual(state.currentPlayer)) return state.currentPlayer;
+  const firstManual = (game.modes || []).indexOf("manual");
   return firstManual >= 0 ? firstManual : state.currentPlayer;
 }
 
 function isHumanPlayerTurn() {
-  if (!game || !isRealGame() || game.state.status !== "playing") return false;
-  return game.modes[game.state.currentPlayer] === "manual";
+  if (!game || game.state.status !== "playing") return false;
+  // In simulazione "reale" e non: turno umano = sede corrente impostata a Manuale
+  return isSeatManual(game.state.currentPlayer);
 }
 
 function activeHandStatusElement() {
-  if (isRealGame() && isHumanPlayerTurn() && els.sidebarHandStatus) return els.sidebarHandStatus;
-  return els.handDockStatus;
-}
-
-function isHumanPlayerTurn() {
-  if (!game || !isRealGame() || game.state.status !== "playing") return false;
-  return game.modes[game.state.currentPlayer] === "manual";
-}
-
-function activeHandStatusElement() {
-  if (isRealGame() && isHumanPlayerTurn() && els.sidebarHandStatus) return els.sidebarHandStatus;
+  if (isRealGame() && shouldShowOpenHandPanel() && els.sidebarHandStatus) {
+    return els.sidebarHandStatus;
+  }
   return els.handDockStatus;
 }
 
@@ -157,18 +250,24 @@ const els = {
   seed: document.querySelector("#seed"),
   tournamentMode: document.querySelector("#tournament-mode"),
   gameVariant: document.querySelector("#game-variant"),
+  playMode: document.querySelector("#play-mode"),
+  playModeTabs: document.querySelector("#play-mode-tabs"),
+  modeHint: document.querySelector("#mode-hint"),
   durissimaOptions: document.querySelector("#durissima-options"),
+  soloOptions: document.querySelector("#solo-options"),
   durissimaVitaExtra: document.querySelector("#durissima-vita-extra"),
   durissimaSoloReserveNote: document.querySelector("#durissima-solo-reserve"),
   durissimaExtraCards: document.querySelector("#durissima-extra-cards"),
   durissimaExtraCardsLabel: document.querySelector("#durissima-extra-cards-label"),
+  durissimaEasyMode: document.querySelector("#durissima-easy-mode"),
   durissimaCoordinator: document.querySelector("#durissima-coordinator"),
   playerOneName: document.querySelector("#player-one-name"),
+  playerConfigHint: document.querySelector("#player-config-hint"),
+  endgameBanner: document.querySelector("#endgame-banner"),
   setupSection: document.querySelector("#setup-section"),
   newGame: document.querySelector("#new-game"),
   newGamePlay: document.querySelector("#new-game-play"),
   resetPrefs: document.querySelector("#reset-prefs"),
-  loadGameSetup: document.querySelector("#load-game-setup"),
   playerConfig: document.querySelector("#player-config"),
   gameShell: document.querySelector("#game-shell"),
   activePlayer: document.querySelector("#active-player"),
@@ -211,9 +310,6 @@ const els = {
   botStep: document.querySelector("#bot-step"),
   undo: document.querySelector("#undo"),
   redo: document.querySelector("#redo"),
-  saveGame: document.querySelector("#save-game"),
-  loadGame: document.querySelector("#load-game"),
-  loadGameFile: document.querySelector("#load-game-file"),
   strategyHintsPanel: document.querySelector("#strategy-hints-panel"),
   strategyHintsIntro: document.querySelector("#strategy-hints-intro"),
   strategyAssignments: document.querySelector("#strategy-assignments"),
@@ -302,37 +398,45 @@ function strategyOptions() {
   return core.STRATEGIES.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
 }
 
-function playerCountBounds(size, variant = isDurissimaVariantSelected() ? "durissima" : "dura") {
+function playerCountBounds(size, playMode = getPlayMode()) {
   const grid = clampNumber(size, 3, 8, DEFAULT_GAME_PREFS.size);
-  const min = variant === "durissima"
-    ? core.durissimaMinPlayers()
-    : Math.max(2, core.recommendedMinPlayers(grid));
+  if (playMode === PLAY_MODES.SOLO) {
+    return { min: 1, max: 1 };
+  }
+  if (playMode === PLAY_MODES.COOP) {
+    return { min: 2, max: core.maxPlayersForSize(grid) };
+  }
+  // competitive
   return {
-    min,
+    min: Math.max(2, core.recommendedMinPlayers(grid)),
     max: core.maxPlayersForSize(grid)
   };
 }
 
-function clampPlayersToGrid(players, size, variant = isDurissimaVariantSelected() ? "durissima" : "dura") {
-  const { min, max } = playerCountBounds(size, variant);
+function clampPlayersToGrid(players, size, playMode = getPlayMode()) {
+  const { min, max } = playerCountBounds(size, playMode);
   return clampNumber(players, min, max, min);
 }
 
-function playersRangeHintText(size, variant = isDurissimaVariantSelected() ? "durissima" : "dura") {
+function playersRangeHintText(size, playMode = getPlayMode()) {
   const grid = clampNumber(size, 3, 8, DEFAULT_GAME_PREFS.size);
-  const { min, max } = playerCountBounds(grid, variant);
-  if (variant === "durissima") {
-    return `Durissima: G da ${min} a ${max} (2N) · solitario G=1 · bot consigliato TG`;
+  const { min, max } = playerCountBounds(grid, playMode);
+  if (playMode === PLAY_MODES.SOLO) {
+    return "Solitario: 1 giocatore · mano N (easy mode opzionale: carte extra) · refill sempre";
+  }
+  if (playMode === PLAY_MODES.COOP) {
+    return `Collaborativo: G da ${min} a ${max} (max 2N) · refill se posate · coordinatore bot opzionale`;
   }
   const rule =
     grid === 7
       ? "minimo 3 su 7x7 (eccezione a ceil(N/2))"
-      : `minimo ceil(N/2) = ${min}`;
-  return `${rule} · massimo 2N = ${max} · Dura: minimo 2 giocatori (no solitario)`;
+      : `minimo consigliato ${min}`;
+  return `Competitivo: ${rule} · massimo 2N = ${max} · torneo a punteggio opzionale`;
 }
 
+/** In collaborativo/solitario il bot usa sempre il coordinatore (non e' scelta del giocatore). */
 function isCoordinatorBotEnabled() {
-  return isDurissimaVariantSelected() && els.durissimaCoordinator?.checked !== false;
+  return isDurissimaVariantSelected();
 }
 
 function coordinatorBundleReady() {
@@ -341,30 +445,118 @@ function coordinatorBundleReady() {
     && !!globalThis.DurissimaGnDecoupledOracle;
 }
 
-function syncVariantUi() {
-  const durissima = isDurissimaVariantSelected();
-  const coordinator = isCoordinatorBotEnabled();
-  if (els.durissimaOptions) els.durissimaOptions.hidden = !durissima;
-  if (els.tournamentMode) {
-    const tournamentWrap = els.tournamentMode.closest("label");
-    if (tournamentWrap) tournamentWrap.hidden = durissima;
-    if (durissima) els.tournamentMode.checked = false;
+function syncPlayModeTabs(mode = getPlayMode()) {
+  const tabs = document.querySelectorAll("[data-play-mode]");
+  tabs.forEach(tab => {
+    const selected = tab.dataset.playMode === mode;
+    tab.setAttribute("aria-selected", selected ? "true" : "false");
+    tab.classList.toggle("is-active", selected);
+  });
+  if (els.playMode) els.playMode.value = mode;
+  if (els.gameVariant) {
+    els.gameVariant.value = mode === PLAY_MODES.COMPETITIVE ? "dura" : "durissima";
   }
-  const players = clampPlayersToGrid(els.players?.value || DEFAULT_GAME_PREFS.players, clampNumber(els.size?.value || DEFAULT_GAME_PREFS.size, 3, 8, 5));
-  const solo = durissima && players === 1;
-  const soloCoordinator = coordinator && solo;
-  if (els.durissimaVitaExtra) {
-    els.durissimaVitaExtra.disabled = coordinator && !soloCoordinator;
-    if (coordinator && !soloCoordinator) els.durissimaVitaExtra.checked = false;
-    if (els.durissimaVitaExtra.closest("label")) {
-      els.durissimaVitaExtra.closest("label").hidden = !solo;
+}
+
+function applyPlayMode(mode, options = {}) {
+  const next = parsePlayMode(mode);
+  if (els.playMode) els.playMode.value = next;
+  if (els.gameVariant) {
+    els.gameVariant.value = next === PLAY_MODES.COMPETITIVE ? "dura" : "durissima";
+  }
+  syncPlayModeTabs(next);
+  if (next === PLAY_MODES.SOLO && els.players) {
+    els.players.value = "1";
+  } else if (next !== PLAY_MODES.SOLO && els.players) {
+    const n = Number(els.players.value);
+    if (!Number.isFinite(n) || n < 2) {
+      els.players.value = String(next === PLAY_MODES.COOP ? 4 : 3);
     }
+  }
+  // Non chiamare getPlayMode() finche' i tab non sono sincronizzati
+  syncVariantUi(next);
+  syncPlayersInputBounds({ renderConfig: options.renderConfig !== false });
+  updateFormatTierHint();
+  if (els.status && !game) {
+    const labels = {
+      [PLAY_MODES.COMPETITIVE]: "Sezione Competitivo.",
+      [PLAY_MODES.COOP]: "Sezione Collaborativo.",
+      [PLAY_MODES.SOLO]: "Sezione Solitario."
+    };
+    setStatus(labels[next] || "Configura e avvia una partita.", "");
+  }
+  if (options.save !== false) scheduleSaveGamePrefs();
+}
+
+function syncVariantUi(forcedMode) {
+  const mode = forcedMode ? parsePlayMode(forcedMode) : getPlayMode();
+  const durissima = mode === PLAY_MODES.COOP || mode === PLAY_MODES.SOLO;
+  const solo = mode === PLAY_MODES.SOLO;
+  const competitive = mode === PLAY_MODES.COMPETITIVE;
+
+  syncPlayModeTabs(mode);
+
+  // Opzioni solo solitario (easy mode / carte extra)
+  if (els.soloOptions) {
+    els.soloOptions.hidden = !solo;
+  } else if (els.durissimaOptions) {
+    // fallback: blocco legacy
+    els.durissimaOptions.hidden = !solo;
   }
   if (els.durissimaSoloReserveNote) {
     els.durissimaSoloReserveNote.hidden = !solo;
   }
   if (els.durissimaExtraCardsLabel) {
     els.durissimaExtraCardsLabel.hidden = !solo;
+  }
+  // Coordinatore: non selezionabile dal giocatore (sempre on in Durissima lato bot)
+  if (els.durissimaCoordinator) {
+    els.durissimaCoordinator.checked = true;
+    const coordLabel = els.durissimaCoordinator.closest("label");
+    if (coordLabel) coordLabel.hidden = true;
+  }
+  // Torneo: SOLO competitivo (display:none perché label.option-check ha display:flex che vince su [hidden])
+  const tournamentWrap =
+    document.getElementById("tournament-mode-label") ||
+    (els.tournamentMode && (els.tournamentMode.closest("label") || els.tournamentMode.parentElement));
+  if (tournamentWrap) {
+    tournamentWrap.hidden = !competitive;
+    tournamentWrap.style.display = competitive ? "" : "none";
+  }
+  if (els.tournamentMode && !competitive) {
+    els.tournamentMode.checked = false;
+  }
+  if (els.players) {
+    els.players.disabled = solo;
+    const playersLabel = els.players.closest("label");
+    if (playersLabel) playersLabel.hidden = solo;
+  }
+  // Solitario: nome + Manuale/Computer (G=1 fisso, niente lista multi)
+  if (els.playerOneName) {
+    const nameLabel = els.playerOneName.closest("label");
+    if (nameLabel) nameLabel.hidden = false;
+  }
+  if (els.playerConfig) {
+    els.playerConfig.hidden = false;
+  }
+  if (els.playerConfigHint) {
+    els.playerConfigHint.hidden = solo;
+  }
+  if (els.durissimaVitaExtra?.closest("label")) {
+    els.durissimaVitaExtra.closest("label").hidden = true;
+    els.durissimaVitaExtra.checked = false;
+  }
+  if (els.modeHint) {
+    if (competitive) {
+      els.modeHint.textContent =
+        "Competitivo (Dura Mater): vince chi svuota per primo la mano. Torneo a punteggio opzionale.";
+    } else if (mode === PLAY_MODES.COOP) {
+      els.modeHint.textContent =
+        "Collaborativo (Durissima): obiettivo griglia piena. Refill se posate. Bot in modalita' coordinata.";
+    } else {
+      els.modeHint.textContent =
+        "Solitario (Durissima): griglia piena. Mano N o easy mode (carte extra). Refill se posate.";
+    }
   }
 }
 
@@ -378,8 +570,9 @@ function syncPlayersInputBounds(options = {}) {
   const current = clampPlayersToGrid(els.players.value, size);
   if (String(current) !== els.players.value) {
     els.players.value = String(current);
-    if (options.renderConfig) renderPlayerConfig();
   }
+  // Sempre ricostruire le righe giocatori quando richiesto (prima solo se clamp cambiava il valore)
+  if (options.renderConfig) renderPlayerConfig();
   if (els.playersRangeHint) {
     els.playersRangeHint.textContent = playersRangeHintText(size);
   }
@@ -388,53 +581,67 @@ function syncPlayersInputBounds(options = {}) {
 
 function normalizeGamePrefs(prefs) {
   const normalized = { ...DEFAULT_GAME_PREFS, ...prefs };
+  // Migrazione v2: solo variant dura/durissima → playMode
+  if (!prefs?.playMode && prefs?.variant) {
+    if (prefs.variant === "durissima") {
+      normalized.playMode = Number(prefs.players) === 1 ? PLAY_MODES.SOLO : PLAY_MODES.COOP;
+    } else {
+      normalized.playMode = PLAY_MODES.COMPETITIVE;
+    }
+  }
+  normalized.playMode = parsePlayMode(normalized.playMode);
+  normalized.variant = normalized.playMode === PLAY_MODES.COMPETITIVE ? "dura" : "durissima";
   normalized.size = clampNumber(normalized.size, 3, 8, DEFAULT_GAME_PREFS.size);
-  normalized.players = clampPlayersToGrid(normalized.players, normalized.size, normalized.variant);
+  if (normalized.playMode === PLAY_MODES.SOLO) normalized.players = 1;
+  normalized.players = clampPlayersToGrid(normalized.players, normalized.size, normalized.playMode);
   normalized.speed = SPEED_VALUES.has(normalized.speed) ? normalized.speed : DEFAULT_GAME_PREFS.speed;
   normalized.seed = typeof normalized.seed === "string" ? normalized.seed : DEFAULT_GAME_PREFS.seed;
-  normalized.variant = normalized.variant === "durissima" ? "durissima" : "dura";
-  normalized.tournamentMode = normalized.variant === "durissima" ? false : normalized.tournamentMode === true;
-  normalized.durissimaVitaExtra = normalized.durissimaVitaExtra === true;
-  normalized.durissimaCoordinator = normalized.durissimaCoordinator !== false;
-  if (normalized.durissimaCoordinator && normalized.players > 1) {
-    normalized.durissimaVitaExtra = false;
-  }
+  normalized.tournamentMode =
+    normalized.playMode === PLAY_MODES.COMPETITIVE && normalized.tournamentMode === true;
+  normalized.durissimaVitaExtra = false;
+  // Coordinatore sempre attivo in Durissima (non e' preferenza UI)
+  normalized.durissimaCoordinator = normalized.variant === "durissima";
   normalized.playerOneName = typeof normalized.playerOneName === "string"
     ? normalized.playerOneName.trim().slice(0, 32)
     : DEFAULT_GAME_PREFS.playerOneName;
   if (!normalized.playerOneName) normalized.playerOneName = DEFAULT_GAME_PREFS.playerOneName;
   const validModes = new Set(["manual", "bot"]);
   const validStrategy = new Set(core.STRATEGY_KEYS.concat(["auto"]));
+  const defaultMode0 =
+    normalized.playMode === PLAY_MODES.COMPETITIVE || normalized.playMode === PLAY_MODES.SOLO
+      ? "manual"
+      : "bot";
   normalized.modes = Array.from({ length: MPCardsCore.MAX_PLAYERS }, (_, index) => {
     const value = normalized.modes?.[index];
     if (validModes.has(value)) return value;
-    return index === 0 ? "manual" : "bot";
+    return index === 0 ? defaultMode0 : "bot";
   });
   normalized.strategies = Array.from({ length: MPCardsCore.MAX_PLAYERS }, (_, index) => {
     const value = normalized.strategies?.[index];
-    return validStrategy.has(value) ? value : "auto";
+    return validStrategy.has(value) ? value : defaultBotStrategySetting(normalized.variant);
   });
   return normalized;
 }
 
 function collectGamePrefs() {
   const size = clampNumber(els.size.value, 3, 8, DEFAULT_GAME_PREFS.size);
-  const variant = isDurissimaVariantSelected() ? "durissima" : "dura";
-  const players = clampPlayersToGrid(els.players.value, size, variant);
+  const playMode = getPlayMode();
+  const players = clampPlayersToGrid(els.players.value, size, playMode);
   const config = readPlayersConfig(players);
   return normalizeGamePrefs({
-    version: 1,
+    version: 3,
+    playMode,
     players,
     size,
     speed: els.speed.value,
     seed: els.seed.value,
     playerOneName: readPlayerOneName(),
-    variant: isDurissimaVariantSelected() ? "durissima" : "dura",
+    variant: playMode === PLAY_MODES.COMPETITIVE ? "dura" : "durissima",
     tournamentMode: Boolean(els.tournamentMode?.checked),
-    durissimaVitaExtra: Boolean(els.durissimaVitaExtra?.checked),
+    durissimaVitaExtra: false,
     durissimaCoordinator: isCoordinatorBotEnabled(),
-    modes: config.modes.concat(DEFAULT_GAME_PREFS.modes).slice(0, 8),
-    strategies: config.strategies.concat(DEFAULT_GAME_PREFS.strategies).slice(0, 8)
+    modes: config.modes.concat(DEFAULT_GAME_PREFS.modes).slice(0, MPCardsCore.MAX_PLAYERS),
+    strategies: config.strategies.concat(DEFAULT_GAME_PREFS.strategies).slice(0, MPCardsCore.MAX_PLAYERS)
   });
 }
 
@@ -442,22 +649,25 @@ function applyGamePrefs(prefs) {
   const normalized = normalizeGamePrefs(prefs);
   els.size.value = String(normalized.size);
   els.players.value = String(normalized.players);
-  syncPlayersInputBounds();
   els.speed.value = normalized.speed;
   els.speedLive.value = normalized.speed;
   els.seed.value = normalized.seed;
   if (els.playerOneName) els.playerOneName.value = normalized.playerOneName;
+  if (els.playMode) els.playMode.value = normalized.playMode;
   if (els.gameVariant) els.gameVariant.value = normalized.variant;
-  if (els.durissimaVitaExtra) els.durissimaVitaExtra.checked = normalized.durissimaVitaExtra;
-  if (els.durissimaCoordinator) els.durissimaCoordinator.checked = normalized.durissimaCoordinator;
+  if (els.durissimaVitaExtra) els.durissimaVitaExtra.checked = false;
+  if (els.durissimaCoordinator) els.durissimaCoordinator.checked = true;
   if (els.tournamentMode) els.tournamentMode.checked = normalized.tournamentMode;
-  syncVariantUi();
+  syncPlayModeTabs(normalized.playMode);
+  syncVariantUi(normalized.playMode);
+  syncPlayersInputBounds();
   loadedPlayerPrefs = {
     modes: normalized.modes,
     strategies: normalized.strategies
   };
   renderPlayerConfig();
   loadedPlayerPrefs = null;
+  updateFormatTierHint();
   return normalized;
 }
 
@@ -533,7 +743,14 @@ function onPlayerConfigChange() {
 }
 
 function renderPlayerConfig() {
-  const players = clampNumber(els.players.value, 1, MPCardsCore.MAX_PLAYERS, 3);
+  if (!els.playerConfig) return;
+  const playMode = getPlayMode();
+  els.playerConfig.hidden = false;
+  // Solitario: sempre 1 sola riga (nome + manuale/computer)
+  const players =
+    playMode === PLAY_MODES.SOLO
+      ? 1
+      : clampNumber(els.players.value, 1, MPCardsCore.MAX_PLAYERS, 3);
   const previousModes = loadedPlayerPrefs?.modes
     || Array.from(document.querySelectorAll(".player-mode")).map(item => item.value);
   const previousStrategies = loadedPlayerPrefs?.strategies
@@ -542,29 +759,77 @@ function renderPlayerConfig() {
   for (let player = 0; player < players; player++) {
     const row = document.createElement("div");
     row.className = "player-row";
+    const defaultMode = defaultModeForSeat(player, playMode);
+    const defaultStrategy = defaultBotStrategySetting(
+      playMode === PLAY_MODES.COMPETITIVE ? "dura" : "durissima"
+    );
+    const seatName =
+      player === 0
+        ? (playMode === PLAY_MODES.SOLO ? "Tu" : playerLabel(player))
+        : playerLabel(player);
     row.innerHTML = `
-      <strong>${playerLabel(player)}<span class="hand-count"></span></strong>
+      <strong>${seatName}<span class="hand-count"></span></strong>
       <label>Controllo
-        <select class="player-mode">
+        <select class="player-mode" aria-label="Controllo ${seatName}">
           <option value="manual">Manuale</option>
           <option value="bot">Computer</option>
         </select>
       </label>
       <label>Strategia
-        <select class="player-strategy">${strategyOptions()}</select>
+        <select class="player-strategy" aria-label="Strategia ${seatName}">${strategyOptions()}</select>
       </label>
     `;
-    row.querySelector(".player-mode").value = previousModes[player] || (player === 0 ? "manual" : "bot");
-    row.querySelector(".player-strategy").value = previousStrategies[player] || "auto";
+    const modeSelect = row.querySelector(".player-mode");
+    const stratSelect = row.querySelector(".player-strategy");
+    const prevMode = previousModes[player];
+    modeSelect.value =
+      prevMode === "manual" || prevMode === "bot" ? prevMode : defaultMode;
+    stratSelect.value = previousStrategies[player] || defaultStrategy;
+    const syncStratEnabled = () => {
+      stratSelect.disabled = modeSelect.value === "manual";
+    };
+    modeSelect.addEventListener("change", syncStratEnabled);
+    syncStratEnabled();
     els.playerConfig.appendChild(row);
   }
   updatePlayerHandCounts();
 }
 
-function readPlayersConfig(players) {
-  const modes = Array.from(document.querySelectorAll(".player-mode")).slice(0, players).map(item => item.value);
-  const strategies = Array.from(document.querySelectorAll(".player-strategy")).slice(0, players).map(item => item.value);
+function defaultModeForSeat(index, playMode = getPlayMode()) {
+  // Competitivo e Solitario: sede 0 di default Manuale (puoi passare a Computer).
+  // Collaborativo: di default computer (coordinatore).
+  if (playMode === PLAY_MODES.COMPETITIVE || playMode === PLAY_MODES.SOLO) {
+    return index === 0 ? "manual" : "bot";
+  }
+  return "bot";
+}
+
+function padPlayersConfig(config, players, playMode = getPlayMode()) {
+  const modes = Array.from({ length: players }, (_, index) => {
+    const value = config.modes?.[index];
+    return value === "manual" || value === "bot" ? value : defaultModeForSeat(index, playMode);
+  });
+  const strategies = Array.from({ length: players }, (_, index) => {
+    const value = config.strategies?.[index];
+    return value || defaultBotStrategySetting(
+      playMode === PLAY_MODES.COMPETITIVE ? "dura" : "durissima"
+    );
+  });
   return { modes, strategies };
+}
+
+function readPlayersConfig(players) {
+  const rawModes = Array.from(document.querySelectorAll(".player-mode"))
+    .slice(0, players)
+    .map(item => item.value);
+  const rawStrategies = Array.from(document.querySelectorAll(".player-strategy"))
+    .slice(0, players)
+    .map(item => item.value);
+  return padPlayersConfig(
+    { modes: rawModes, strategies: rawStrategies },
+    players,
+    getPlayMode()
+  );
 }
 
 function durissimaGnTierLabel(size) {
@@ -613,9 +878,9 @@ function renderTournamentScoresBar() {
     chip.className = "tournament-score-chip";
     if (done && entry.player === state.winner) chip.classList.add("leader");
     if (state.status === "playing" && entry.player === state.currentPlayer) chip.classList.add("current");
-    const handDelta = state.tournamentHandScores?.[entry.player] || 0;
+    const handDelta = state.tournamentGameScores?.[entry.player] || 0;
     const handHint = state.status === "playing" && handDelta !== 0
-      ? ` (${handDelta >= 0 ? "+" : ""}${handDelta} mano)`
+      ? ` (${handDelta >= 0 ? "+" : ""}${handDelta} partita)`
       : "";
     chip.textContent = `${playerShortLabel(entry.player)} ${entry.score}${handHint}`;
     chip.title = `${entry.place}° posto · ${entry.score} punti totali`;
@@ -659,35 +924,38 @@ function renderTournamentRanking() {
   }
 }
 
+/** Easy mode solitario: sempre esattamente N carte extra (mano 2N). Checkbox on/off. */
+function isSoloEasyModeEnabled() {
+  return Boolean(els.durissimaEasyMode?.checked || els.durissimaExtraCards?.checked);
+}
+
 function buildDurissimaSetupOptions(size, players) {
   const solo = players === 1;
-  // Carte extra in mano (k); 0 = core. Tabella per-N da tarare in futuro.
-  const extraCards = solo ? Number(els.durissimaExtraCards?.value || 0) || 0 : 0;
+  // Solo solitario: easy mode = esattamente N carte extra (mai nel competitivo/coop)
+  const extraCards = solo && isSoloEasyModeEnabled() ? size : 0;
   return {
     durissimaMater: true,
     players,
     drawOnlyAfterPlacement: true,
-    durissimaVitaExtraEnabled: solo && Boolean(els.durissimaVitaExtra?.checked),
+    durissimaVitaExtraEnabled: false,
     durissimaReserveEnabled: false,
     durissimaExtraCards: Math.max(0, extraCards)
   };
 }
 
 function describeFormatTier(size, players) {
-  const variant = isDurissimaVariantSelected() ? "durissima" : "dura";
-  const tournament = variant === "dura" && isTournamentEnabled();
-  const gMin = variant === "durissima" ? core.durissimaMinPlayers() : core.recommendedMinPlayers(size);
-  if (variant === "dura" && players < 2) {
+  const mode = getPlayMode();
+  const variant = mode === PLAY_MODES.COMPETITIVE ? "dura" : "durissima";
+  const tournament = mode === PLAY_MODES.COMPETITIVE && isTournamentEnabled();
+  if (mode === PLAY_MODES.COMPETITIVE && players < 2) {
     return {
       level: "invalid",
-      text:
-        "Dura non ha modalita' solitario (minimo 2 giocatori). " +
-        "Usa Durissima Mater per G=1."
+      text: "Competitivo richiede almeno 2 giocatori. Per G=1 usa la sezione Solitario."
     };
   }
-  if (variant === "durissima" && players === 1) {
+  if (mode === PLAY_MODES.SOLO || (variant === "durissima" && players === 1)) {
     const tier = durissimaGnTierLabel(size);
-    const extra = Number(els.durissimaExtraCards?.value || 0) || 0;
+    const extra = isSoloEasyModeEnabled() ? size : 0;
     const deal = core.computeInitialDeal(size, 1, {
       durissimaMater: true,
       players: 1,
@@ -695,25 +963,15 @@ function describeFormatTier(size, players) {
     });
     const tall = deal.drawCount;
     const hand = deal.cardsPerPlayer;
-    if (isCoordinatorBotEnabled()) {
-      const bundle = coordinatorBundleReady() ? "solver browser ok" : "solver browser mancante — ricarica pagina";
-      return {
-        level: tall <= 12 ? "core" : tier.level,
-        text:
-          `Durissima Mater solitario (${size}x${size}): mano ${hand}` +
-          (extra ? ` (N+${extra} carte extra)` : " (core)") +
-          `, tallone ${tall}, coordinatore una mente. ${bundle}. ${tier.text}`
-      };
-    }
     return {
-      level: tier.level,
+      level: tall <= 12 ? "core" : tier.level,
       text:
-        `Durissima Mater solitario (${size}x${size}) — mano ${hand}` +
-        (extra ? ` (N+${extra})` : " core") +
-        `, tallone ${tall}. ${tier.text}. Bot consigliato: G (durissima-planner).`
+        `Solitario ${size}x${size}: mano ${hand}` +
+        (extra ? ` (easy mode: 2N)` : " (standard N)") +
+        `, tallone ${tall}, refill ON. ${tier.text}`
     };
   }
-  if (variant === "durissima" && isCoordinatorBotEnabled()) {
+  if (mode === PLAY_MODES.COOP && isCoordinatorBotEnabled()) {
     const bundle = coordinatorBundleReady() ? "solver browser ok" : "solver browser mancante — ricarica pagina";
     const deal = core.computeInitialDeal(size, players);
     let text = `Coordinatore una mente (TG): piano dal pool noto (mani${deal.drawCount ? " + tallone" : ""}), G>=2. ${bundle}.`;
@@ -721,7 +979,10 @@ function describeFormatTier(size, players) {
     else text += ` Tallone ${deal.drawCount}.`;
     return { level: deal.drawCount <= 20 ? "core" : "hard", text };
   }
-  if (variant === "dura" && players < gMin) {
+  const gMin = mode === PLAY_MODES.COMPETITIVE
+    ? Math.max(2, core.recommendedMinPlayers(size))
+    : 2;
+  if (mode === PLAY_MODES.COMPETITIVE && players < gMin) {
     const rule =
       size === 7
         ? `minimo ${gMin} giocatori su 7x7 (eccezione a ceil(N/2))`
@@ -741,26 +1002,21 @@ function describeFormatTier(size, players) {
       text: `Configurazione non ammessa: servono almeno ${core.MIN_INITIAL_HAND} carte a testa.`
     };
   }
-  if (variant === "durissima") {
+  if (mode === PLAY_MODES.COOP) {
     const deal = core.computeInitialDeal(size, players);
     const tier = durissimaGnTierLabel(size);
-    let text = `Durissima coop: griglia piena, pesca solo dopo posata.`;
+    let text = "Collaborativo: griglia piena, refill se posate.";
     if (players === size) {
-      text += ` G=N (${size}x${size}, tallone 0) — coordinatore TG risolve.`;
+      text += ` G=N (${size}x${size}, tallone 0).`;
       return { level: "core", text };
     }
-    text += ` Tallone ${deal.drawCount}, mano ${deal.cardsPerPlayer}.`;
-    if (deal.drawCount <= 20) {
-      text += " Fascia testata dal bot (tallone basso).";
-      return { level: players >= gMin ? "core" : "extra", text };
-    }
-    text += ` ${tier.text}.`;
-    return { level: tier.level, text };
+    text += ` Tallone ${deal.drawCount}, mano ${deal.cardsPerPlayer}. ${tier.text}.`;
+    return { level: deal.drawCount <= 20 ? "core" : tier.level, text };
   }
 
   let text = tournament
-    ? `Torneo competitivo: ${players} mani automatiche, classifica a punteggio.`
-    : "Competitiva: giocabile (tutte le combinazioni legali).";
+    ? `Torneo competitivo: ${players} partite, classifica a punteggio.`
+    : "Competitivo: vince chi svuota per primo la mano.";
   if (!tournament && players === size) {
     return {
       level: "core",
@@ -799,13 +1055,14 @@ function updateFormatTierHint() {
 function startGame() {
   stopTimer();
   saveGamePrefsNow();
-  const variant = isDurissimaVariantSelected() ? "durissima" : "dura";
+  const playMode = getPlayMode();
+  const variant = playMode === PLAY_MODES.COMPETITIVE ? "dura" : "durissima";
   const size = clampNumber(els.size.value, 3, 8, 5);
-  const players = clampPlayersToGrid(els.players.value, size, variant);
+  const players = clampPlayersToGrid(els.players.value, size, playMode);
   els.players.value = String(players);
-  if (variant === "dura" && players < 2) {
+  if (playMode === PLAY_MODES.COMPETITIVE && players < 2) {
     setStatus(
-      "Dura non ha modalita' solitario (minimo 2 giocatori). Passa a Durissima Mater per G=1.",
+      "Competitivo richiede almeno 2 giocatori. Per giocare da soli usa la sezione Solitario.",
       "bad"
     );
     return;
@@ -816,8 +1073,12 @@ function startGame() {
       return;
     }
   }
-  const gMin = variant === "durissima" ? core.durissimaMinPlayers() : core.recommendedMinPlayers(size);
-  if (variant === "dura" && players < gMin) {
+  const gMin = playMode === PLAY_MODES.COMPETITIVE
+    ? Math.max(2, core.recommendedMinPlayers(size))
+    : playMode === PLAY_MODES.SOLO
+      ? 1
+      : 2;
+  if (playMode === PLAY_MODES.COMPETITIVE && players < gMin) {
     const rule =
       size === 7
         ? `minimo ${gMin} su 7x7 (eccezione a ceil(N/2))`
@@ -828,7 +1089,7 @@ function startGame() {
   if (!core.isPlayableSetup(size, players)) {
     const maxG = core.maxPlayersForSize(size);
     if (players > maxG) {
-      setStatus(`Con ${size}x${size} il massimo è ${maxG} giocatori (G <= 2N).`, "bad");
+      setStatus(`Con ${size}x${size} il massimo e' ${maxG} giocatori (G <= 2N).`, "bad");
     } else {
       setStatus(
         `Con ${size}x${size} e ${players} giocatori servono almeno ${core.MIN_INITIAL_HAND} carte a testa.`,
@@ -837,10 +1098,12 @@ function startGame() {
     }
     return;
   }
-  const tournamentMode = variant === "dura" && isTournamentEnabled();
+  const tournamentMode = playMode === PLAY_MODES.COMPETITIVE && isTournamentEnabled();
   const seed = els.seed.value.trim() || String(Date.now());
   const random = gameState.createRandom(seed);
-  const config = readPlayersConfig(players);
+  // Assicura N righe config prima di leggere (se l'utente ha cambiato G senza rebuild)
+  renderPlayerConfig();
+  const config = padPlayersConfig(readPlayersConfig(players), players, playMode);
   const strategySettings = resolveStrategySettings(config.strategies, players, variant);
   let deck;
   try {
@@ -856,6 +1119,8 @@ function startGame() {
       size,
       random,
       tournamentMode,
+      // Competitivo al tavolo: inizia sempre la sede 0 (Biancaneve / giocatore 1)
+      randomizeTurnOrder: playMode === PLAY_MODES.COMPETITIVE ? false : true,
       ...(variant === "durissima" ? buildDurissimaSetupOptions(size, players) : {})
     };
     state = core.setupGame(deck, setupOptions);
@@ -872,9 +1137,9 @@ function startGame() {
     size,
     tournamentMode,
     variant,
-    durissimaVitaExtra: Boolean(els.durissimaVitaExtra?.checked),
+    durissimaVitaExtra: false,
     durissimaCoordinator: isCoordinatorBotEnabled(),
-    modes: config.modes,
+    modes: config.modes.slice(),
     strategySettings,
     strategies,
     playerOneName
@@ -884,8 +1149,8 @@ function startGame() {
     state: gameState.currentState(session),
     random,
     variant,
-    modes: config.modes,
-    strategySettings,
+    modes: config.modes.slice(),
+    strategySettings: strategySettings.slice(),
     strategies,
     seed,
     playerOneName,
@@ -956,20 +1221,22 @@ function isTerminalGameStatus(status) {
   return status === "success" || status === "stalled" || status === "tournament_complete";
 }
 
-function isTournamentHandPaused() {
+function isTournamentGamePaused() {
   return Boolean(
     game?.tournamentMode
     && core.isTournamentMode(game.state)
-    && game.state.status === "hand_over"
+    && (typeof core.isTournamentGameOverStatus === "function"
+      ? core.isTournamentGameOverStatus(game.state.status)
+      : game.state.status === "game_over" || game.state.status === "hand_over")
   );
 }
 
-function tournamentHandPauseMessage() {
+function tournamentGamePauseMessage() {
   const state = game.state;
-  const reason = state.tournamentLastHandReason === "monte" ? "monte" : "tutti finiti";
-  return `Mano ${state.tournamentHandIndex}/${state.players} conclusa (${reason}). `
+  const reason = state.tournamentLastGameReason === "monte" ? "monte" : "tutti finiti";
+  return `Partita ${state.tournamentGameIndex}/${state.players} conclusa (${reason}). `
     + (els.speed?.value === "step"
-      ? "Clicca «Step computer» per la prossima mano."
+      ? "Clicca «Step computer» per la prossima partita."
       : "Metti «Step by step» e clicca «Step computer», oppure avvia una nuova partita.");
 }
 
@@ -977,8 +1244,8 @@ function notifyAutoPlayEnded() {
   stopTimer();
   if (!game) return;
   const state = game.state;
-  if (isTournamentHandPaused()) {
-    setPlayFeedback(tournamentHandPauseMessage());
+  if (isTournamentGamePaused()) {
+    setPlayFeedback(tournamentGamePauseMessage());
     return;
   }
   if (!isTerminalGameStatus(state.status)) return;
@@ -987,11 +1254,19 @@ function notifyAutoPlayEnded() {
     return;
   }
   if (core.isDurissimaMater(state)) {
-    setPlayFeedback(
-      state.players === 1
-        ? "Durissima solitario: griglia completata."
-        : "Durissima: griglia completata."
-    );
+    if (state.status === "success") {
+      setPlayFeedback(
+        state.players === 1
+          ? "Vittoria! Griglia completata."
+          : "Vittoria! Griglia completata."
+      );
+    } else {
+      setPlayFeedback(
+        state.players === 1
+          ? "Fine partita: nessuna mossa legale, griglia non completata."
+          : "Fine partita."
+      );
+    }
     return;
   }
   if (state.status === "success" && state.winner != null) {
@@ -1097,8 +1372,8 @@ function passOrEndTurn() {
 function runBotStep() {
   stopTimer();
   if (!game) return;
-  if (isTournamentHandPaused()) {
-    if (advanceTournamentHandIfNeeded()) {
+  if (isTournamentGamePaused()) {
+    if (advanceTournamentGameIfNeeded()) {
       scheduleBotIfNeeded();
     }
     return;
@@ -1135,13 +1410,17 @@ function runBotStep() {
   scheduleBotIfNeeded();
 }
 
-function advanceTournamentHandIfNeeded() {
+function advanceTournamentGameIfNeeded() {
   if (!game?.tournamentMode || !core.isTournamentMode(game.state)) return false;
-  if (game.state.status !== "hand_over") return false;
-  const handDone = game.state.tournamentHandIndex;
+  if (!(typeof core.isTournamentGameOverStatus === "function"
+    ? core.isTournamentGameOverStatus(game.state.status)
+    : game.state.status === "game_over" || game.state.status === "hand_over")) {
+    return false;
+  }
+  const gameDone = game.state.tournamentGameIndex;
   const total = game.state.players;
-  game.state = gameState.commit(game.session, `Fine mano ${handDone}/${total}.`, game.random, next => {
-    core.beginNextTournamentHand(next, game.deck, game.random);
+  game.state = gameState.commit(game.session, `Fine partita ${gameDone}/${total}.`, game.random, next => {
+    core.beginNextTournamentGame(next, game.deck, game.random);
   });
   resetInversionUiFlags(game.state);
   resetTransientUi();
@@ -1156,7 +1435,7 @@ function scheduleBotIfNeeded() {
     notifyAutoPlayEnded();
     return;
   }
-  if (isTournamentHandPaused()) {
+  if (isTournamentGamePaused()) {
     notifyAutoPlayEnded();
     return;
   }
@@ -1187,107 +1466,6 @@ function undoMove() {
 function redoMove() {
   if (!game || !gameState.redo(game.session, game.random)) return;
   afterTimelineMove();
-}
-
-function saveGame() {
-  if (!game) return;
-  gameState.updateConfig(game.session, {
-    seed: game.seed,
-    deckCodes: CANONICAL_DECK_CODES,
-    players: game.state.players,
-    size: game.state.size,
-    tournamentMode: game.tournamentMode === true,
-    variant: game.variant || (core.isDurissimaMater(game.state) ? "durissima" : "dura"),
-    durissimaVitaExtra: game.state.durissimaVitaExtraEnabled === true,
-    modes: game.modes,
-    strategySettings: game.strategySettings,
-    strategies: game.strategies,
-    playerOneName: game.playerOneName || readPlayerOneName()
-  });
-  gameState.setCurrentState(game.session, game.state, game.random);
-  const payload = JSON.stringify(gameState.exportSession(game.session), null, 2);
-  const blob = new Blob([payload], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `mpcards-game-${game.seed || "partita"}.json`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-function loadGame() {
-  els.loadGameFile.value = "";
-  els.loadGameFile.click();
-}
-
-function applyLoadedSession(session) {
-  const config = session.config || {};
-  const seed = config.seed || String(Date.now());
-  const random = gameState.createRandom(seed);
-  let deck;
-  try {
-    deck = core.simulationDeck();
-  } catch (error) {
-    setStatus(error.message, "bad");
-    return;
-  }
-  game = {
-    session,
-    state: gameState.currentState(session),
-    random,
-    modes: config.modes || [],
-    strategySettings: config.strategySettings || [],
-    strategies: config.strategies || [],
-    seed,
-    playerOneName: config.playerOneName || DEFAULT_GAME_PREFS.playerOneName,
-    deck,
-    tournamentMode: config.tournamentMode === true,
-    variant: config.variant || (core.isDurissimaMater(game.state) ? "durissima" : "dura")
-  };
-  if (els.gameVariant) {
-    els.gameVariant.value = game.variant;
-    syncVariantUi();
-  }
-  if (els.durissimaVitaExtra) {
-    els.durissimaVitaExtra.checked = config.durissimaVitaExtra === true;
-  }
-  gameState.restoreRandom(game.session, game.random);
-  if (!game.strategies.length) {
-    game.strategies = core.resolveStrategies(game.strategySettings, game.state.players, game.random);
-  }
-  els.players.value = String(config.players || game.state.players);
-  els.size.value = String(config.size || game.state.size);
-  els.seed.value = seed;
-  if (els.playerOneName) {
-    els.playerOneName.value = game.playerOneName;
-  }
-  enterPlayingMode();
-  resetInversionUiFlags(game.state);
-  renderPlayerConfig();
-  Array.from(document.querySelectorAll(".player-mode")).forEach((item, index) => {
-    item.value = game.modes[index] || (index === 0 ? "manual" : "bot");
-  });
-  Array.from(document.querySelectorAll(".player-strategy")).forEach((item, index) => {
-    item.value = game.strategySettings[index] || "auto";
-  });
-  saveGamePrefsNow();
-  afterTimelineMove();
-}
-
-function readLoadedGameFile(event) {
-  const file = event.target.files && event.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.addEventListener("load", () => {
-    try {
-      applyLoadedSession(gameState.importSession(String(reader.result || "")));
-    } catch (error) {
-      setStatus(error.message, "bad");
-    }
-  });
-  reader.readAsText(file);
 }
 
 function currentLegalMove(move) {
@@ -1557,7 +1735,113 @@ function renderInversionAlert(state) {
   els.inversionAlert.innerHTML = "";
 }
 
+function renderEndgameBanner() {
+  if (!els.endgameBanner) return;
+  if (!game || game.state.status === "playing" || isTournamentGamePaused()) {
+    els.endgameBanner.hidden = true;
+    els.endgameBanner.style.display = "none";
+    els.endgameBanner.textContent = "";
+    els.endgameBanner.className = "endgame-banner";
+    return;
+  }
+  const state = game.state;
+  let title = "Fine partita";
+  let kind = "end";
+  if (state.status === "success") {
+    if (core.isDurissimaMater(state)) {
+      title = "Vittoria!";
+      kind = "win";
+    } else if (state.winner != null) {
+      title = `Vittoria — ${playerLabel(state.winner)}`;
+      kind = "win";
+    } else {
+      title = "Vittoria!";
+      kind = "win";
+    }
+  } else if (state.status === "tournament_complete") {
+    title = `Torneo finito — vince ${playerLabel(state.winner)}`;
+    kind = "win";
+  } else if (state.status === "stalled") {
+    title = core.isDurissimaMater(state) && state.players === 1
+      ? "Fine partita"
+      : core.isDurissimaMater(state)
+        ? "Fine partita"
+        : "Fine partita (monte / stallo)";
+    kind = "end";
+  }
+  els.endgameBanner.hidden = false;
+  els.endgameBanner.style.display = "";
+  els.endgameBanner.className = `endgame-banner endgame-banner--${kind}`;
+  els.endgameBanner.textContent = title;
+}
+
+function soloHasAnyLegalPlacement(state, playerId) {
+  if (!state || state.status !== "playing") return false;
+  if (state.turnPlayed >= 5) return false;
+  if (state.turnPlayed === 0 && typeof core.hasLegalPlacementsNow === "function") {
+    return core.hasLegalPlacementsNow(state, playerId);
+  }
+  const req = core.placementRequirement(state);
+  if (req == null) return false;
+  return core.legalPlacements(state, playerId, req).length > 0;
+}
+
+/**
+ * Solitario: se non restano mosse legali, chiude il turno (refill) oppure
+ * dichiara fine partita. Prima restava bloccata senza banner.
+ */
+function maybeEndSoloWhenStuck() {
+  if (!game || game.state.status !== "playing") return false;
+  if (!core.isDurissimaMater(game.state) || game.state.players !== 1) return false;
+  const playerId = game.state.currentPlayer;
+  if (soloHasAnyLegalPlacement(game.state, playerId)) return false;
+
+  // A meta' turno senza altre posate: chiudi il turno (pesca/refill) una volta
+  if ((game.state.turnPlayed || 0) > 0) {
+    try {
+      game.state = gameState.commit(
+        game.session,
+        "Fine turno (nessuna altra posa).",
+        game.random,
+        next => {
+          core.endTurn(next);
+        }
+      );
+    } catch (_err) {
+      /* ignore */
+    }
+    // Dopo endTurn, se ora ci sono mosse, continua; se no, termina sotto
+    if (game.state.status !== "playing") {
+      notifyAutoPlayEnded();
+      return true;
+    }
+    if (soloHasAnyLegalPlacement(game.state, game.state.currentPlayer)) return true;
+  }
+
+  // Inizio turno (o ancora bloccato dopo endTurn): partita persa
+  try {
+    game.state = gameState.commit(
+      game.session,
+      "Solitario bloccato: nessuna mossa legale.",
+      game.random,
+      next => {
+        if (typeof core.resolveDurissimaStuck === "function") {
+          core.resolveDurissimaStuck(next, game.random, { useVitaExtra: false });
+        }
+        if (next.status === "playing") next.status = "stalled";
+      }
+    );
+  } catch (_err) {
+    game.state.status = "stalled";
+  }
+  notifyAutoPlayEnded();
+  return true;
+}
+
 function render() {
+  if (maybeEndSoloWhenStuck()) {
+    // ricorsione una sola volta con status gia' terminale
+  }
   renderBoard();
   renderTurnFlow();
   renderRealGameSidebar();
@@ -1568,6 +1852,7 @@ function render() {
   renderTournamentScoresBar();
   renderTournamentRanking();
   renderActions();
+  renderEndgameBanner();
   updatePlayerHandCounts();
   renderLog();
   if (selectedCardUid && game && game.state.status === "playing") {
@@ -1584,29 +1869,33 @@ function renderBoard() {
   els.board.innerHTML = "";
   if (!game) return;
   const state = game.state;
-  const view = boardViewBounds(state, highlightedMoves);
+  // A griglia piena non allargare la vista: evita cella "fantasma" e carte fuori schermo
+  const movesForView =
+    state.board.length >= state.size * state.size || state.status !== "playing"
+      ? []
+      : highlightedMoves;
+  const view = boardViewBounds(state, movesForView);
   const cellSize = boardCellSize();
   els.board.style.gridTemplateColumns = `repeat(${view.width}, ${cellSize}px)`;
-  const offsetX = -view.minX;
-  const offsetY = -view.minY;
+  // Chiavi assolute (x,y) — niente offset misto che poteva perdere l'ultima posa
   const placed = new Map();
   for (const entry of state.board) {
-    placed.set(core.coordKey(entry.x + offsetX, entry.y + offsetY), entry);
+    placed.set(core.coordKey(entry.x, entry.y), entry);
   }
   const targets = new Map();
-  for (const move of highlightedMoves) {
-    targets.set(core.coordKey(move.x + offsetX, move.y + offsetY), move);
+  for (const move of movesForView) {
+    targets.set(core.coordKey(move.x, move.y), move);
   }
   for (let y = view.minY; y <= view.maxY; y++) {
     for (let x = view.minX; x <= view.maxX; x++) {
       const cell = document.createElement("div");
-      const entry = placed.get(core.coordKey(x + offsetX, y + offsetY));
-      const target = targets.get(core.coordKey(x + offsetX, y + offsetY));
-      cell.className = target ? "cell target" : "cell";
+      const entry = placed.get(core.coordKey(x, y));
+      const target = targets.get(core.coordKey(x, y));
+      cell.className = target && !entry ? "cell target" : "cell";
       cell.dataset.x = String(x);
       cell.dataset.y = String(y);
       if (entry) {
-        cell.className = "cell";
+        cell.className = "cell filled";
         cell.appendChild(cardTile(entry.card));
       } else if (target) {
         cell.title = `Gioca ${target.card.code} qui. Adiacenze compatibili: ${target.compatibleNeighbors}/${target.neighbors}. Caratteristiche condivise: ${target.matches}`;
@@ -1683,14 +1972,38 @@ function boardViewBounds(state, moves) {
 
 function renderRealGameSidebar() {
   if (!isRealGame()) return;
-  const humanTurn = isHumanPlayerTurn();
-  if (els.playerHandsPanel) els.playerHandsPanel.hidden = humanTurn;
-  if (els.sidebarHandPanel) els.sidebarHandPanel.hidden = !humanTurn;
-  if (humanTurn) {
-    renderSidebarHand();
-  } else {
-    renderPlayerHandStacks();
+  const multi = game && game.state.players > 1;
+  const competitive = game && isCompetitiveGameState(game.state);
+  const openCoop = game && isCollaborativeOpenHands(game.state);
+  // Multi: sempre elenco a destra (competitivo = dorsi; collaborativo = scoperte)
+  if (els.playerHandsPanel) {
+    els.playerHandsPanel.hidden = !multi;
   }
+  const showOpen = shouldShowOpenHandPanel();
+  if (els.sidebarHandPanel) {
+    // In collaborativo le mini-mani a destra bastano; pannello grande solo per giocare il turno manuale
+    els.sidebarHandPanel.hidden = !showOpen;
+  }
+  if (showOpen) {
+    renderSidebarHand();
+  } else if (els.sidebarHand) {
+    els.sidebarHand.innerHTML = "";
+    if (els.sidebarHandTitle) {
+      if (openCoop && isBotTurn()) {
+        els.sidebarHandTitle.textContent = "Carte di tutti (scoperte, a destra)";
+      } else if (competitive && multi && isBotTurn()) {
+        els.sidebarHandTitle.textContent = "Mano avversaria nascosta (computer)";
+      } else {
+        els.sidebarHandTitle.textContent = "Mano";
+      }
+    }
+    if (els.sidebarHandStatus) {
+      els.sidebarHandStatus.textContent = isBotTurn()
+        ? (openCoop ? "Turno del computer — mani scoperte a destra" : "In attesa del computer…")
+        : "";
+    }
+  }
+  if (multi) renderPlayerHandStacks();
 }
 
 function appendReserveCards(container, layout, interactive) {
@@ -1805,14 +2118,14 @@ function renderHandCountsBar() {
     const detail = document.createElement("span");
     if (tournament && state.tournamentScores) {
       const score = state.tournamentScores[player] || 0;
-      const handDelta = state.tournamentHandScores?.[player] || 0;
+      const handDelta = state.tournamentGameScores?.[player] || 0;
       if (exited) {
         detail.textContent = `${score} pt`;
-        chip.title = `${score} punti torneo · uscito da questa mano`;
+        chip.title = `${score} punti torneo · uscito da questa partita`;
       } else {
         detail.textContent = `${count} · ${score} pt`;
-        const handHint = handDelta !== 0 ? ` · mano ${handDelta >= 0 ? "+" : ""}${handDelta}` : "";
-        chip.title = `${count} carte in mano · ${score} punti torneo${handHint}`;
+        const gameHint = handDelta !== 0 ? ` · partita ${handDelta >= 0 ? "+" : ""}${handDelta}` : "";
+        chip.title = `${count} carte in mano · ${score} punti torneo${gameHint}`;
       }
     } else if (state.status === "success" && core.isDurissimaMater(state) && state.players > 1) {
       detail.textContent = "OK";
@@ -1826,34 +2139,6 @@ function renderHandCountsBar() {
     chip.appendChild(name);
     chip.appendChild(detail);
     els.handCountsList.appendChild(chip);
-  }
-}
-
-function renderSidebarHand() {
-  if (!els.sidebarHand) return;
-  els.sidebarHand.innerHTML = "";
-  if (!game) return;
-  const state = game.state;
-  const player = state.currentPlayer;
-  const hand = state.hands[player] || [];
-  const interactive = isHumanPlayerTurn();
-  if (els.sidebarHandTitle) {
-    els.sidebarHandTitle.textContent = `La tua mano — ${playerShortLabel(player)}`;
-  }
-  updateHandSelectionStatus(hand.length, player, "Manuale");
-  appendHandCards(els.sidebarHand, "sidebar", player, hand, interactive);
-  appendReserveCards(els.sidebarHand, "sidebar", interactive);
-}
-
-function renderRealGameSidebar() {
-  if (!isRealGame()) return;
-  const humanTurn = isHumanPlayerTurn();
-  if (els.playerHandsPanel) els.playerHandsPanel.hidden = humanTurn;
-  if (els.sidebarHandPanel) els.sidebarHandPanel.hidden = !humanTurn;
-  if (humanTurn) {
-    renderSidebarHand();
-  } else {
-    renderPlayerHandStacks();
   }
 }
 
@@ -1902,11 +2187,25 @@ function renderSidebarHand() {
   els.sidebarHand.innerHTML = "";
   if (!game) return;
   const state = game.state;
-  const player = state.currentPlayer;
+  // Solo sedi manuali: in multi, la sede di turno se manuale
+  let player = state.currentPlayer;
+  if (state.players === 1) {
+    player = 0;
+  } else if (!isSeatManual(player)) {
+    // non dovremmo essere chiamati per un bot; safety
+    return;
+  }
+  if (!shouldRevealOpenHand(player) && state.players > 1 && state.status === "playing") {
+    return;
+  }
   const hand = state.hands[player] || [];
-  const interactive = isHumanPlayerTurn();
+  const interactive = isHumanPlayerTurn() && state.status === "playing" && state.currentPlayer === player;
   if (els.sidebarHandTitle) {
-    els.sidebarHandTitle.textContent = `La tua mano — ${playerShortLabel(player)}`;
+    if (state.players === 1) {
+      els.sidebarHandTitle.textContent = "La tua mano";
+    } else {
+      els.sidebarHandTitle.textContent = `Mano di ${playerShortLabel(player)}`;
+    }
   }
   updateHandSelectionStatus(hand.length, player, "Manuale");
   appendHandCards(els.sidebarHand, "sidebar", player, hand, interactive);
@@ -1918,10 +2217,22 @@ function renderPlayerHandStacks() {
   els.playerHandsList.innerHTML = "";
   if (!game) return;
   const state = game.state;
+  const competitive = isCompetitiveGameState(state);
+  const openCoop = isCollaborativeOpenHands(state);
   for (let player = 0; player < state.players; player++) {
     const hand = state.hands[player] || [];
+    // Competitivo: non duplicare la mano aperta del manuale di turno
+    if (
+      competitive &&
+      shouldShowOpenHandPanel() &&
+      player === state.currentPlayer &&
+      isSeatManual(player)
+    ) {
+      continue;
+    }
     const row = document.createElement("div");
     row.className = "player-hand-row";
+    if (openCoop) row.classList.add("open-hands");
     if (state.status === "success" && player === state.winner) {
       row.classList.add("winner");
     } else if (state.status === "playing" && player === state.currentPlayer) {
@@ -1934,28 +2245,44 @@ function renderPlayerHandStacks() {
     const meta = document.createElement("span");
     meta.textContent = game.modes[player] === "bot"
       ? "Computer"
-      : player === handViewPlayer()
-        ? "Tu"
-        : "Manuale";
+      : "Manuale";
     head.appendChild(title);
     head.appendChild(meta);
     row.appendChild(head);
 
-    const backs = document.createElement("div");
-    backs.className = "player-hand-backs";
-    backs.setAttribute("aria-label", `${hand.length} carte`);
+    const cardsWrap = document.createElement("div");
+    cardsWrap.className = openCoop ? "player-hand-faces" : "player-hand-backs";
+    cardsWrap.setAttribute(
+      "aria-label",
+      openCoop
+        ? `${hand.length} carte scoperte`
+        : competitive
+          ? `${hand.length} carte nascoste`
+          : `${hand.length} carte`
+    );
     if (hand.length === 0) {
       const empty = document.createElement("p");
       const isWinner = state.status === "success" && player === state.winner;
       empty.className = isWinner ? "player-hand-empty winner-label" : "player-hand-empty";
       empty.textContent = isWinner ? "Vince" : "Nessuna carta";
-      backs.appendChild(empty);
+      cardsWrap.appendChild(empty);
+    } else if (openCoop) {
+      // Collaborativo: tutte le mani a faccia in su (carte scoperte)
+      for (const card of hand) {
+        const mini = document.createElement("div");
+        mini.className = "player-hand-mini";
+        mini.appendChild(cardTile(card));
+        mini.title = globalThis.MPCardsNames
+          ? MPCardsNames.formatCardName(card)
+          : card.code;
+        cardsWrap.appendChild(mini);
+      }
     } else {
       for (let index = 0; index < hand.length; index++) {
-        backs.appendChild(cardBackTile());
+        cardsWrap.appendChild(cardBackTile());
       }
     }
-    row.appendChild(backs);
+    row.appendChild(cardsWrap);
     els.playerHandsList.appendChild(row);
   }
 }
@@ -1966,7 +2293,7 @@ function renderHand() {
       if (els.sidebarHandStatus) els.sidebarHandStatus.textContent = "";
       return;
     }
-    if (isHumanPlayerTurn()) renderSidebarHand();
+    // Gioco reale: pannello laterale (renderRealGameSidebar)
     return;
   }
   if (!els.handDock) return;
@@ -1976,12 +2303,45 @@ function renderHand() {
     return;
   }
   const state = game.state;
-  const player = handViewPlayer();
-  const hand = state.hands[player] || [];
-  const interactive = !isBotTurn() && state.currentPlayer === player;
-  if (els.handDockTitle) {
-    els.handDockTitle.textContent = `Mano — ${playerLabel(player)}`;
+  const competitive = isCompetitiveGameState(state);
+  // Competitivo multi: niente mani bot scoperte; solo sede manuale di turno
+  if (competitive && state.players > 1) {
+    if (!shouldShowOpenHandPanel()) {
+      if (els.handDockPanel) els.handDockPanel.hidden = false;
+      if (els.handDockTitle) {
+        els.handDockTitle.textContent = isBotTurn()
+          ? `${playerLabel(state.currentPlayer)} (computer) — carte nascoste`
+          : "Mano nascosta";
+      }
+      if (els.handDockStatus) {
+        els.handDockStatus.textContent = isBotTurn() ? "In attesa del computer…" : "";
+      }
+      return;
+    }
   }
+  const player =
+    state.players === 1
+      ? 0
+      : isSeatManual(state.currentPlayer)
+        ? state.currentPlayer
+        : handViewPlayer();
+  // Solitario Durissima con bot: mostra ancora la mano per seguire (non e' competitivo)
+  if (competitive && state.players > 1 && !isSeatManual(player)) {
+    if (els.handDockTitle) {
+      els.handDockTitle.textContent = `${playerLabel(player)} — carte nascoste`;
+    }
+    return;
+  }
+  const hand = state.hands[player] || [];
+  const interactive =
+    state.status === "playing" && isHumanPlayerTurn() && state.currentPlayer === player;
+  if (els.handDockTitle) {
+    els.handDockTitle.textContent =
+      state.players === 1 && game.modes[0] === "bot"
+        ? "Mano (computer)"
+        : `Mano — ${playerLabel(player)}`;
+  }
+  if (els.handDockPanel) els.handDockPanel.hidden = false;
   const modeLabel = game.modes[player] === "bot"
     ? core.strategyLabel(game.strategies[player])
     : "Manuale";
@@ -2055,10 +2415,9 @@ function renderActions() {
   const hasGame = !!game;
   els.undo.disabled = !hasGame || !gameState.canUndo(game.session);
   els.redo.disabled = !hasGame || !gameState.canRedo(game.session);
-  els.saveGame.disabled = !hasGame;
-  const tournamentHandPaused = isTournamentHandPaused();
-  const botStepMode = isBotTurn() || tournamentHandPaused;
-  if (!game || (game.state.status !== "playing" && !tournamentHandPaused)) {
+  const tournamentGamePaused = isTournamentGamePaused();
+  const botStepMode = isBotTurn() || tournamentGamePaused;
+  if (!game || (game.state.status !== "playing" && !tournamentGamePaused)) {
     els.pass.disabled = true;
     els.botStep.disabled = true;
     els.botStep.style.display = "none";
@@ -2081,7 +2440,7 @@ function renderActions() {
     els.vitaExtra.className = canVita ? "secondary" : "secondary";
   }
   els.botStep.disabled = !botStepMode || els.speed.value !== "step";
-  if (tournamentHandPaused && els.speed.value !== "step") {
+  if (tournamentGamePaused && els.speed.value !== "step") {
     els.botStep.title = "Metti Step by step per avanzare mano torneo";
   } else {
     els.botStep.removeAttribute("title");
@@ -2105,18 +2464,18 @@ function renderSummary() {
         ? durissima
           ? (state.players === 1 ? "Solitario: griglia completata" : "Durissima: griglia completata")
           : `Vince ${playerLabel(state.winner)}`
-        : state.status === "hand_over"
-          ? `Mano ${state.tournamentHandIndex}/${state.players} conclusa`
+        : (state.status === "game_over" || state.status === "hand_over")
+          ? `Partita ${state.tournamentGameIndex}/${state.players} conclusa`
           : "Stallo";
   els.drawCount.textContent = tournament
-    ? `Pesca: ${state.drawPile.length} · Mano ${Math.min(state.tournamentHandIndex + (state.status === "playing" ? 1 : 0), state.players)}/${state.players}`
+    ? `Pesca: ${state.drawPile.length} · Partita ${Math.min(state.tournamentGameIndex + (state.status === "playing" ? 1 : 0), state.players)}/${state.players}`
     : `Pesca: ${state.drawPile.length}`;
   const rows = [
     ...(durissima ? [["Modalita'", "Durissima Mater"]] : [["Modalita'", "Dura Mater"]]),
     ...(tournament
-      ? [["Torneo", tournamentDone ? "Completato" : `Mano ${Math.min(state.tournamentHandIndex + (state.status === "playing" ? 1 : 0), state.players)}/${state.players}`]]
+      ? [["Torneo", tournamentDone ? "Completato" : `Partita ${Math.min(state.tournamentGameIndex + (state.status === "playing" ? 1 : 0), state.players)}/${state.players}`]]
       : []),
-    ["Stato", state.status],
+    ["Stato", state.status === "hand_over" ? "game_over" : state.status],
     ["Turni", state.turns],
     ["Dura Mater", state.duraMaterClosed ? `Chiusa (da ${playerLabel(state.closedByPlayer)})` : "Aperta"],
     ...(state.firstAxisInversionDone || state.duraMaterClosed
@@ -2139,7 +2498,7 @@ function renderSummary() {
       ? state.tournamentScores.map((score, index) => [
           `Punti ${playerLabel(index)}`,
           state.status === "playing"
-            ? `${score} (mano: ${state.tournamentHandScores[index] >= 0 ? "+" : ""}${state.tournamentHandScores[index]})`
+            ? `${score} (partita: ${state.tournamentGameScores[index] >= 0 ? "+" : ""}${state.tournamentGameScores[index]})`
             : String(score)
         ])
       : [])
@@ -2154,8 +2513,8 @@ function renderSummary() {
   if (!selectedCardUid) {
     if (tournamentDone) {
       setStatus(`Classifica: ${formatTournamentRanking(state)}`, "good");
-    } else if (state.status === "hand_over") {
-      setStatus(`Mano conclusa (${state.tournamentLastHandReason === "monte" ? "monte" : "tutti finiti"}). Prossima mano…`, "");
+    } else if (state.status === "game_over" || state.status === "hand_over") {
+      setStatus(`Partita conclusa (${state.tournamentLastGameReason === "monte" ? "monte" : "tutti finiti"}). Prossima partita…`, "");
     } else {
       setStatus(
         state.status === "playing"
@@ -2207,46 +2566,63 @@ function renderLog() {
   els.log.textContent = game ? gameState.labels(game.session).slice().reverse().join("\n") : "";
 }
 
-if (els.gameVariant) {
-  els.gameVariant.addEventListener("change", () => {
-    syncVariantUi();
-    syncPlayersInputBounds({ renderConfig: true });
-    updateFormatTierHint();
-    scheduleSaveGamePrefs();
+function bindPlayModeTabs() {
+  const root = els.playModeTabs || document.getElementById("play-mode-tabs");
+  if (!root) return;
+  const onPick = mode => {
+    if (!mode) return;
+    applyPlayMode(mode, { renderConfig: true, save: true });
+  };
+  root.addEventListener("click", event => {
+    const tab = event.target.closest("[data-play-mode]");
+    if (!tab || !root.contains(tab)) return;
+    event.preventDefault();
+    onPick(tab.getAttribute("data-play-mode") || tab.dataset.playMode);
+  });
+  // Click diretto su ogni tab (piu' affidabile se il bubbling fallisce)
+  root.querySelectorAll("[data-play-mode]").forEach(tab => {
+    tab.addEventListener("click", event => {
+      event.preventDefault();
+      onPick(tab.getAttribute("data-play-mode") || tab.dataset.playMode);
+    });
   });
 }
-if (els.durissimaVitaExtra) {
-  els.durissimaVitaExtra.addEventListener("change", () => {
-    updateFormatTierHint();
-    scheduleSaveGamePrefs();
-  });
-}
-if (els.durissimaCoordinator) {
-  els.durissimaCoordinator.addEventListener("change", () => {
-    syncVariantUi();
-    if (isCoordinatorBotEnabled()) {
-      Array.from(document.querySelectorAll(".player-strategy")).forEach(item => {
-        item.value = "durissima-global-planner";
-      });
-    }
-    updateFormatTierHint();
-    scheduleSaveGamePrefs();
-  });
-}
+bindPlayModeTabs();
 if (els.tournamentMode) {
   els.tournamentMode.addEventListener("change", () => {
     updateFormatTierHint();
     scheduleSaveGamePrefs();
   });
 }
-els.players.addEventListener("input", () => {
-  syncPlayersInputBounds({ renderConfig: true });
-  updateFormatTierHint();
-  scheduleSaveGamePrefs();
-});
-if (els.size) {
-  els.size.addEventListener("input", () => {
+if (els.players) {
+  els.players.addEventListener("input", () => {
     syncPlayersInputBounds({ renderConfig: true });
+    updateFormatTierHint();
+    scheduleSaveGamePrefs();
+  });
+  els.players.addEventListener("change", () => {
+    syncPlayersInputBounds({ renderConfig: true });
+    updateFormatTierHint();
+    scheduleSaveGamePrefs();
+  });
+}
+if (els.size) {
+  const onSize = () => {
+    syncPlayersInputBounds({ renderConfig: true });
+    updateFormatTierHint();
+    scheduleSaveGamePrefs();
+  };
+  els.size.addEventListener("input", onSize);
+  els.size.addEventListener("change", onSize);
+}
+if (els.durissimaEasyMode) {
+  els.durissimaEasyMode.addEventListener("change", () => {
+    updateFormatTierHint();
+    scheduleSaveGamePrefs();
+  });
+}
+if (els.durissimaExtraCards && els.durissimaExtraCards.type === "checkbox") {
+  els.durissimaExtraCards.addEventListener("change", () => {
     updateFormatTierHint();
     scheduleSaveGamePrefs();
   });
@@ -2254,7 +2630,6 @@ if (els.size) {
 els.newGame.addEventListener("click", startGame);
 if (els.newGamePlay) els.newGamePlay.addEventListener("click", prepareNewGame);
 if (els.resetPrefs) els.resetPrefs.addEventListener("click", resetGamePrefsToDefaults);
-els.loadGameSetup.addEventListener("click", loadGame);
 els.openPlayers.addEventListener("click", () => openModal("players"));
 els.openInfo.addEventListener("click", () => openModal("info"));
 els.tabPlayers.addEventListener("click", () => showModalTab("players"));
@@ -2264,9 +2639,6 @@ els.pass.addEventListener("click", passOrEndTurn);
 els.botStep.addEventListener("click", runBotStep);
 els.undo.addEventListener("click", undoMove);
 els.redo.addEventListener("click", redoMove);
-els.saveGame.addEventListener("click", saveGame);
-els.loadGame.addEventListener("click", loadGame);
-els.loadGameFile.addEventListener("change", readLoadedGameFile);
 els.speed.addEventListener("change", () => {
   syncSpeedControls(els.speed);
   scheduleSaveGamePrefs();

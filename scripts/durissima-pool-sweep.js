@@ -4,7 +4,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const {
-  defaultCliWorkers,
+  defaultHeavyCliWorkers,
+  acquireHeavyProbeLock,
   logicalCpuCount,
   parseWorkersFlag,
   filterArgv,
@@ -19,8 +20,10 @@ require(path.join(__dirname, "..", "mpcards-core.js"));
 const core = globalThis.MPCardsCore;
 
 const ALL_LEGAL = parseAllLegalFlag(process.argv);
-const argv = filterArgv(process.argv.slice(2));
-const WORKERS = parseWorkersFlag(process.argv.slice(2), defaultCliWorkers());
+const argvRaw = process.argv.slice(2);
+acquireHeavyProbeLock("durissima-pool-sweep", argvRaw);
+const argv = filterArgv(argvRaw);
+const WORKERS = parseWorkersFlag(argvRaw, defaultHeavyCliWorkers());
 const COUNT = Number(argv[0]) || 1000;
 const CHUNKS = Number(argv[1]) || WORKERS;
 

@@ -1,9 +1,20 @@
-﻿# INDICE â€” Artefatti probe e audit
+﻿# INDICE — Artefatti probe e audit
 
 File **pesanti o rigenerabili**: non in Git (vedi `.gitignore`). Le **conclusioni** vanno in `SESSIONI.md`; qui solo dove trovare i dati grezzi.
 
 ---
 
+## Bias sede partita normale Dura (2026-07-22)
+
+| File | Contenuto |
+|------|-----------|
+| `seat-bias/seat-bias-N3-8-c20-planner-2026-07-22.txt` | Report leggibile: win% per sede, starter, DM chiusa |
+| `seat-bias/seat-bias-N3-8-c20-planner-2026-07-22.json` | Dati grezzi 52 celle |
+
+**Script:** `scripts/seat-bias-probe.js`, `seat-bias-probe-worker.js`  
+**Sessione:** `SESSIONI.md` 2026-07-22 bias posizione.
+
+---
 
 ## Solo G=1 refill A/B (2026-07-19)
 

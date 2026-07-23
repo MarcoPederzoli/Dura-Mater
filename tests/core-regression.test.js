@@ -257,7 +257,7 @@ function testDurissimaPassOnlyAfterAtLeastOnePlacement() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
   const solo = core.setupGame(deck, { size: 3, players: 1, random: () => 0, durissimaMater: true });
   assert.equal(core.canPassTurnVoluntarily(solo), false);
-  assert.throws(() => core.passTurn(solo), /vita extra/);
+  assert.throws(() => core.passTurn(solo), /persa/);
   solo.turnPlayed = 1;
   const beforeSolo = solo.hands[0].length;
   core.endTurn(solo);
@@ -368,7 +368,7 @@ function testDurissimaHandCap2NUsesGridSize() {
   assert.equal(state.drawPile.length, pileBefore);
 }
 
-function testDurissimaFreeDrawCoopPassDrawsWithNReshuffle() {
+function testDurissimaFreeDrawCoopPassDraws() {
   const deck = core.simulationDeck().filter(card => Number(card.value) <= 3);
   const state = core.setupGame(deck, {
     size: 3,
@@ -425,7 +425,7 @@ function testDurissimaFreeDrawBotPlacesWhenMonteThreat() {
   assert.equal(state.consecutivePasses, 0);
 }
 
-testDurissimaFreeDrawCoopPassDrawsWithNReshuffle();
+testDurissimaFreeDrawCoopPassDraws();
 testDurissimaFreeDrawBotPassesWhenMonteSafe();
 testDurissimaFreeDrawBotPlacesWhenMonteThreat();
 
@@ -1114,7 +1114,7 @@ testDurissimaSoloDefaultCoreNoExtra();
 testDurissimaSoloExtraCardsInHand();
 testDurissimaSoloLegacyReserveStillWorks();
 testDurissimaCoopNeverUsesReserve();
-testDurissimaNReshuffleDefaultWithPool();
+testDurissimaNReshuffleRemovedFromProduct();
 testDurissimaCorePureOptOutDisablesNReshuffle();
 testDurissimaSelectiveReshuffleKeepsCardsAndRefills();
 testDurissimaSelectiveReshuffleRequiresAtLeastOneChange();
@@ -1685,7 +1685,7 @@ function testTournamentFinishAwardsDescendingPoints() {
   const state = core.setupGame(deck, { size: 5, players: 4, random, tournamentMode: true });
   state.tournamentExited = [false, false, false, false];
   state.tournamentScores = [0, 0, 0, 0];
-  state.tournamentHandScores = [0, 0, 0, 0];
+  state.tournamentGameScores = [0, 0, 0, 0];
   state.hands[0] = [];
   core.tournamentMarkFinished(state, 0);
   assert.equal(state.tournamentScores[0], 4);
@@ -1698,7 +1698,7 @@ function testTournamentFinishAwardsDescendingPoints() {
   state.hands[3] = [];
   core.tournamentMarkFinished(state, 3);
   assert.equal(state.tournamentScores[3], 1);
-  assert.equal(state.status, "hand_over");
+  assert.equal(state.status, "game_over");
 }
 
 function testSimulateTournamentCompletes() {
@@ -1710,7 +1710,7 @@ function testSimulateTournamentCompletes() {
     random
   });
   assert.equal(result.tournamentMode, true);
-  assert.equal(result.tournamentHandsPlayed, 2);
+  assert.equal(result.tournamentGamesPlayed, 2);
   assert.equal(result.tournamentComplete, true);
   assert.equal(result.status, "tournament_complete");
   assert.equal(result.tournamentScores.length, 2);

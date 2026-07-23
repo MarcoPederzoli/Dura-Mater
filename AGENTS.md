@@ -6,7 +6,7 @@ Progetto SPA statica per **Dura Mater** (codice legacy: MPCards).
 - Pagina iniziale: **`index.html`** (gioco). Secondaria: **`simulator.html`**.
 - Il solver/generatore mazzi in `index.html` è stato rimosso; il mazzo è fisso in `mpcards-core.js` (`SIM_DECK_CODES`).
 - Modifiche alle regole: aggiornare `mpcards-core.js`, `RULES.md` e i test in `tests/`.
-- **Durissima:** variante di riferimento **N reshuffle** (core + pool N reshuffle; vedi `RULES.md`). Core puro solo con opt-out esplicito.
+- **Durissima:** core = pesca solo se posato + **refill sempre** + vittoria griglia piena. Easy mode solitario (mano 2N) opzionale. **N reshuffle / vita extra rimossi** (2026-07).
 
 ## Git
 

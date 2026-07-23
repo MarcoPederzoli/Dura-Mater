@@ -14,22 +14,47 @@ function cellCategory(size, players) {
   return "overcrowd";
 }
 
-function simOptionsForCell(L, G) {
-  const strategy = G === 1 ? "durissima-planner" : "durissima-team-planner";
-  return {
+function simOptionsForCell(L, G, variant) {
+  const strategy = G === 1
+    ? "durissima-planner"
+    : (G === L ? "durissima-global-planner" : "durissima-team-planner");
+  const base = {
     size: L,
     players: G,
     strategies: Array.from({ length: G }, () => strategy),
     durissimaMater: true,
     randomizeTurnOrder: true
   };
+  if (variant === "hand-cap" || variant === "hand-cap-2n") {
+    return {
+      ...base,
+      durissimaHandDrawCap: true,
+      durissimaHandDrawCapFactor: variant === "hand-cap-2n" ? 2 : undefined,
+      durissimaVitaExtraEnabled: false,
+      durissimaSelectiveReshuffle: false
+    };
+  }
+  if (variant === "free-draw-n-reshuffle") {
+    return {
+      ...base,
+      durissimaCompetitiveDraw: true,
+      durissimaSelectiveReshuffle: true
+    };
+  }
+  if (variant === "scarti-n-reshuffle") {
+    return {
+      ...base,
+      durissimaScartiNReshuffle: true
+    };
+  }
+  return base;
 }
 
 function runCellChunk(task) {
-  const { L, G, count, seedTag, chunkIndex } = task;
+  const { L, G, count, seedTag, chunkIndex, variant } = task;
   const key = `${L}x${G}`;
   const random = core.mulberry32(core.hashSeed(`${seedTag}:${L}:${G}:${chunkIndex}`));
-  const base = simOptionsForCell(L, G);
+  const base = simOptionsForCell(L, G, variant);
 
   const stats = {
     done: 0,
@@ -37,6 +62,7 @@ function runCellChunk(task) {
     wins: 0,
     vitaUsedSum: 0,
     vitaPoolRemainSum: 0,
+    discardRecyclesUsedSum: 0,
     turnSum: 0
   };
 
@@ -46,6 +72,7 @@ function runCellChunk(task) {
     stats.turnSum += result.turns || 0;
     stats.vitaUsedSum += result.durissimaVitaExtraUsed || 0;
     stats.vitaPoolRemainSum += result.durissimaVitaExtraPoolRemaining || 0;
+    stats.discardRecyclesUsedSum += result.durissimaDiscardRecyclesUsed || 0;
     if (result.status === "success") stats.wins++;
     else stats.stalls++;
   }
@@ -82,6 +109,7 @@ function mergeChunkResults(chunks) {
         wins: 0,
         vitaUsedSum: 0,
         vitaPoolRemainSum: 0,
+        discardRecyclesUsedSum: 0,
         turnSum: 0
       });
     }
@@ -91,6 +119,7 @@ function mergeChunkResults(chunks) {
     agg.wins += chunk.wins;
     agg.vitaUsedSum += chunk.vitaUsedSum;
     agg.vitaPoolRemainSum += chunk.vitaPoolRemainSum;
+    agg.discardRecyclesUsedSum += chunk.discardRecyclesUsedSum || 0;
     agg.turnSum += chunk.turnSum;
   }
   return byKey;
