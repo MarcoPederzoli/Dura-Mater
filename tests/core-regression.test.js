@@ -1522,6 +1522,53 @@ testIdeaBlindAllowsPlacementWithoutSharedTrait();
 testPlacementBesideIdeaBlindNeedsTraitAnchor();
 testIdeaBlindDoesNotCountAsOccupiedNeighbor();
 
+/** Jolly (idea o wild) non soddisfa mai req 1-4: come il bordo esterno. */
+function testJollyNeverFillsPlacementRequirement() {
+  const deck = core.simulationDeck().filter(card => Number(card.value) <= 4);
+  const state = core.setupGame(deck, { size: 4, players: 2, random: () => 0 });
+  // Tre carte scoperte + un jolly attorno a (1,1): solo 3 vicini "reali"
+  state.board = [
+    { x: 1, y: 0, card: card("118"), playerId: 0 },
+    { x: 0, y: 1, card: card("227"), playerId: 0 },
+    { x: 2, y: 1, card: card("238"), playerId: 0 },
+    { x: 1, y: 2, card: card("586"), playerId: 0, ideaBlind: true }
+  ];
+  state.turnPlayed = 0;
+  state.hands[0] = [card("328")];
+  const score = core.placementScore(state, card("328"), 1, 1);
+  assert.equal(score.neighbors, 3, "jolly non e' un 4° vicino");
+  assert.equal(
+    core.legalPlacements(state, 0, 4).filter(m => m.x === 1 && m.y === 1).length,
+    0,
+    "req 4 impossibile se un lato e' solo jolly"
+  );
+  assert.ok(
+    core.legalPlacements(state, 0, 3).some(m => m.x === 1 && m.y === 1 && m.cardUid === card("328").uid),
+    "req 3 ok con 3 scoperti compatibili"
+  );
+
+  // Stesso layout con wildBlind (solitario): stessa regola buco/bordo
+  state.board[3] = { x: 1, y: 2, card: card("586"), playerId: 0, wildBlind: true };
+  const scoreWild = core.placementScore(state, card("328"), 1, 1);
+  assert.equal(scoreWild.neighbors, 3, "wildBlind non conta per grado");
+  assert.equal(
+    core.legalPlacements(state, 0, 4).filter(m => m.x === 1 && m.y === 1).length,
+    0,
+    "req 4 vietato anche con wildBlind al posto del 4° lato"
+  );
+
+  // Solo jolly: non basta per req 1
+  state.board = [{ x: 0, y: 0, card: card("586"), playerId: 0, ideaBlind: true }];
+  state.hands[0] = [card("118")];
+  assert.equal(
+    core.legalPlacements(state, 0, 1).filter(m => m.x === 0 && m.y === 1).length,
+    0,
+    "req 1: solo jolly non ancora"
+  );
+}
+
+testJollyNeverFillsPlacementRequirement();
+
 function testComputeInitialDealOvercrowded() {
   assert.deepEqual(core.computeInitialDeal(5, 7), {
     cardsPerPlayer: 3,

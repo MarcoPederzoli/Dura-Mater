@@ -206,9 +206,10 @@ La Dura Mater e' **chiusa** quando l'ingombro delle carte posate raggiunge **NxN
 - Si posa **a faccia in giu'**, adiacente ortogonalmente ad **almeno una** carta gia' in gioco, rispettando **ingombro e limiti della Dura Mater** come ogni altra posa.
 - **Nessun vincolo di compatibilita'** (valore, forma, colore) con le carte che tocca al momento della posa.
 - Conta come una carta qualsiasi per **chiusura del primo limite**, **chiusura della Dura Mater** (ingombro NxN) e **inversioni** collegate.
-- Ai fini dei **legami tra carte** (grado di posa, vicini compatibili, ancoraggio su carta scoperta), la cella jolly e' un **buco** nella griglia: **non** conta come vicino occupato, come il bordo esterno. La casella resta occupata per ingombro e limiti.
-- Nelle posate **successive**, sul lato che confina con la carta coperta **non** si richiede alcun tratto in comune (come il bordo esterno della griglia). Sugli altri lati, regole normali.
-- **Non** si puo' posare una carta **solo** adiacente a una o piu' carte jolly: serve sempre **almeno un** vicino **scoperto** con cui condividere almeno un tratto (oltre al jolly, se presente). L'unica eccezione in tutta la partita resta la **prima carta assoluta** (posa libera).
+- Ai fini dei **legami tra carte** (grado di posa / requisiti 1-2-3-4, vicini compatibili, ancoraggio), la cella jolly e' un **buco** nella griglia: **non** conta come vicino occupato, **esattamente come il bordo esterno** della griglia. La casella resta occupata solo per ingombro e limiti.
+- Di conseguenza: **non** si puo' usare un jolly (ne' un lato «verso il vuoto/bordo») per soddisfare il 1°, 2°, 3° o 4° vicino richiesto da una posa normale. Serve sempre il numero di **carte scoperte** compatibili indicato dal requisito del turno.
+- Nelle posate **successive**, sul lato che confina con la carta coperta **non** si richiede alcun tratto in comune (come il bordo esterno). Sugli altri lati, regole normali.
+- **Non** si puo' posare una carta **solo** adiacente a una o piu' carte jolly: serve sempre **almeno un** vicino **scoperto** con cui condividere almeno un tratto. L'unica eccezione in tutta la partita resta la **prima carta assoluta** (posa libera). Le carte che toccano un jolly devono quindi appoggiarsi anche ad altre carte scoperte.
 
 ### Informazione sulla carta coperta
 

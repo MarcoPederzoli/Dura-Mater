@@ -3297,3 +3297,9 @@ Nav in alto (Gioco / Simulazione / Massivo) invariata.
 - Bottone «Chiudi (salta Idea)» in fase Idea.
 
 **Non pushato** finche' l'utente non chiede.
+
+## 2026-07-23 — Jolly = bordo: non conta per req 1-4
+
+**Chiarimento utente:** jolly e bordo esterno non possono soddisfare il 1/2/3/4 vicino di una posa normale (non creano vincoli).
+**Fix:** placementScore non conta piu' wildBlind come vicino (prima lo faceva); unificato a ideaBlind = buco topologico.
+**RULES.md** rafforzato. Test 	estJollyNeverFillsPlacementRequirement.

@@ -527,14 +527,10 @@ const MPCARDS_CORE_SOURCE = `
     for (const dir of dirs) {
       const adjacent = map.get(coordKey(x + dir.x, y + dir.y));
       if (!adjacent) continue;
-      // Wild face-down: conta come vicino sempre compatibile (nessun vincolo di tratto)
-      if (isWildBlindBoardEntry(adjacent)) {
-        neighbors++;
-        compatibleNeighbors++;
-        continue;
-      }
-      // Idea classica: non conta per tratti ne' per grado (comportamento storico)
-      if (isIdeaBlindBoardEntry(adjacent)) continue;
+      // Jolly (Idea o wild solitario) = buco topologico come il bordo esterno:
+      // non conta per grado di posa (req 1-4) ne' per tratti/compatibilita'.
+      // La casella resta occupata solo per ingombro / limiti NxN.
+      if (isIdeaBlindBoardEntry(adjacent) || isWildBlindBoardEntry(adjacent)) continue;
       neighbors++;
       const shared = sharedProperties(card, adjacent.card);
       matches += shared;
@@ -546,7 +542,11 @@ const MPCARDS_CORE_SOURCE = `
     return { matches, neighbors, compatibleNeighbors, traitAnchorNeighbors };
   }
 
-  /** Salvo prima carta assoluta e posa Idea cieca: serve almeno un vicino scoperto con tratto in comune. */
+  /**
+   * Salvo prima carta assoluta e posa della jolly stessa (Idea 5a / wild solitario):
+   * serve almeno un vicino SCOPERTO con tratto in comune.
+   * Un jolly adiacente non basta da solo (come il bordo esterno).
+   */
   function placementPassesTraitAnchor(state, score) {
     if (!state || state.board.length === 0) return true;
     if (isIdeaBlindTurn(state)) return true;
@@ -556,12 +556,16 @@ const MPCARDS_CORE_SOURCE = `
 
   function placementIsLegal(state, card, x, y, requirement) {
     if (state.board.length === 0) return true;
-    // Solitario wild: posa come Idea (connessione fisica, no vincoli di tratto)
+    // Posare la jolly stessa (wild solitario o Idea 5a): solo adiacenza fisica.
+    // Non vale il contrario: le pose normali non usano jolly/bordo per il grado.
     if (isPlayingSoloWildCard(state, card)) {
       return countPhysicalNeighbors(state, x, y) >= 1;
     }
     const score = placementScore(state, card, x, y);
-    if (isIdeaBlindTurn(state)) return score.neighbors >= 1 || countPhysicalNeighbors(state, x, y) >= 1;
+    if (isIdeaBlindTurn(state)) {
+      return countPhysicalNeighbors(state, x, y) >= 1;
+    }
+    // Requisito K = K vicini scoperti compatibili. Jolly e bordo non entrano nel conteggio.
     if (score.neighbors < requirement) return false;
     if (score.compatibleNeighbors !== score.neighbors) return false;
     return placementPassesTraitAnchor(state, score);
