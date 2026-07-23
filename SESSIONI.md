@@ -3303,3 +3303,11 @@ Nav in alto (Gioco / Simulazione / Massivo) invariata.
 **Chiarimento utente:** jolly e bordo esterno non possono soddisfare il 1/2/3/4 vicino di una posa normale (non creano vincoli).
 **Fix:** placementScore non conta piu' wildBlind come vicino (prima lo faceva); unificato a ideaBlind = buco topologico.
 **RULES.md** rafforzato. Test 	estJollyNeverFillsPlacementRequirement.
+
+## 2026-07-23 — Seed in UI/log + insight Idea (scommessa buco)
+
+**UI:** all'avvio se seed vuoto viene generato e **scritto nel campo**; summary Seed/Formato; board-status con seed; log con header riproducibile (seed, N, G, variant). Prima riga timeline: `Inizio partita · seed=… · NxN · G=…`.
+
+**Insight utente (Idea):** in solitario/coop a conoscenza aperta la 4a posa e' spesso una **scommessa strutturata**: lasciare un buco dove si sa che la 4a carta del chain andra', poi pescare/posare 3 e chiudere con Idea. Non e' «difficile geometricamente» quanto **policy**. Un bot che punta a 1 posa/turno e' inadatto a questa scommessa; l'umano ha forzato Idea per test UI e ha funzionato.
+
+**Artefatti 6x6:** `results/human-6x6-win-log-reconstruction.md`, `scripts/parse-6x6-win-log.js`, foto Dropbox `6x6-win.JPG`.

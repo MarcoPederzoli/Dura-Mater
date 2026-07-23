@@ -1144,6 +1144,8 @@ function startGame() {
   }
   const tournamentMode = playMode === PLAY_MODES.COMPETITIVE && isTournamentEnabled();
   const seed = els.seed.value.trim() || String(Date.now());
+  // Se era vuoto (casuale), mostra il seed effettivo nel campo per copia/riproduzione
+  if (els.seed) els.seed.value = seed;
   const random = gameState.createRandom(seed);
   // Assicura N righe config prima di leggere (se l'utente ha cambiato G senza rebuild)
   renderPlayerConfig();
@@ -1188,6 +1190,17 @@ function startGame() {
     strategies,
     playerOneName
   }, state, random);
+  // Prima riga di log riproducibile
+  if (session.timeline?.entries?.[0]) {
+    session.timeline.entries[0].label = formatMatchStartLabel({
+      seed,
+      size,
+      players,
+      variant,
+      tournamentMode,
+      playMode
+    });
+  }
   game = {
     session,
     state: gameState.currentState(session),
@@ -1206,6 +1219,30 @@ function startGame() {
   resetInversionUiFlags(state);
   render();
   scheduleBotIfNeeded();
+}
+
+/** Header riproducibile per log / info partita. */
+function formatMatchStartLabel({ seed, size, players, variant, tournamentMode, playMode }) {
+  const mode =
+    playMode === PLAY_MODES.SOLO
+      ? "solitario"
+      : playMode === PLAY_MODES.COOP
+        ? "collaborativo"
+        : tournamentMode
+          ? "competitivo-torneo"
+          : "competitivo";
+  const v = variant === "durissima" ? "Durissima" : "Dura";
+  return `Inizio partita · seed=${seed} · ${size}x${size} · G=${players} · ${v} · ${mode}`;
+}
+
+function matchMetaLine(g = game) {
+  if (!g) return "";
+  const st = g.state;
+  const size = st?.size ?? g.session?.config?.size ?? "?";
+  const players = st?.players ?? g.session?.config?.players ?? "?";
+  const seed = g.seed ?? g.session?.config?.seed ?? "?";
+  const v = core.isDurissimaMater(st) ? "Durissima" : "Dura";
+  return `seed=${seed} · ${size}x${size} · G=${players} · ${v}`;
 }
 
 function enterPlayingMode() {
@@ -2040,7 +2077,8 @@ function renderBoard() {
     core.isDurissimaMater(state) && state.players === 1 && handN > state.size
       ? `, mano ${handN}`
       : "";
-  els.boardStatus.textContent = `${state.board.length}/${state.size * state.size} carte, pesca ${state.drawPile.length}${extraHint}${reserveLabel}${closed}`;
+  const seedHint = game.seed ? ` · seed ${game.seed}` : "";
+  els.boardStatus.textContent = `${state.board.length}/${state.size * state.size} carte, pesca ${state.drawPile.length}${extraHint}${reserveLabel}${closed}${seedHint}`;
 }
 
 function boardCellSize() {
@@ -2553,6 +2591,8 @@ function renderSummary() {
     ? `Pesca: ${state.drawPile.length} · Partita ${Math.min(state.tournamentGameIndex + (state.status === "playing" ? 1 : 0), state.players)}/${state.players}`
     : `Pesca: ${state.drawPile.length}`;
   const rows = [
+    ["Seed", game.seed || game.session?.config?.seed || "—"],
+    ["Formato", `${state.size}x${state.size} · G=${state.players}`],
     ...(durissima ? [["Modalita'", "Durissima Mater"]] : [["Modalita'", "Dura Mater"]]),
     ...(tournament
       ? [["Torneo", tournamentDone ? "Completato" : `Partita ${Math.min(state.tournamentGameIndex + (state.status === "playing" ? 1 : 0), state.players)}/${state.players}`]]
@@ -2652,7 +2692,22 @@ function showModalTab(tab) {
 }
 
 function renderLog() {
-  els.log.textContent = game ? gameState.labels(game.session).slice().reverse().join("\n") : "";
+  if (!els.log) return;
+  if (!game) {
+    els.log.textContent = "";
+    return;
+  }
+  const header = [
+    "=== PARTITA (copia per riproduzione) ===",
+    matchMetaLine(game),
+    `seed=${game.seed || game.session?.config?.seed || "?"}`,
+    `N=${game.state?.size} G=${game.state?.players} variant=${game.variant || game.session?.config?.variant || "?"}`,
+    "========================================",
+    ""
+  ].join("\n");
+  // UI: eventi dal piu' recente in alto (come prima)
+  const body = gameState.labels(game.session).slice().reverse().join("\n");
+  els.log.textContent = header + body;
 }
 
 function bindPlayModeTabs() {
