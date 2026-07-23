@@ -366,9 +366,53 @@ function setStatus(text, className = "") {
   els.status.className = `status ${className}`.trim();
 }
 
-function setPlayFeedback(text) {
+function setPlayFeedback(text, kind = "") {
   if (!els.playFeedback) return;
   els.playFeedback.textContent = text || "";
+  els.playFeedback.className = kind
+    ? `play-feedback play-feedback--${kind}`
+    : "play-feedback";
+}
+
+/** Turno Idea: 4 carte gia' posate e ancora carte in mano. */
+function isIdeaPhase(state = game?.state) {
+  if (!state || !game || state.status !== "playing") return false;
+  return typeof core.canOfferIdea === "function"
+    ? core.canOfferIdea(state, state.currentPlayer)
+    : state.turnPlayed === 4 && (state.hands[state.currentPlayer] || []).length > 0;
+}
+
+/**
+ * Chi puo' "sbirciare" una carta Idea/jolly a faccia in giu' al passaggio del cursore.
+ * - Collaborativo / solitario Durissima: tutti (conoscenza comune).
+ * - Competitivo / torneo: solo chi l'ha posata (in hot-seat = sede corrente = placer).
+ */
+function canPeekBlindBoardCard(entry, state = game?.state) {
+  if (!entry || !state) return false;
+  const blind = entry.ideaBlind === true || entry.wildBlind === true;
+  if (!blind) return true;
+  if (!isCompetitiveGameState(state)) return true;
+  return entry.playerId === state.currentPlayer;
+}
+
+function isBlindBoardEntry(entry) {
+  return Boolean(entry && (entry.ideaBlind === true || entry.wildBlind === true));
+}
+
+function updateIdeaPhaseFeedback() {
+  if (!game || game.state.status !== "playing") return;
+  if (!isIdeaPhase(game.state) || isBotTurn()) return;
+  if (selectedCardUid) {
+    setPlayFeedback(
+      "IDEA! Hai scelto la quinta carta jolly — clicca una casella adiacente (senza vincoli di tratto).",
+      "idea"
+    );
+    return;
+  }
+  setPlayFeedback(
+    "IDEA! Posa una quinta carta jolly! Sceglila in mano e posala adiacente senza vincoli (opzionale: Chiudi turno per saltare).",
+    "idea"
+  );
 }
 
 function updateHandSelectionStatus(handLength, player, modeLabel) {
@@ -1486,7 +1530,10 @@ function playManualMove(move) {
     render();
     return;
   }
-  const baseLabel = `${playerLabel(player)} gioca ${legalMove.card.code} in (${legalMove.x}, ${legalMove.y}).`;
+  const wasIdea = game.state.turnPlayed === 4;
+  const baseLabel = wasIdea
+    ? `${playerLabel(player)} IDEA (jolly): ${legalMove.card.code} in (${legalMove.x}, ${legalMove.y}).`
+    : `${playerLabel(player)} gioca ${legalMove.card.code} in (${legalMove.x}, ${legalMove.y}).`;
   game.state = gameState.commit(game.session, baseLabel, game.random, nextState => {
     core.applyPlacement(nextState, player, legalMove);
     if (nextState.status === "playing" && nextState.turnPlayed >= 5) {
@@ -1494,12 +1541,17 @@ function playManualMove(move) {
       return `${baseLabel} ${playerLabel(player)} chiude il turno.`;
     }
     if (nextState.status === "playing" && core.canOfferIdea(nextState, player)) {
-      return `${baseLabel} Idea: quinta carta a faccia in giu' (jolly = buco/bordo).`;
+      return `${baseLabel} IDEA: puo' posare una quinta carta jolly.`;
     }
     return baseLabel;
   });
   resetTransientUi();
   render();
+  if (wasIdea) {
+    setPlayFeedback("Idea realizzata: quinta carta jolly posata a faccia in giu'.", "idea");
+  } else {
+    updateIdeaPhaseFeedback();
+  }
   scheduleBotIfNeeded();
 }
 
@@ -1522,7 +1574,14 @@ function selectCard(cardUid) {
   previewCardUid = null;
   highlightedMoves = moves;
   const name = globalThis.MPCardsNames ? MPCardsNames.formatCardName(card) : card.code;
-  setPlayFeedback(`Carta selezionata: ${name} — ora clicca sul tabellone.`);
+  if (isIdeaPhase()) {
+    setPlayFeedback(
+      `IDEA! Quinta jolly: ${name} — clicca una casella adiacente (nessun vincolo di tratto).`,
+      "idea"
+    );
+  } else {
+    setPlayFeedback(`Carta selezionata: ${name} — ora clicca sul tabellone.`);
+  }
   renderBoard();
   renderHand();
   renderActions();
@@ -1569,40 +1628,71 @@ function clearSuggestionHover() {
   renderHand();
 }
 
-function cardBackTile() {
+function cardBackTile(options = {}) {
   const tile = document.createElement("div");
-  tile.className = "card-back";
+  tile.className = options.idea ? "card-back card-back--idea" : "card-back";
   const backSrc = globalThis.MPCardsArt && MPCardsArt.back;
   if (backSrc) {
     const img = document.createElement("img");
     img.src = backSrc;
-    img.alt = "Retro carta";
+    img.alt = options.idea ? "Carta Idea (faccia in giu')" : "Retro carta";
     img.draggable = false;
     img.loading = "lazy";
     img.decoding = "async";
     tile.appendChild(img);
   } else {
-    tile.textContent = "?";
+    tile.textContent = options.idea ? "J" : "?";
+  }
+  if (options.idea) {
+    tile.title = options.peekTitle || "Idea / jolly a faccia in giu'";
   }
   return tile;
 }
 
-function cardBackTile() {
-  const tile = document.createElement("div");
-  tile.className = "card-back";
-  const backSrc = globalThis.MPCardsArt && MPCardsArt.back;
-  if (backSrc) {
-    const img = document.createElement("img");
-    img.src = backSrc;
-    img.alt = "Retro carta";
-    img.draggable = false;
-    img.loading = "lazy";
-    img.decoding = "async";
-    tile.appendChild(img);
-  } else {
-    tile.textContent = "?";
+/**
+ * Cella Idea/jolly: di default dorso; hover rivela il fronte se permesso.
+ */
+function boardBlindCardElement(entry) {
+  const wrap = document.createElement("div");
+  wrap.className = "board-blind-card";
+  const canPeek = canPeekBlindBoardCard(entry);
+  const faceName = globalThis.MPCardsNames
+    ? MPCardsNames.formatCardName(entry.card)
+    : entry.card.code;
+  const secretHint = isCompetitiveGameState()
+    ? " (solo chi l'ha posata la conosce)"
+    : "";
+  wrap.title = canPeek
+    ? `Idea/jolly — passa per rivelare: ${faceName}`
+    : `Idea/jolly a faccia in giu'${secretHint}`;
+
+  let showingFace = false;
+  const showBack = () => {
+    wrap.innerHTML = "";
+    wrap.appendChild(cardBackTile({
+      idea: true,
+      peekTitle: wrap.title
+    }));
+    showingFace = false;
+  };
+  const showFace = () => {
+    if (!canPeek) return;
+    wrap.innerHTML = "";
+    const face = cardTile(entry.card);
+    face.classList.add("board-blind-face");
+    wrap.appendChild(face);
+    showingFace = true;
+  };
+
+  showBack();
+  if (canPeek) {
+    wrap.addEventListener("mouseenter", showFace);
+    wrap.addEventListener("mouseleave", showBack);
+    wrap.addEventListener("focus", showFace);
+    wrap.addEventListener("blur", showBack);
+    wrap.tabIndex = 0;
   }
-  return tile;
+  return wrap;
 }
 
 function cardTile(card) {
@@ -1789,6 +1879,7 @@ function soloHasAnyLegalPlacement(state, playerId) {
 /**
  * Solitario: se non restano mosse legali, chiude il turno (refill) oppure
  * dichiara fine partita. Prima restava bloccata senza banner.
+ * Non interrompe la fase Idea se restano pose jolly legali (le vede soloHasAnyLegalPlacement).
  */
 function maybeEndSoloWhenStuck() {
   if (!game || game.state.status !== "playing") return false;
@@ -1895,17 +1986,31 @@ function renderBoard() {
       cell.dataset.x = String(x);
       cell.dataset.y = String(y);
       if (entry) {
-        cell.className = "cell filled";
-        cell.appendChild(cardTile(entry.card));
+        cell.className = isBlindBoardEntry(entry)
+          ? "cell filled cell-idea-blind"
+          : "cell filled";
+        if (isBlindBoardEntry(entry)) {
+          cell.appendChild(boardBlindCardElement(entry));
+        } else {
+          cell.appendChild(cardTile(entry.card));
+        }
       } else if (target) {
-        cell.title = `Gioca ${target.card.code} qui. Adiacenze compatibili: ${target.compatibleNeighbors}/${target.neighbors}. Caratteristiche condivise: ${target.matches}`;
+        const ideaTarget = isIdeaPhase(state) || target.ideaBlind === true;
+        cell.title = ideaTarget
+          ? `IDEA / jolly: posa ${target.card.code} qui (solo adiacenza, senza vincoli di tratto).`
+          : `Gioca ${target.card.code} qui. Adiacenze compatibili: ${target.compatibleNeighbors}/${target.neighbors}. Caratteristiche condivise: ${target.matches}`;
         const score = document.createElement("span");
-        score.className = "target-score";
-        score.textContent = target.compatibleNeighbors;
+        score.className = ideaTarget ? "target-score target-score--idea" : "target-score";
+        score.textContent = ideaTarget ? "J" : target.compatibleNeighbors;
         cell.appendChild(score);
         cell.addEventListener("click", () => {
           if (!selectedCardUid) {
-            setPlayFeedback("Seleziona prima una carta in mano (click sulla carta → bordo rosso).");
+            setPlayFeedback(
+              ideaTarget
+                ? "IDEA! Seleziona prima la quinta carta jolly in mano."
+                : "Seleziona prima una carta in mano (click sulla carta → bordo rosso).",
+              ideaTarget ? "idea" : ""
+            );
             return;
           }
           if (target.cardUid !== selectedCardUid) {
@@ -2059,6 +2164,7 @@ function appendHandCards(container, layout, player, hand, interactive) {
     moves.filter(move => !move.fromReserve).map(move => move.cardUid)
   );
   const useSidebarLayout = layout === "sidebar";
+  const ideaPhase = isIdeaPhase();
   for (const card of hand) {
     const item = document.createElement("div");
     const isSelected = selectedCardUid === card.uid;
@@ -2066,13 +2172,19 @@ function appendHandCards(container, layout, player, hand, interactive) {
     item.className = "hand-card";
     item.dataset.cardUid = card.uid;
     if (canPlay && !isSelected) item.classList.add("playable");
+    if (canPlay && ideaPhase) item.classList.add("idea-ready");
     if (isSelected) item.classList.add("selected");
     if (previewCardUid === card.uid) item.classList.add("preview");
     item.appendChild(cardTile(card));
     if (isSelected) {
       const badge = document.createElement("span");
       badge.className = "hand-card-selected-badge";
-      badge.textContent = "Scelta";
+      badge.textContent = ideaPhase ? "Jolly" : "Scelta";
+      item.appendChild(badge);
+    } else if (canPlay && ideaPhase) {
+      const badge = document.createElement("span");
+      badge.className = "hand-card-idea-badge";
+      badge.textContent = "IDEA";
       item.appendChild(badge);
     }
     const entry = document.createElement("div");
@@ -2139,46 +2251,6 @@ function renderHandCountsBar() {
     chip.appendChild(name);
     chip.appendChild(detail);
     els.handCountsList.appendChild(chip);
-  }
-}
-
-function appendHandCards(container, layout, player, hand, interactive) {
-  const moves = currentMoves();
-  const playable = new Set(
-    moves.filter(move => !move.fromReserve).map(move => move.cardUid)
-  );
-  const useSidebarLayout = layout === "sidebar";
-  for (const card of hand) {
-    const item = document.createElement("div");
-    const isSelected = selectedCardUid === card.uid;
-    const canPlay = playable.has(card.uid) && interactive;
-    item.className = "hand-card";
-    item.dataset.cardUid = card.uid;
-    if (canPlay && !isSelected) item.classList.add("playable");
-    if (isSelected) item.classList.add("selected");
-    if (previewCardUid === card.uid) item.classList.add("preview");
-    item.appendChild(cardTile(card));
-    if (isSelected) {
-      const badge = document.createElement("span");
-      badge.className = "hand-card-selected-badge";
-      badge.textContent = "Scelta";
-      item.appendChild(badge);
-    }
-    const entry = document.createElement("div");
-    entry.className = useSidebarLayout ? "sidebar-hand-entry" : "hand-dock-entry";
-    if (canPlay) {
-      item.addEventListener("mouseenter", () => hoverCard(card.uid));
-      item.addEventListener("mouseleave", clearHover);
-      entry.addEventListener("click", event => activateHandCard(card.uid, event));
-    }
-    entry.appendChild(item);
-    const name = document.createElement("p");
-    name.className = "card-name";
-    name.textContent = globalThis.MPCardsNames
-      ? MPCardsNames.formatCardName(card)
-      : card.code;
-    entry.appendChild(name);
-    container.appendChild(entry);
   }
 }
 
@@ -2434,6 +2506,16 @@ function renderActions() {
   els.botStep.style.display = botStepMode ? "inline-grid" : "none";
   els.pass.disabled = isBotTurn() || durissimaSolo;
   els.pass.className = moves.length === 0 || game.state.turnPlayed > 0 ? "warn" : "secondary";
+  if (isIdeaPhase(game.state) && !isBotTurn()) {
+    els.pass.textContent = "Chiudi (salta Idea)";
+    els.pass.title = "Chiudi il turno senza posare la quinta carta jolly";
+  } else if (game.state.turnPlayed > 0 && !isBotTurn()) {
+    els.pass.textContent = "Chiudi turno";
+    els.pass.removeAttribute("title");
+  } else {
+    els.pass.textContent = "Passa";
+    els.pass.removeAttribute("title");
+  }
   if (els.vitaExtra) {
     els.vitaExtra.hidden = isBotTurn() || !canVita;
     els.vitaExtra.disabled = !canVita;
@@ -2492,7 +2574,9 @@ function renderSummary() {
       ? [["Vita extra", `${core.durissimaVitaExtraPoolLeft(state)} rimaste`]]
       : []),
     ["Carte giocate nel turno", state.turnPlayed],
-    ...(core.canOfferIdea(state, player) ? [["Idea", "Quinta carta cieca (jolly)"]] : []),
+    ...(core.canOfferIdea(state, player)
+      ? [["Idea", "ATTIVA — quinta jolly opzionale (faccia in giu')"]]
+      : []),
     ["Passaggi consecutivi", state.consecutivePasses],
     ...(tournament
       ? state.tournamentScores.map((score, index) => [
@@ -2515,6 +2599,9 @@ function renderSummary() {
       setStatus(`Classifica: ${formatTournamentRanking(state)}`, "good");
     } else if (state.status === "game_over" || state.status === "hand_over") {
       setStatus(`Partita conclusa (${state.tournamentLastGameReason === "monte" ? "monte" : "tutti finiti"}). Prossima partita…`, "");
+    } else if (state.status === "playing" && isIdeaPhase(state) && !isBotTurn()) {
+      setStatus("IDEA! Puoi posare una quinta carta jolly (faccia in giu').", "good");
+      updateIdeaPhaseFeedback();
     } else {
       setStatus(
         state.status === "playing"
@@ -2529,6 +2616,8 @@ function renderSummary() {
         state.status === "success" || tournamentDone ? "good" : state.status === "stalled" ? "bad" : ""
       );
     }
+  } else if (state.status === "playing" && isIdeaPhase(state) && !isBotTurn()) {
+    updateIdeaPhaseFeedback();
   }
 }
 

@@ -3284,3 +3284,16 @@ Nav in alto (Gioco / Simulazione / Massivo) invariata.
 **Confronto torneo audit storico:** l'audit a 300 tornei vedeva bias su 3x3/5x5 G=N ma spread piu' contenuti (media multi-mano). Qui e' **una sola partita** con posti fissi — il bias di sede e' piu' grezzo e visibile.
 
 **Non rifare:** stesso seed tag 20/cella senza motivo; se serve profondita' alzare COUNT o mirare solo G=N.
+
+## 2026-07-23 — UI Idea (quinta jolly faccia in giu')
+
+**Problema:** dopo 4 pose in solitario non c'era messaggio IDEA chiaro; jolly restava a faccia in su sul tabellone.
+
+**Fix UI (game.js + CSS in gioco.html / simulazione-singolo.html):**
+- Banner giallo IDEA dopo la 4a posa (anche status e badge sulle carte giocabili).
+- Quinta posa: vincoli soft gia' nel core (ideaBlind); log e feedback dedicati.
+- Carta Idea/wild sul board: dorso di default; hover rivela il fronte se permesso.
+- Visibilita': coop/solitario = tutti possono sbirciare; competitivo = solo il placer (hot-seat: sede corrente = chi l'ha posata).
+- Bottone «Chiudi (salta Idea)» in fase Idea.
+
+**Non pushato** finche' l'utente non chiede.
